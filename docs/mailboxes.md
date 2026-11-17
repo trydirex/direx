@@ -33,6 +33,10 @@ mail it sent.
   connected, or someone answers the question in Review. If nobody decides within 30 days, Direx
   deletes the reply's text, and the hold stays.
 - A hard bounce stops mail to that address.
+- When 3 of a Mailbox's latest 50 emails bounce for good, Direx pauses that Mailbox. A sender
+  block counts too. Nothing goes from a paused Mailbox, not even email a standing rule covers, until
+  an Owner, Admin or Marketer presses Resume on its card in Settings. Bounces from before a resume
+  don't count again. Anyone who edits can also pause a Mailbox by hand.
 - If Direx can't read a Mailbox's replies, it holds that Mailbox's cold email until it can again.
 
 Only an Owner can undo an opt-out, and only one that was read from a reply. They sign in again and

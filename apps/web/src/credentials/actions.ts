@@ -150,6 +150,15 @@ export async function savePace(workspaceId: string, credentialId: string, pace: 
   const { error } = await api.PUT("/api/w/{workspaceId}/mailboxes/{credentialId}/pace", { params: { path: { workspaceId, credentialId } }, body: pace });
   return error ? error.error : null;
 }
+
+// Which Mailboxes are paused, and pausing or resuming one.
+export const pausesQuery = (workspaceId: string) =>
+  queryOptions({ queryKey: inWorkspace(workspaceId, "mailbox-pauses"), queryFn: async () => (await call(api.GET("/api/w/{workspaceId}/outreach/mailbox-pauses", { params: at(workspaceId) }))).pauses });
+/** Pauses or resumes a Mailbox: the API's error code, or null when it saved. */
+export async function setPaused(workspaceId: string, credentialId: string, paused: boolean): Promise<string | null> {
+  const { error } = await api.PUT("/api/w/{workspaceId}/outreach/mailboxes/{credentialId}/pause", { params: { path: { workspaceId, credentialId } }, body: { paused } });
+  return error ? error.error : null;
+}
 export const zoneQuery = (workspaceId: string) =>
   queryOptions({
     queryKey: inWorkspace(workspaceId, "time-zone"),

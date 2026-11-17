@@ -158,6 +158,7 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "POST /api/w/:workspaceId/mailboxes/:connection": { path: `/api/w/${w2}/mailboxes/imap_smtp`, body: { username: "a@example.com", password: "pw", settings: {} } },
   "POST /api/w/:workspaceId/mailboxes/:credentialId/check": { path: `/api/w/${w2}/mailboxes/${credentialId}/check`, body: { probeWording: "2026-11-05" } },
   "GET /api/w/:workspaceId/outreach/mailbox-checks": { path: `/api/w/${w2}/outreach/mailbox-checks` },
+  "GET /api/w/:workspaceId/outreach/mailbox-pauses": { path: `/api/w/${w2}/outreach/mailbox-pauses` },
   "GET /api/w/:workspaceId/credentials": { path: `/api/w/${w2}/credentials` },
   "POST /api/w/:workspaceId/credentials": {
     path: `/api/w/${w2}/credentials`,
@@ -270,6 +271,7 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "GET /api/w/:workspaceId/outreach/reply-count": { path: `/api/w/${w2}/outreach/reply-count?from=2000-01-01T00:00:00.000Z&to=2100-01-01T00:00:00.000Z` },
   "PUT /api/w/:workspaceId/outreach/identity": { path: `/api/w/${w2}/outreach/identity`, body: { senderName: "W2", postalAddress: "1 Main St" } },
   "PUT /api/w/:workspaceId/outreach/pause": { path: `/api/w/${w2}/outreach/pause`, body: { paused: false } },
+  "PUT /api/w/:workspaceId/outreach/mailboxes/:credentialId/pause": { path: `/api/w/${w2}/outreach/mailboxes/${anyItem}/pause`, body: { paused: true } },
   "GET /api/w/:workspaceId/newsletter/settings": { path: `/api/w/${w2}/newsletter/settings` },
   "PUT /api/w/:workspaceId/newsletter/settings": { path: `/api/w/${w2}/newsletter/settings`, body: { list: "substack", credentialId: null, weekday: 2, sendTime: "09:00", timeZone: "UTC", enabled: false } },
   "GET /api/w/:workspaceId/newsletter/issues": { path: `/api/w/${w2}/newsletter/issues` },
@@ -444,7 +446,7 @@ test("a member of W1 gets 404 on every W2 route; W2's Owner does not", async () 
   for (const key of Object.keys(CASES)) {
     // A Person the route doesn't know is its own 404, inside the Workspace, so give the Owner a real refusal.
     // So is a key W2 never stored, which is all replacing and checking one can reach with no worker's plugins.
-    if (key.endsWith("/outreach/emails") || key.includes("/outreach/replies/") || key.includes("/outreach/people/:personId") || key.includes("/outreach/holds/:holdId") || key.includes("/outreach/hold-hook/:hookId") || key.includes("/campaigns/:id") || key.includes("/campaigns/dms/:dmId") || key.includes("/prospecting/runs/:id") || key.includes("/newsletter/issues/:itemId") || key.includes("/newsletter/keys/:credentialId") || key.includes("/social/accounts/:accountId") || key.includes("/media/:id") || key.endsWith("/link-image") || key.includes("/mailboxes/:credentialId/pace") || key.includes("/mailboxes/:credentialId/placement")) continue;
+    if (key.endsWith("/outreach/emails") || key.includes("/outreach/replies/") || key.includes("/outreach/people/:personId") || key.includes("/outreach/holds/:holdId") || key.includes("/outreach/hold-hook/:hookId") || key.includes("/campaigns/:id") || key.includes("/campaigns/dms/:dmId") || key.includes("/prospecting/runs/:id") || key.includes("/newsletter/issues/:itemId") || key.includes("/newsletter/keys/:credentialId") || key.includes("/social/accounts/:accountId") || key.includes("/media/:id") || key.endsWith("/link-image") || key.includes("/mailboxes/:credentialId/pace") || key.includes("/outreach/mailboxes/:credentialId/pause") || key.includes("/mailboxes/:credentialId/placement")) continue;
     // A docs source W2 never imported is its own 404; saving its mapping is refused first as not connected.
     if (key.includes("/docs/sources/:sourceId/write-back") && !key.startsWith("PUT ")) continue;
     if (key === "PUT /api/w/:workspaceId/key-services/:connection" || key.endsWith("/key-services/:connection/check")) continue;

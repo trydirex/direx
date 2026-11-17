@@ -196,6 +196,10 @@ test("a Held Item says its next step where the reason is known: an account at to
   panel();
   expect(await screen.findByRole("link", { name: "Run the check" })).toBeTruthy();
   cleanup();
+  serve({ item: () => item({ state: "held", reasonCode: "mailbox_paused" }) });
+  panel();
+  expect((await screen.findByRole("link", { name: "See why" })).getAttribute("href")).toBe(`/w/${W}/settings/credentials`);
+  cleanup();
   serve({ item: () => item({ state: "held", reasonCode: "something_else" }) });
   panel();
   await screen.findByRole("article", { name: "To Kim" });

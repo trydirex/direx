@@ -518,10 +518,17 @@ export const credentials = pgTable(
     sendFrom: integer("send_from").notNull().default(540),
     sendUntil: integer("send_until").notNull().default(1020),
     sendWeekends: boolean("send_weekends").notNull().default(false),
+    // A Mailbox's pause, set by its bounces or by a person; only a person's resume clears it. Sends and
+    // bounces from before resumed_at don't count towards the next pause.
+    pausedAt: tz("paused_at"),
+    pauseReason: text("pause_reason"),
+    pausedBy: uuid("paused_by").references(() => user.id),
+    resumedAt: tz("resumed_at"),
   },
   (t) => [
     unique("credentials_workspace_id_id_key").on(t.workspaceId, t.id),
     check("credentials_daily_limit_check", sql`${t.dailyLimit} between 1 and 500`),
+    check("credentials_pause_check", sql`(${t.pausedAt} is null) = (${t.pauseReason} is null) and ${t.pauseReason} in ('bounces', 'person')`),
     check("credentials_send_hours_check", sql`0 <= ${t.sendFrom} and ${t.sendFrom} < ${t.sendUntil} and ${t.sendUntil} <= 1440`),
     foreignKey({
       name: "credentials_workspace_fk",

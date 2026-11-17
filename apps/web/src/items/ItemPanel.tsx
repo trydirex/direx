@@ -371,6 +371,14 @@ function HeldNext(p: { item: Item; workspaceId: string; edit: boolean; pending: 
           Resume the Campaign
         </Link>
       </>
+    ) : i.reasonCode === "mailbox_paused" ? (
+      <>
+        Its email account is paused.{" "}
+        <Link to="/w/$workspaceId/settings/credentials" params={w}>
+          See why
+        </Link>
+        . It goes once someone resumes the account.
+      </>
     ) : i.reasonCode === "mailbox_unchecked" ? (
       <>
         Its Mailbox hasn't passed its check.{" "}

@@ -16,7 +16,7 @@ import { CallFailed, EMAIL_RECEIVED, loadPlugins, receivedMail } from "../plugin
 import { touchCheck } from "../schedule/index";
 import { resultLines } from "./application/results";
 import { passMailboxCheck, TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
-import { clearOldReplyText, connectedMailboxes, createOutreach, createReplies, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, sendingPaused } from "./index";
+import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, sendingPaused } from "./index";
 
 process.env.DIREX_AUTH_SECRET = TEST_SECRET;
 
@@ -83,7 +83,7 @@ const outreach = createOutreach({
 const { routes, signIn, createOrg, call, addMember } = testIdentity();
 const routed = routes as unknown as OpenAPIHono;
 routed.route("/", itemRoutes({ items: () => items }));
-routed.route("/", outreachRoutes({ outreach: () => outreach }));
+routed.route("/", outreachRoutes({ outreach: () => outreach, pauses: () => createMailboxPauses({ ledger: () => ledger, now: () => clock.at }) }));
 
 const cookie = await signIn();
 const W = (await createOrg(cookie, "Acme")).workspace.id;
@@ -270,6 +270,44 @@ test("a bounce with only X-Failed-Recipients counts, and the code in its text de
     expect(await suppressed(p.to)).toBeUndefined();
     expect((await signals(p.to))[0]).toMatchObject({ kind: "bounce", status: "recorded", bounce_status: "5.0.0" });
   }
+});
+
+// The two tests above bounced five emails from this Mailbox: the third paused it.
+test("bounces pause their Mailbox until someone who approves resumes it; what it held then goes, and older bounces stop counting", async () => {
+  const pauses = async () => (await post<{ pauses: { credentialId: string; reason: string }[] }>("/outreach/mailbox-pauses", undefined, "GET")).body.pauses;
+  expect(await pauses()).toEqual([expect.objectContaining({ credentialId, reason: "bounces" })]);
+  clock.at = new Date(clock.at.getTime() + 4 * 24 * 60 * 60 * 1000);
+  const { personId } = await addPerson();
+  const held = await approved(personId);
+  await ledger.run(W, held);
+  expect(await stateOf(held)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
+
+  const contributor = (await addMember(cookie, W, "contributor")).cookie;
+  const resumeAs = (who: string) => call(`/api/w/${W}/outreach/mailboxes/${credentialId}/pause`, who, { method: "PUT", body: { paused: false } });
+  expect((await resumeAs(contributor)).status).toBe(403);
+  expect(await pauses()).toHaveLength(1);
+  expect((await resumeAs(cookie)).status).toBe(200);
+  expect(await pauses()).toEqual([]);
+  expect(await stateOf(held)).toMatchObject({ state: "scheduled" });
+  await ledger.run(W, held);
+  expect(await stateOf(held)).toMatchObject({ state: "sent" });
+
+  // One new bounce after the resume, with the five before it no longer counted, doesn't pause it again.
+  const { to } = await stateOf(held).then((a) => ({ to: (a.spec as { to: string[] }).to[0]! }));
+  fake.deliver(notice(to, "5.1.1"));
+  await poll();
+  expect(await pauses()).toEqual([]);
+
+  // A contributor may pause by hand; it records them, and the next email waits.
+  expect((await call(`/api/w/${W}/outreach/mailboxes/${credentialId}/pause`, contributor, { method: "PUT", body: { paused: true } })).status).toBe(200);
+  expect(await pauses()).toEqual([expect.objectContaining({ reason: "person" })]);
+  const next = await approved((await addPerson()).personId);
+  await ledger.run(W, next);
+  expect(await stateOf(next)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
+  expect((await call(`/api/w/${W}/outreach/mailboxes/${crypto.randomUUID()}/pause`, cookie, { method: "PUT", body: { paused: true } })).status).toBe(404);
+  expect((await resumeAs(cookie)).status).toBe(200);
+  await ledger.run(W, next);
+  expect(await stateOf(next)).toMatchObject({ state: "sent" });
 });
 
 test("a pending reply holds a sales follow-up too", async () => {

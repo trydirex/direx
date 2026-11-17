@@ -28,7 +28,8 @@ bun scripts/check-first-run.ts      setup to sign-in, in a temporary copy
 ## Rules
 
 - Read `CONSTRAINTS.md` before writing code, and don't weaken it to make a change pass.
-- Don't commit, branch, push or open a pull request unless a person asks for that action.
+- Don't commit, branch, push or open a pull request unless a person asks for that action, for one task
+  or as a standing instruction.
 - Never edit, rename or delete a merged migration. Add a new one.
 - Each migration file runs in its own transaction. `CREATE INDEX CONCURRENTLY` needs a file whose first
   line is `-- direx:no-transaction`, holding one statement per `--> statement-breakpoint` chunk, with
@@ -56,8 +57,8 @@ These rules apply to every coding agent, whoever runs it. People follow the same
 size in CI.
 
 - A person opens every pull request and answers for it. You can prepare the branch, the commits and
-  the description. Push or open a PR only when that person asks, open it as a draft, and never push
-  to `main`.
+  the description. Push or open a PR only when that person asks, once or as a standing instruction
+  such as "open a PR when a task is done". Open it as a draft, and never push to `main`.
 - From outside the project, work only on an issue labelled `accepted`, and start the description with
   `Closes #N`. Never invent an issue number.
 - Title: one imperative sentence of at most 72 characters, starting with a capital letter, with no

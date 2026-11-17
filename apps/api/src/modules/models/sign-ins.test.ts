@@ -229,9 +229,14 @@ test("two sign-ins don't wait for each other", async () => {
   await chooseAdapter({ deployment: "self_host", workspaceId: ws, actorUserId: user, adapter: "codex", model: null, now });
   let running = 0;
   let most = 0;
+  // Each call waits for the other to arrive, so a slow runner can't make them miss each
+  // other. If sign-ins were serialised, the first gives up after a second and most stays 1.
+  let bothIn!: () => void;
+  const both = new Promise<void>((resolve) => (bothIn = resolve));
   const dispatch: Dispatch = async () => {
     most = Math.max(most, ++running);
-    await Bun.sleep(30);
+    if (running === 2) bothIn();
+    await Promise.race([both, Bun.sleep(1000)]);
     running--;
     return fine();
   };

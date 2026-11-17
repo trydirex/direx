@@ -19,7 +19,7 @@ ALTER TABLE "door_requests" DROP CONSTRAINT "door_requests_outcome_check";--> st
 ALTER TABLE "door_requests" ADD COLUMN "operation" text;--> statement-breakpoint
 ALTER TABLE "door_proposals" ADD CONSTRAINT "door_proposals_token_fk" FOREIGN KEY ("workspace_id","token_id") REFERENCES "public"."external_tokens"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "door_proposals" ADD CONSTRAINT "door_proposals_item_fk" FOREIGN KEY ("workspace_id","item_id") REFERENCES "public"."items"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "door_requests" ADD CONSTRAINT "door_requests_outcome_check" CHECK (outcome in ('ok', 'invalid_input', 'reader_not_allowed', 'rate_limited', 'too_large', 'bad_cursor', 'error', 'kind_not_allowed', 'already_waiting', 'idempotency_conflict', 'proposal_cap', 'refused'));
+ALTER TABLE "door_requests" ADD CONSTRAINT "door_requests_outcome_check" CHECK (outcome in ('ok', 'invalid_input', 'reader_not_allowed', 'rate_limited', 'too_large', 'bad_cursor', 'error', 'kind_not_allowed', 'already_waiting', 'idempotency_conflict', 'proposal_cap', 'refused')) NOT VALID;
 --> statement-breakpoint
 ALTER TABLE door_proposals ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint

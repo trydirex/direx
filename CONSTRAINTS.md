@@ -57,3 +57,4 @@ writing a weaker test.
 | ID | Rule | Path | Reason | Owner | Expires |
 |---|---|---|---|---|---|
 | E1 | gitleaks `generic-api-key` | 3 test files and `scripts/eval.ts`, listed in `.gitleaks.toml` | Fake secrets in tests, and one comment naming an env var | founder | 2027-01-28 |
+| E2 | osv-scanner `GHSA-fc5q-39xc-vjpf` (picomatch ReDoS, CVSS 8.7) | `osv-scanner.toml` | No fixed picomatch release exists. It comes in only through vite, vitest and dependency-cruiser, which match glob patterns from this repo, never user input. Remove once a fixed version lands | founder | 2026-12-31 |

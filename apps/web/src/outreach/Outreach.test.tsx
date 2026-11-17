@@ -8,6 +8,7 @@ import { api } from "../client";
 import { choose, pick, withQueries } from "../testing";
 import { momentWords } from "../campaigns/actions";
 import { Outreach } from "./Outreach";
+import { mailboxes, mailboxesQuery } from "./actions";
 
 const W = "00000000-0000-4000-8000-0000000000aa";
 const P = "00000000-0000-4000-8000-000000000001";
@@ -364,7 +365,6 @@ test("with nobody yet, the empty state leads to Find companies and Add a Person,
 });
 
 test("both mailbox loaders recognize existing Gmail independently of connection availability", async () => {
-  const { mailboxes, mailboxesQuery } = await import("./actions");
   vi.spyOn(api, "GET").mockImplementation(((path: string, options: { params: { query?: { purpose?: string } } }) => {
     if (path.endsWith("/credentials")) return reply(200, { credentials: [{ id: "gmail", name: "Stored Gmail", connection: "google" }, { id: "other", connection: "unrelated" }] });
     return reply(200, { providers: options.params.query?.purpose === "existing" ? [{ connection: "google" }] : [] });

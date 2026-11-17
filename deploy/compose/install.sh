@@ -116,6 +116,11 @@ fi
 say "starting Postgres"
 $DC up -d --wait postgres || fail "Postgres didn't start" "see: $DC logs postgres"
 
+# Finish all old writers before a backfill changes what the new version reads. Leave Direx stopped
+# if migration fails: fix the failure and rerun this installer before restoring service.
+say "stopping Direx before migrations"
+$DC stop direx || fail "Direx didn't stop" "see: $DC logs direx; do not migrate while old writers are running"
+
 say "applying migrations"
 $DC run --rm --no-deps direx bun run db:migrate || fail "migrations didn't apply" "see the error above"
 

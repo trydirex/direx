@@ -885,6 +885,38 @@ test("a template a run wrote carries a later warning into the drafts made from i
   expect(await said(edited)).not.toContain("Written with a lesson that was later withdrawn.");
 });
 
+test("concurrent mailbox saves keep the primary consistent with retained order", async () => {
+  const a = await newCredential(`${crypto.randomUUID()}@acme.test`, "google");
+  const b = await newCredential(`${crypto.randomUUID()}@acme.test`, "google");
+  const id = await ready();
+  const setup = { type: "email", touchClass: "cold", audience: "everyone" } as const;
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [] }));
+  const locker = await appClient();
+  await locker.query("begin");
+  await locker.query("select set_config('app.workspace_id', $1, true)", [W]);
+  await locker.query("select 1 from campaign_steps where campaign_id = $1 and step_key = 'first' for update", [id]);
+  const saves = [
+    campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [a, b] }),
+    campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [b, a] }),
+  ];
+  try {
+    // Hold both saves at the same row lock, then let them finish in database order.
+    let waiting = 0;
+    for (let i = 0; i < 100 && waiting < 2; i++) {
+      waiting = Number((await q("select count(*) as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%campaign_steps%'"))[0].n);
+      if (waiting < 2) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(waiting).toBe(2);
+  } finally {
+    await locker.query("rollback");
+    await locker.end();
+    for (const result of await Promise.all(saves)) ok(result);
+  }
+  const rows = await q("select s.mailbox_credential_id, m.credential_id from campaign_steps s join campaign_step_mailboxes m using (workspace_id, campaign_id, step_key) where s.campaign_id = $1 and s.step_key = 'first' order by m.added_at, m.credential_id", [id]);
+  expect(rows).toHaveLength(2);
+  expect(rows[0].mailbox_credential_id).toBe(rows[0].credential_id);
+});
+
 test("mailbox additions follow retained senders across saves and legacy settings preserve the set", async () => {
   const boxes: string[] = [];
   for (let i = 0; i < 3; i++) boxes.push(await newCredential(`${crypto.randomUUID()}@acme.test`, "google"));

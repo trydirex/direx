@@ -4,7 +4,7 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activityRows, allPeople, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { activityRows, allPeople, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
 import { timeZoneOf } from "../../schedule";
@@ -337,6 +337,9 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
         if (linkRefusal) return { ok: false, reason: linkRefusal } as const;
         const at = now();
         if (setup.dependsOnStepKey) await ensureStep(tx, { workspaceId, campaignId, stepKey: setup.dependsOnStepKey, now: at });
+        // Serialize settings saves before reading the mailbox order, including a step's first setup.
+        await ensureStep(tx, { workspaceId, campaignId, stepKey, now: at });
+        await lockStep(tx, campaignId, stepKey);
         // A Mailbox already on the step keeps its place, so the first of those stays the step's first Mailbox.
         const existing = await stepMailboxes(tx, campaignId, stepKey);
         // The legacy settings form only knows the primary. Resubmitting it keeps the full set;

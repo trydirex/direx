@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // No Workspace route takes an External token (ADR 0032 rule 002): a request with an Authorization
-// header is refused before its session is read, with or without a valid session cookie. Routes are
-// read from the app, so a new one is covered without a new case here.
+// header is refused before its session is read, with or without a valid session cookie. Every other
+// route outside the door refuses `Bearer dxt_`, and only that. Routes are read from the app, so a new
+// one is covered without a new case here.
 import { expect, test } from "vitest";
 import { app } from "../../main";
-import { createTokens } from "../door/index";
+import { createTokens, DOOR_BASE } from "../door/index";
 import { TEST_SECRET, testIdentity } from "./test-auth";
 
 process.env.DIREX_AUTH_SECRET = TEST_SECRET;
@@ -39,4 +40,35 @@ test("any Authorization header is refused on a Workspace route, and the session 
   const res = await app.request(`/api/w/${w}/members`, { headers: { authorization: "Basic dXNlcjpwYXNz", cookie } });
   expect([res.status, await res.json()]).toEqual([401, { error: "token_not_accepted" }]);
   expect((await app.request(`/api/w/${w}/members`, { headers: { cookie } })).status).toBe(200);
+});
+
+const otherRoutes = [...new Set(app.routes.filter((r) => r.method !== "ALL" && !r.path.startsWith("/api/w/:workspaceId")).map((r) => `${r.method} ${r.path}`))];
+
+test("every route outside the Workspace tree refuses a token too, public and signed-in alike", async () => {
+  expect(otherRoutes).toEqual(expect.arrayContaining(["GET /health", "GET /api/me", "POST /api/orgs", "GET /api/server/status", "POST /api/hooks/plugins/:workspaceId/:hookId", "GET /api/unsubscribe/:workspaceId/:token"]));
+  for (const key of otherRoutes) {
+    const [method, path] = key.split(" ") as [string, string];
+    for (const headers of [{ authorization: bearer }, { authorization: bearer, cookie }] as Record<string, string>[]) {
+      const res = await app.request(pathFor(path).replace("*", "session"), { method, headers });
+      expect([res.status, await res.json()], `${key} ${headers.cookie ? "with" : "without"} a session`).toEqual([401, { error: "token_not_accepted" }]);
+    }
+  }
+});
+
+test("the scheme's case doesn't matter, and the door's own tree is left to the door", async () => {
+  const lower = await app.request("/api/me", { headers: { authorization: `bearer ${made.token}`, cookie } });
+  expect([lower.status, await lower.json()]).toEqual([401, { error: "token_not_accepted" }]);
+  const door = await app.request(`${DOOR_BASE}/w/${w}/read_changes`, { method: "POST", headers: { authorization: bearer } });
+  expect(door.status).not.toBe(401);
+});
+
+test("a webhook answers a provider's own Authorization header as it would with none", async () => {
+  const path = `/api/hooks/plugins/${w}/${crypto.randomUUID()}`;
+  const send = (headers: Record<string, string>) => app.request(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: "{}" });
+  const plain = await send({});
+  const withProvider = await send({ authorization: "Bearer provider-signing-secret" });
+  const answer = [plain.status, await plain.text()];
+  expect([withProvider.status, await withProvider.text()]).toEqual(answer);
+  // The webhook's own refusal of an unknown hook, not the token check's.
+  expect(answer[1]).not.toContain("token_not_accepted");
 });

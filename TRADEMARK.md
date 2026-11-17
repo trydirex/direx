@@ -4,7 +4,7 @@ DRAFT. No lawyer has reviewed this text, and the marks are not registered. It be
 together with [CLA.md](CLA.md).
 
 The code in this repository is open source. The name is not part of that. "Direx" and the Direx
-logo belong to KD Partners LTD, and the AGPL and MIT licenses here give you no right to use them beyond
+logo belong to KD Partners Ltd., a British Columbia company, and the AGPL and MIT licenses here give you no right to use them beyond
 what this page says.
 
 ## What you can do without asking
@@ -23,7 +23,7 @@ what this page says.
 
 ## What you can't do
 
-- Use the name or logo in a way that suggests KD Partners LTD or the Direx project made, supports or approves of your
+- Use the name or logo in a way that suggests KD Partners Ltd. or the Direx project made, supports or approves of your
   product.
 - Register a company, domain, trademark or social account with Direx in its name. A plugin's
   product name such as "Acme for Direx" is fine; a domain or a company named after it is not.

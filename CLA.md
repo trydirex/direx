@@ -1,11 +1,10 @@
 # Direx Contributor License Agreement
 
-DRAFT, version 0.2, 2026-11-16. Not in force. No lawyer has reviewed this text. Before any
-contributor signs it, confirm that KD Partners LTD is the company's exact registered name, and add
-its registered address and the law that governs this agreement.
+DRAFT, version 0.3, 2026-11-16. Not in force. No lawyer has reviewed this text.
 
-This agreement is between you and KD Partners LTD, together with its successors and assigns
-("we"). It covers every Contribution you submit to a Direx project, now or later.
+This agreement is between you and KD Partners Ltd., a company incorporated in British Columbia,
+Canada (incorporation number BC1176099), together with its successors and assigns ("we"). It
+covers every Contribution you submit to a Direx project, now or later.
 
 "Contribution" means any work you submit to a Direx project in a pull request or a commit,
 unless you clearly mark it as not a contribution.
@@ -20,6 +19,9 @@ distribute your Contributions and those derivative works.
 This includes our right to license your Contributions and derivative works on any terms,
 including proprietary terms, and to combine them with proprietary software. We may
 transfer this agreement to any successor to the Direx project.
+
+As far as the law allows, you waive any moral rights you have in your Contributions, in our
+favour and in favour of anyone who receives software we distribute.
 
 ## 2. Patent license
 
@@ -57,3 +59,8 @@ the AGPL or GPL.
 As far as the law allows, you provide your Contributions as is, without any warranty or
 condition, and you are not liable for damages related to them under any legal claim.
 Section 4 still applies.
+
+## 6. Governing law
+
+This agreement is governed by the laws of British Columbia and the federal laws of Canada
+that apply there.

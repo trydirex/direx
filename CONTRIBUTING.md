@@ -49,7 +49,7 @@ JavaScript source file starts with an SPDX header; `bun run check:license` check
 without a header, such as migrations, docs and prompts, is under the root [LICENSE](LICENSE).
 
 Before your first PR is merged, you sign the [Contributor License Agreement](CLA.md). Once the
-agreement is in force, a bot will ask you on the PR, and signing takes one click. The CLA lets KD Partners LTD, the company behind Direx, license your contribution on
+agreement is in force, a bot will ask you on the PR, and signing takes one click. The CLA lets KD Partners Ltd., the company behind Direx, license your contribution on
 any terms, including the paid cloud. We use a CLA, not a DCO sign-off.
 
 ## Security problems

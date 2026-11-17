@@ -151,7 +151,7 @@ To send a pull request, read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
 ## License
 
-Copyright (c) 2026 KD Partners LTD.
+Copyright (c) 2026 KD Partners Ltd.
 
 The core is AGPL-3.0-only; see [LICENSE](LICENSE). That covers everything without a license of
 its own: the code, migrations, prompts, eval sets and results, and the docs.

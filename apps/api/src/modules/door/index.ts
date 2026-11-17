@@ -2,7 +2,7 @@
 // The door (ADR 0032): one credential for callers outside a session, and later the readers and
 // proposal intake it opens. This module's only entry point.
 export { registerReaders, type Registration } from "./application/registry";
-export { doorApp, DOOR_BASE } from "./routes";
+export { doorApp, DOOR_BASE, tokenRoutes } from "./routes";
 export { createRequests, DEFAULT_CAPS, type Caps, type DoorOutcome, type Requests } from "./application/requests";
 export { createStops, type Stopped } from "./application/stops";
 export { createTokens, type CreateInput, type CreateRefusal, type Tokens, type TokenState } from "./application/tokens";

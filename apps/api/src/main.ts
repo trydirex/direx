@@ -22,6 +22,7 @@ import { createPluginWebhooks, docsProviders, HOST_VERSION, keyConnections, news
 import { createNewsletter, issueDesk, newsletterRoutes } from "./modules/newsletter/index";
 import { createBriefs, createPageReader, createSeo, pagesWorthABrief, seoAskStarts, seoRoutes } from "./modules/seo/index";
 import { createDocs, createWriteBackGrants, docsRoutes, docsWriteBackRoutes } from "./modules/docs/index";
+import { createTokens, maxDaysFromEnv, tokenRoutes } from "./modules/door/index";
 import { competitorRoutes, createCompetitors, createLabels, createSnapshots } from "./modules/competitors/index";
 import { createPosts, createSocial, socialRoutes } from "./modules/social/index";
 import { addressLabelsFor, createTerms, keptEligibility, prospectingAskStarts, prospectingRoutes, signalsFor } from "./modules/prospecting/index";
@@ -69,7 +70,7 @@ const need = <T>(value: T | undefined, what: string): T => {
  * and these modules need each other, so the worker is read through `worker`, which runServer fills
  * once it has started; until then a route that needs it throws. `ports` are what the worker needs back.
  */
-export function createApp({ worker, deployment, admission: supplied, mediaStore }: { worker: () => Worker | undefined; deployment?: AuthConfig; admission?: Admission; mediaStore?: Store }) {
+export function createApp({ worker, deployment, admission: supplied, mediaStore, maxTokenDays = null }: { worker: () => Worker | undefined; deployment?: AuthConfig; admission?: Admission; mediaStore?: Store; maxTokenDays?: number | null }) {
   // A module app without its own defaultHook inherits this one, so every schema failure is one {error}
   // body, never the raw ZodError.
   const app = new OpenAPIHono({
@@ -431,6 +432,10 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore 
     }),
   );
 
+  // External tokens (ADR 0032 rule 005): made and revoked here, accepted only by the door.
+  const tokens = createTokens({ maxDays: maxTokenDays });
+  app.route("/", tokenRoutes({ tokens: () => tokens }));
+
   app.doc31("/openapi.json", openApiConfig);
   // The built web app, last, so every API route matches first. Unset in development, where Vite serves it.
   if (process.env.DIREX_WEB_DIST) serveWeb(app, process.env.DIREX_WEB_DIST);
@@ -479,9 +484,10 @@ export async function runServer({ admission: supplied, ...extensions }: { discov
   const deployment = await loadDeployment();
   // A malformed value stops the start here, naming the form it should have.
   const s3 = await mediaS3Url();
+  const maxTokenDays = maxDaysFromEnv(process.env.DIREX_EXTERNAL_TOKEN_MAX_DAYS, deploymentFromEnv() === "cloud");
   // Read by the app's routes through a getter, since they and the worker need each other.
   let worker: Worker | undefined;
-  const built = createApp({ worker: () => worker, deployment, admission, mediaStore: s3 ? s3Store(parseS3Url(s3)) : undefined });
+  const built = createApp({ worker: () => worker, deployment, admission, mediaStore: s3 ? s3Store(parseS3Url(s3)) : undefined, maxTokenDays });
   worker = await startWorker({ vault: built.vault(), mailer: deployment.mailer, ...built.ports, ...extensions });
   // ADR 0024: an unclaimed self-hosted server says how to claim it, once.
   if (deploymentFromEnv() === "self_host" && !isDevOrTest(process.env) && !(await admission.status()).claimed) console.warn("No Server admin yet. Run: bun run server-admin --invite");

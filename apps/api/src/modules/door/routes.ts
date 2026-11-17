@@ -4,11 +4,13 @@
 // request needs an External token for the Workspace in its URL. In order: the token, the caps, the
 // reader the token chose, the body's size, then the read; every step after the token leaves one
 // request row. Any failed token check gets the same 401, so the answer says nothing about why.
-import { OpenAPIHono } from "@hono/zod-openapi";
+import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
+import { requirePermission, requireStepUp, type MemberEnv } from "../identity/index";
 import { invoke } from "./application/invoke";
+import { DOOR_KINDS, DOOR_READERS } from "./domain/catalogue";
 import type { Registration } from "./application/registry";
 import { answerMcp } from "./mcp";
 import type { DoorOutcome, Requests } from "./application/requests";
@@ -113,4 +115,68 @@ export function doorApp(d: { tokens: Pick<Tokens, "verify">; requests: Requests;
 
   app.doc31(`${DOOR_BASE}/openapi.json`, { openapi: "3.1.0", info: { title: "Direx door", version: "1" } });
   return app;
+}
+
+// The web app's routes for a Workspace's External tokens (ADR 0032 rule 005), behind the session
+// check identity mounts on every /api/w/ path. Only an Owner or Admin who signed in within 10 minutes
+// creates; any Member lists and revokes, so stopping a token is never harder than starting one.
+const ws = z.object({ workspaceId: z.uuid() });
+const json = <T extends z.ZodType>(schema: T, description: string) => ({ description, content: { "application/json": { schema } } });
+const tokenErrors = {
+  400: json(refusal, "bad_name, bad_lifetime, unknown_reader or unknown_kind"),
+  401: json(refusal, "Not signed in, or an Authorization header"),
+  403: json(refusal, "forbidden or step_up_required"),
+  404: json(refusal, "No such Workspace or token"),
+};
+const ExternalToken = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    hint: z.string(),
+    readers: z.array(z.string()),
+    kinds: z.array(z.string()),
+    createdBy: z.string(),
+    createdAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime(),
+    revokedBy: z.string().nullable(),
+    revokedAt: z.iso.datetime().nullable(),
+    lastUsedAt: z.iso.datetime().nullable(),
+    state: z.enum(["live", "expired", "revoked", "stopped"]),
+  })
+  .openapi("ExternalToken");
+// What the create form offers: the lifetimes this server allows and the closed lists a token picks from.
+const TokenChoices = z.object({ lifetimes: z.array(z.number()), readers: z.array(z.object({ name: z.string(), personal: z.boolean() })), kinds: z.array(z.string()) }).openapi("ExternalTokenChoices");
+const CreateBody = z.strictObject({ name: z.string().max(200), days: z.number().int(), readers: z.array(z.string()).max(20), kinds: z.array(z.string()).max(20) });
+
+const listTokensRoute = createRoute({ method: "get", path: "/api/w/{workspaceId}/external-tokens", request: { params: ws }, responses: { 200: json(z.object({ tokens: z.array(ExternalToken), choices: TokenChoices }), "Every token in this Workspace, never the token itself"), ...tokenErrors } });
+const createTokenRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/external-tokens",
+  middleware: [requirePermission("workspace.settings"), requireStepUp()],
+  request: { params: ws, body: { required: true, content: { "application/json": { schema: CreateBody } } } },
+  responses: { 200: json(z.object({ id: z.uuid(), token: z.string(), expiresAt: z.iso.datetime() }), "The new token, shown this once"), ...tokenErrors },
+});
+const revokeTokenRoute = createRoute({ method: "delete", path: "/api/w/{workspaceId}/external-tokens/{tokenId}", request: { params: ws.extend({ tokenId: z.uuid() }) }, responses: { 200: json(z.object({ ok: z.literal(true) }), "Revoked, or already revoked"), ...tokenErrors } });
+
+const iso = (d: Date | null) => d && d.toISOString();
+
+export function tokenRoutes({ tokens }: { tokens: () => Tokens }) {
+  const app = new OpenAPIHono<MemberEnv>();
+  return app
+    .openapi(listTokensRoute, async (c) => {
+      const list = await tokens().list(c.get("member").workspaceId);
+      const choices = { lifetimes: tokens().lifetimes(), readers: Object.entries(DOOR_READERS).map(([name, r]) => ({ name, personal: r.personal })), kinds: [...DOOR_KINDS] };
+      return c.json({ tokens: list.map((t) => ({ ...t, createdAt: t.createdAt.toISOString(), expiresAt: t.expiresAt.toISOString(), revokedAt: iso(t.revokedAt), lastUsedAt: iso(t.lastUsedAt) })), choices }, 200);
+    })
+    .openapi(createTokenRoute, async (c) => {
+      const m = c.get("member");
+      const r = await tokens().create(m.workspaceId, c.req.valid("json"), m.userId);
+      if (!r.ok) return c.json({ error: r.reason }, 400);
+      return c.json({ id: r.id, token: r.token, expiresAt: r.expiresAt.toISOString() }, 200);
+    })
+    .openapi(revokeTokenRoute, async (c) => {
+      const m = c.get("member");
+      if (!(await tokens().revoke(m.workspaceId, c.req.valid("param").tokenId, m.userId))) return c.json({ error: "not_found" }, 404);
+      return c.json({ ok: true as const }, 200);
+    });
 }

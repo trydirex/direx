@@ -1,6 +1,6 @@
 # Direx Contributor License Agreement
 
-DRAFT, version 0.3, 2026-11-16. Not in force. No lawyer has reviewed this text.
+DRAFT, version 0.4, 2026-11-16. Not in force. No lawyer has reviewed this text.
 
 This agreement is between you and KD Partners Ltd., a company incorporated in British Columbia,
 Canada (incorporation number BC1176099), together with its successors and assigns ("we"). It
@@ -51,8 +51,9 @@ true of each Contribution:
 
 If your employer has rights in your Contribution, you confirm that it has allowed you to
 submit it under this agreement. You remain responsible for AI-generated code you submit,
-as if you had written it yourself. You will not submit code copied from a project under
-the AGPL or GPL.
+as if you had written it yourself. A commit in a pull request you open that an AI tool you
+directed authored or co-authored is your Contribution, and your agreement covers it. You will
+not submit code copied from a project under the AGPL or GPL.
 
 ## 5. No warranty
 

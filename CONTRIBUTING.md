@@ -20,9 +20,17 @@ are welcome, and a pull request will wait.
 
 ## Your pull request
 
-- Keep it under 500 changed lines and 10 files. Split bigger work into several PRs.
-- Run `bun run check:task` and make sure it passes before you open the PR.
-- Fill in the PR template, including the link to the accepted issue.
+- Title it with one imperative sentence of at most 72 characters, with no `feat:`-style prefix and
+  no full stop. PRs are squash-merged, so the title and description become the commit.
+- Keep it under 500 changed lines and 10 files, not counting `bun.lock` and
+  `packages/db/migrations/meta/`. Split bigger work into several PRs.
+- Run `bun run check:task` and make sure it passes before you open the PR. It needs the database
+  from `bun run setup`. In a fork, compare against this repository:
+  `git remote add upstream https://github.com/trydirex/direx.git`, `git fetch upstream`, then
+  `DIREX_BASE=upstream/main bun run check:task`.
+- Fill in the PR template: the link to the accepted issue, what changes, and under Verification
+  the commands you ran and their results. CI checks the title, the template, the issue and the
+  size on every PR.
 - The maintainer replies within 14 days. If you hear nothing by then, comment on the PR.
 
 Changes to approvals, the action ledger, tenancy, credentials, migrations, `CONSTRAINTS.md` and
@@ -32,6 +40,15 @@ the checks in `scripts/` always need the maintainer's review. Those PRs take lon
 
 AI-written code is welcome, and you don't have to say you used it. You do have to understand it:
 the maintainer may ask you to explain any line, and "the model wrote it" isn't an answer.
+
+- A person opens the PR and answers for it. A PR that an agent opened and nobody answers for is
+  closed.
+- Don't add a `Co-authored-by:` trailer for an AI tool: the CLA check can read it as a person who
+  hasn't signed. Your own signature covers commits that an AI tool you directed wrote (CLA
+  section 4). To say a tool helped, use the template's "AI use" section or an
+  `Assisted-by: <tool>` trailer.
+- Coding agents follow the "Pull requests" section of [AGENTS.md](AGENTS.md), which has these
+  same rules.
 
 ## Where code comes from
 

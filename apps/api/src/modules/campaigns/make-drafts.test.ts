@@ -938,6 +938,11 @@ test("mailbox additions follow retained senders across saves and legacy settings
   expect(await assigned()).toEqual([added]);
   ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: null }));
   expect(await assigned()).toEqual([]);
+  // [A, B] then [C, B]: A goes, B keeps its place and becomes the primary, C follows it.
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [primary, second] }));
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [added, second] }));
+  expect(await assigned()).toEqual([second, added]);
+  expect((await q("select mailbox_credential_id from campaign_steps where campaign_id = $1 and step_key = 'first'", [id]))[0].mailbox_credential_id).toBe(second);
 });
 
 test("a step shares its drafts across its Mailboxes, a Person's next step keeps their sender, and a save keeps each draft's", async () => {

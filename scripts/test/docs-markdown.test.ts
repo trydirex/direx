@@ -60,9 +60,11 @@ export function problems(text: string): string[] {
       line = line.slice(listIndents.at(-1) ?? 0);
       // One line can open several list items, as in "- - item".
       let marker: RegExpExecArray | null;
-      while (!fence && !/^ {0,3}(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$/.test(line) && (marker = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| (?= +\S)| *$)/.exec(line))) {
+      while (!fence && !/^ {0,3}(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$/.test(line) && (marker = /^( {0,3}(?:[-+*]|\d{1,9}[.)]))(?: {1,4}(?=\S)| (?= +\S)| *$)/.exec(line))) {
         checkParagraph();
-        listIndents.push((listIndents.at(-1) ?? 0) + marker[0].length);
+        // An empty item requires one column of padding, regardless of trailing spaces.
+        const contentIndent = marker[0].length === line.length ? marker[1]!.length + 1 : marker[0].length;
+        listIndents.push((listIndents.at(-1) ?? 0) + contentIndent);
         line = line.slice(marker[0].length);
       }
     }
@@ -135,6 +137,9 @@ test("list items hold their own fences, tabs and nested markers", () => {
   expect(problems("# Title\n\n- ```\n  # not a title\n  ```\n")).toEqual([]);
   expect(problems("# Title\n\n-\t# Second\n")).toEqual(["2 H1 headings, not 1"]);
   expect(problems("# Title\n\n- - ```\n    <Tabs />\n    ```\n")).toEqual([]);
+  expect(problems("# Title\n\n- -\n   ```\n  # Example\n")).toEqual([]);
+  expect(problems("# Title\n\n- -    \n   ```\n  # Example\n")).toEqual([]);
+  expect(problems("# Title\n\n- 10.\n     ```\n  # Example\n")).toEqual([]);
 });
 
 test("indented code is literal, while paragraph continuations remain prose", () => {

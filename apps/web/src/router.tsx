@@ -117,7 +117,7 @@ const signedInRoute = createRoute({
         </Suspense>
       </MeContext.Provider>
     ) : (
-      <SignIn title={invite ? "Sign in to accept your invite" : claim ? "Sign in to claim this server" : undefined} callbackURL={here()} inviteToken={inviteToken} />
+      <SignIn title={invite ? "Sign in to accept your invite" : claim ? "Sign in to claim this server" : undefined} callbackURL={here()} inviteToken={inviteToken} offerSignUp />
     );
   },
 });

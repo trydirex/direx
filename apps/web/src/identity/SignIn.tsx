@@ -33,6 +33,7 @@ export function SignIn({
   callbackURL,
   initialMode = "sign_in",
   inviteToken,
+  offerSignUp = false,
 }: {
   title?: string;
   note?: string;
@@ -40,6 +41,8 @@ export function SignIn({
   initialMode?: Mode;
   /** From an invite or bootstrap link: held by the server so any way of signing up carries it. */
   inviteToken?: string;
+  /** Only the signed-out pages offer a new sign-up; a step-up prompt is for someone already signed in. */
+  offerSignUp?: boolean;
 }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [email, setEmail] = useState("");
@@ -133,9 +136,11 @@ export function SignIn({
         <div className="flex flex-wrap gap-2">
           {mode === "sign_in" ? (
             <>
-              <NativeButton type="button" variant="ghost" size="sm" onClick={go("sign_up")}>
-                New here? Sign up
-              </NativeButton>
+              {offerSignUp && (
+                <NativeButton type="button" variant="ghost" size="sm" onClick={go("sign_up")}>
+                  New here? Sign up
+                </NativeButton>
+              )}
               <NativeButton type="button" variant="ghost" size="sm" onClick={go("forgot")}>
                 Forgot your password?
               </NativeButton>
@@ -175,7 +180,7 @@ export function ResetPassword({ token }: { token: string | null }) {
   const [pending, setPending] = useState(false);
   const [again, setAgain] = useState(false);
 
-  if (!token && again) return <SignIn callbackURL="/" initialMode="forgot" />;
+  if (!token && again) return <SignIn callbackURL="/" initialMode="forgot" offerSignUp />;
   if (!token)
     return (
       <Narrow>

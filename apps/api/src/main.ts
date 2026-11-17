@@ -147,6 +147,7 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore 
       mailboxes: {
         // Connecting Gmail uses the Google sign-in client, so without one it isn't offered.
         providers: () => mailboxProviders().filter((p) => p.deployments.includes(deploymentFromEnv()) && (p.connect !== "oauth" || !!identity.config().google)),
+        eligibleProviders: () => mailboxProviders().filter((p) => p.deployments.includes(deploymentFromEnv())),
         check: (workspaceId, connection, credential) => need(worker()?.checkMailbox, "Mailbox check")(workspaceId, connection, credential),
         probe: (workspaceId, credentialId, member, wordingVersion) => headerChecks.start(workspaceId, credentialId, { approverId: approverFromMember(member), userId: member.userId, may: (p) => can(member.role, p as Permission), wordingVersion }),
         probeWordingVersion: PROBE_WORDING_VERSION,

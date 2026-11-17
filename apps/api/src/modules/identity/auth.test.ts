@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Sign-in (I1 to I3), the SMTP adapter and the startup refusal.
 import { expect, test } from "vitest";
-import { authConfigFromEnv, smtpMailer } from "./index";
+import { authConfigFromEnv, createIdentity, logMailer, smtpMailer } from "./index";
 import { trustedProxiesFromEnv } from "./adapters/auth";
-import { testIdentity } from "./test-auth";
+import { TEST_SECRET, testIdentity } from "./test-auth";
 
 const { routes, auth, signIn } = testIdentity();
 
@@ -19,6 +19,14 @@ test("I1: a magic link signs a new email in, and the cookie works on /api/me", a
 
 test("I1: without a cookie, /api/me is 401", async () => {
   expect((await routes.request("/api/me")).status).toBe(401);
+});
+
+test("I2: the sign-in page learns which providers this server is set up for, without signing in", async () => {
+  const res = await routes.request("/api/sign-in-options");
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ google: true, microsoft: true });
+  const bare = createIdentity(() => ({ baseURL: "http://localhost:3000", secret: TEST_SECRET, devMode: true, mailer: logMailer([]) }));
+  expect(await (await bare.routes.request("/api/sign-in-options")).json()).toEqual({ google: false, microsoft: false });
 });
 
 test.each([

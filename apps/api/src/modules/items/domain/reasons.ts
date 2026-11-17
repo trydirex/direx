@@ -18,6 +18,7 @@ const LABELS: Record<string, string> = {
   provider_refused_permanently: "provider refused it for good",
   touch_undeclared: "doesn't say whom it reaches",
   workspace_paused: "sending is paused",
+  mailbox_paused: "this email account is paused",
   workspace_deleted: "the Workspace was deleted",
   suppressed: "this Person opted out",
   hard_bounced: "this address doesn't exist",

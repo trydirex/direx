@@ -50,6 +50,7 @@ const FIX: Record<string, string> = {
   account_budget_reached: "Move it to tomorrow",
   campaign_paused: "Resume the Campaign",
   mailbox_unchecked: "Check the Mailbox",
+  mailbox_paused: "See why it's paused",
   workspace_paused: "See why it's held",
   snapshot_changed: "Send back for approval",
   rule_needs_review: "Send back for approval",

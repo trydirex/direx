@@ -10,8 +10,11 @@ import { AddPassword, ResetPassword, SignIn } from "./SignIn";
 
 let fetchSpy: ReturnType<typeof vi.spyOn>;
 let assign: ReturnType<typeof vi.fn>;
-/** Answers every fetch with `status` and `body`. */
-const answer = (status: number, body: unknown = {}) => fetchSpy.mockResolvedValue(new Response(JSON.stringify(body), { status }));
+/** Answers every fetch with `status` and `body`. The card asks which providers are set up as it opens; that gets `options`, or an error, which keeps both buttons. */
+const answer = (status: number, body: unknown = {}, options?: unknown) => {
+  vi.spyOn(api, "GET").mockResolvedValue((options ? { data: options } : { error: {} }) as never);
+  return fetchSpy.mockImplementation(() => Promise.resolve(new Response(JSON.stringify(body), { status })));
+};
 const sent = () => {
   const [path, init] = fetchSpy.mock.lastCall as [string, RequestInit];
   return { path, body: JSON.parse(init.body as string) as Record<string, unknown> };
@@ -33,13 +36,33 @@ async function fill(email: string, password?: string) {
 }
 
 test("the sign-in page links to this server's source code", () => {
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   expect(screen.getByRole("link", { name: "Get the source code" }).getAttribute("href")).toBe("/api/source");
+});
+
+test("the sign-in page drops the Google and Microsoft buttons this server isn't set up for", async () => {
+  answer(200, {}, { google: false, microsoft: true });
+  render(withQueries(<SignIn callbackURL="/" />));
+  await vi.waitFor(() => expect(screen.queryByRole("button", { name: "Continue with Google" })).toBeNull());
+  expect(screen.getByRole("button", { name: "Continue with Microsoft" })).toBeTruthy();
+  cleanup();
+
+  answer(200, {}, { google: false, microsoft: false });
+  render(withQueries(<SignIn callbackURL="/" />));
+  await vi.waitFor(() => expect(screen.queryByText("or use email")).toBeNull());
+  expect(screen.queryByRole("button", { name: /^Continue with/ })).toBeNull();
+  cleanup();
+
+  // A server that can't say keeps both, so a server set up for them never loses them.
+  answer(500);
+  render(withQueries(<SignIn callbackURL="/" />));
+  await vi.waitFor(() => expect(api.GET).toHaveBeenCalledWith("/api/sign-in-options"));
+  expect(screen.getByRole("button", { name: "Continue with Google" })).toBeTruthy();
 });
 
 test("signing in with a password posts it and goes to the callback", async () => {
   answer(200);
-  render(<SignIn callbackURL="/w/1" />);
+  render(withQueries(<SignIn callbackURL="/w/1" />));
   await fill("sam@example.com", "correct horse battery");
   await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
   await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/w/1"));
@@ -48,7 +71,7 @@ test("signing in with a password posts it and goes to the callback", async () =>
 
 test("a wrong password says so and stays on the card", async () => {
   answer(401);
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   await fill("sam@example.com", "nope");
   await userEvent.click(screen.getByRole("button", { name: "Sign in" }));
   expect((await screen.findByRole("alert")).textContent).toContain("That email and password don't match.");
@@ -57,7 +80,7 @@ test("a wrong password says so and stays on the card", async () => {
 
 test("signing up asks to confirm the address when no session comes back", async () => {
   answer(200, { token: null });
-  render(<SignIn callbackURL="/" offerSignUp />);
+  render(withQueries(<SignIn callbackURL="/" offerSignUp />));
   await userEvent.click(screen.getByRole("button", { name: "New here? Sign up" }));
   expect(screen.getByRole("heading", { name: "Sign up for Direx" })).toBeTruthy();
   await fill("new@example.com", "twelve chars ok");
@@ -68,7 +91,7 @@ test("signing up asks to confirm the address when no session comes back", async 
 
 test("signing up with a session goes straight to the callback", async () => {
   answer(200, { token: "t" });
-  render(<SignIn callbackURL="/next" initialMode="sign_up" />);
+  render(withQueries(<SignIn callbackURL="/next" initialMode="sign_up" />));
   await fill("new@example.com", "twelve chars ok");
   await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
   await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/next"));
@@ -77,14 +100,14 @@ test("signing up with a session goes straight to the callback", async () => {
 test("an invite link's token is handed to the server before anyone signs in", async () => {
   answer(200, { ok: true });
   const token = "a".repeat(64);
-  render(<SignIn callbackURL="/invite/w/t" inviteToken={token} />);
+  render(withQueries(<SignIn callbackURL="/invite/w/t" inviteToken={token} />));
   await vi.waitFor(() => expect(sent()).toEqual({ path: "/api/admission/token", body: { token } }));
 });
 
 test("a refused password sign-up shows the server's reason", async () => {
   const message = "This server takes invited people only. Ask whoever runs it for an invite.";
   answer(400, { code: "SIGNUP_REFUSED", message });
-  render(<SignIn callbackURL="/" initialMode="sign_up" />);
+  render(withQueries(<SignIn callbackURL="/" initialMode="sign_up" />));
   await fill("new@example.com", "twelve chars ok");
   await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
   expect(await screen.findByText(message)).toBeTruthy();
@@ -92,26 +115,26 @@ test("a refused password sign-up shows the server's reason", async () => {
 
 test("a refusal sent back by a magic link or Google shows on the card, in fixed words", () => {
   vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, search: "?error=SIGNUP_UNVERIFIED&error_description=Anything", assign } as Location);
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   expect(screen.getByText("Your sign-in provider didn't confirm this email address. Sign up with your email address instead.")).toBeTruthy();
   expect(screen.queryByText("Anything")).toBeNull();
 });
 
 test("a bad, expired or used email link says so and asks for a new one", () => {
   vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, search: "?error=INVALID_TOKEN", assign } as Location);
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   expect(screen.getByText("That sign-in link has expired or was already used. Ask for a new one below.")).toBeTruthy();
 });
 
 test("an error code Direx doesn't know shows nothing", () => {
   vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, search: "?error=SOMETHING_ELSE", assign } as Location);
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
 test("Forgot your password sends a reset link, and Back to sign in returns", async () => {
   answer(200);
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   await userEvent.click(screen.getByRole("button", { name: "Forgot your password?" }));
   expect(screen.getByRole("heading", { name: "Reset your password" })).toBeTruthy();
   expect(screen.queryByLabelText(/^Password/)).toBeNull();
@@ -125,7 +148,7 @@ test("Forgot your password sends a reset link, and Back to sign in returns", asy
 
 test("the email link needs an address first, then sends one", async () => {
   answer(200);
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
   expect((await screen.findByRole("alert")).textContent).toContain("Enter your email address first.");
   expect(fetchSpy).not.toHaveBeenCalled();
@@ -137,7 +160,7 @@ test("the email link needs an address first, then sends one", async () => {
 
 test("Google goes to the provider's page; Microsoft not set up says so", async () => {
   answer(200, { url: "https://accounts.google.com/o" });
-  render(<SignIn callbackURL="/" />);
+  render(withQueries(<SignIn callbackURL="/" />));
   await userEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
   await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("https://accounts.google.com/o"));
   expect(sent().body).toEqual({ provider: "google", callbackURL: "/", errorCallbackURL: "/" });
@@ -147,13 +170,13 @@ test("Google goes to the provider's page; Microsoft not set up says so", async (
 });
 
 test("ResetPassword without a token says the link is spent", () => {
-  render(<ResetPassword token={null} />);
+  render(withQueries(<ResetPassword token={null} />));
   expect(screen.getByText(/This reset link has expired or was already used/)).toBeTruthy();
 });
 
 test("an expired reset link offers a new one, and a sent screen goes back to the form", async () => {
   answer(200);
-  render(<ResetPassword token={null} />);
+  render(withQueries(<ResetPassword token={null} />));
   await userEvent.click(screen.getByRole("button", { name: "Send me a new link" }));
   expect(screen.getByRole("heading", { name: "Reset your password" })).toBeTruthy();
   await fill("sam@example.com");
@@ -164,7 +187,7 @@ test("an expired reset link offers a new one, and a sent screen goes back to the
 
 test("ResetPassword changes the password, or says why not", async () => {
   answer(400);
-  render(<ResetPassword token="tok" />);
+  render(withQueries(<ResetPassword token="tok" />));
   await userEvent.type(screen.getByLabelText(/^New password/), "a brand new password");
   await userEvent.click(screen.getByRole("button", { name: "Change password" }));
   expect((await screen.findByRole("alert")).textContent).toContain("If the link has expired, ask for a new one.");

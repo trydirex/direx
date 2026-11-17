@@ -108,9 +108,13 @@ export function verifyForWorkspace(plugins: { query: VerifyQuery }, vault: Pick<
 const FOLLOW_UP_CARDS = "next_steps.follow_up_cards";
 const SHIPPED_DEFINITIONS = { ...planDefinitions, ...campaignDefinitions, ...prospectingDefinitions, ...seoDefinitions, ...clipDefinitions, ...competitorDefinitions, [askAgent.id]: askAgent };
 
-let shipped: ReturnType<typeof shippedEvals> | undefined;
-/** What the model picker asks of the eval results, for the definitions this build runs. */
-export const modelEvals = () => (shipped ??= shippedEvals(Object.values(SHIPPED_DEFINITIONS), routesFor(deploymentFromEnv())));
+/** Runs `make` on the first call and returns that result after, so the module holds no `let` (ADR 0027 rule 001). */
+const once = <T>(make: () => T): (() => T) => {
+  let made: { value: T } | undefined;
+  return () => (made ??= { value: make() }).value;
+};
+/** What the model picker asks of the eval results, for the definitions this build runs. Read once: they ship with the code. */
+export const modelEvals = once(() => shippedEvals(Object.values(SHIPPED_DEFINITIONS), routesFor(deploymentFromEnv())));
 
 /** The server modules the worker's handlers reach. Each is required, so no handler skips its work for want of one (ADR 0027 rule 003). */
 export type FeaturePorts = { exports: () => Pick<Exports, "work">; socialSweep: (credentials: { workspaceId: string; credentialId: string; connection: string }[]) => Promise<void>; outreach: () => Outreach; posts: () => PostPort; campaigns: () => Pick<Campaigns, "addPeopleRows" | "recipientNotes" | "editOf" | "warnTemplates" | "list" | "campaign" | "stepsWithoutDrafts" | "offerStalls" | "followAnchors" | "planApplied" | "settleAll" | "redraftPerson" | "rewrite">; seoBriefs: () => Pick<Briefs, "weekly">; competitorsWeekly: () => Promise<void>; media: () => Pick<Media, "sweep" | "link" | "ref" | "read" | "upload">; planMeasures: (workspaceId: string, planId: string) => Promise<Measure[] | null>; clipStepDone: (workspaceId: string, runId: string) => Promise<void>; nextSteps: (boss: Parameters<NextSteps["work"]>[0]) => NextSteps; askStarts: (boss: Parameters<NextSteps["work"]>[0]) => () => readonly AskStart[]; startSources: StartSources };
@@ -158,9 +162,7 @@ export async function compose(opts: WorkerOptions) {
           // Only a test hands in its own plugins, such as Gmail pointed at a fake.
           sources: (opts.pluginSources ?? firstPartyPlugins()).map((plugin) => ({ mode: "in_process" as const, plugin })),
           credentials: opts.vault.credentials,
-          onCredentialRejected: async (workspaceId, credentialId) => {
-            await opts.vault?.markNeedsReauth(workspaceId, credentialId);
-          },
+          onCredentialRejected: opts.vault.markNeedsReauth,
           confinement: installs ? "external" : "none",
           ...(installs && { spawn: confinedSpawn((line) => console.log(line)), installed: { list: listInstalled, storeDir: installs, gate: installGate } }),
           mediaLinks: (workspaceId: string, ref: MediaRef) => opts.media().link(workspaceId, ref),

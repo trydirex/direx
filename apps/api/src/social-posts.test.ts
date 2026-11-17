@@ -132,6 +132,15 @@ test("a post step needs no touch class, and anything else does", async () => {
   expect(await campaigns.setupStep(W, id, "launch", { type: "email", touchClass: null, mailboxCredentialId: null, audience: "everyone" })).toEqual({ ok: false, reason: "touch_class_mismatch" });
 });
 
+test("a step's posts aren't drafted for a time already gone, as a Calendar post isn't", async () => {
+  beforeWhen();
+  const id = await postStep();
+  const targets = [{ ...(await account()), text: "Too late" }];
+  expect(await campaigns.draftPosts(W, id, "launch", { plannedAt: new Date("2026-11-01T09:00:00Z"), targets }, owner)).toEqual({ ok: false, reason: "slot_in_past" });
+  expect(await campaigns.draftPosts(W, id, "launch", { plannedAt: clock.at, targets }, owner)).toEqual({ ok: false, reason: "slot_in_past" });
+  expect(await q("select count(*)::int as n from social_posts where campaign_id = $1", [id])).toEqual([{ n: 0 }]);
+});
+
 test("one text on three accounts of different networks makes one Action each in one group, each approved on its own", async () => {
   beforeWhen();
   const id = await postStep();

@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/Button";
 import { toast } from "@/components/toast";
-import { firstSlot, isoDay } from "./actions";
+import { firstSlotValue, isoDay } from "./actions";
 import { moveEffect, moveLaunch, say as sayCampaign, type AnchorMove, type Listed } from "../campaigns/actions";
 import { campaignStatus } from "../campaigns/Overview";
 import { Input, Select, Textarea } from "../components/Input";
@@ -86,10 +86,7 @@ export function AddPost(p: { workspaceId: string; day: Date; onDone: () => void;
   const [key, setKey] = useState("");
   const [text, setText] = useState("");
   // 9:00 on that day, or the next whole hour when today is past it, so the default never starts out refused.
-  const [when, setWhen] = useState(() => {
-    const at = firstSlot(p.day);
-    return `${isoDay(at)}T${String(at.getHours()).padStart(2, "0")}:00`;
-  });
+  const [when, setWhen] = useState(() => firstSlotValue(p.day));
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const chosen = options.find((o) => o.key === key) ?? options[0];

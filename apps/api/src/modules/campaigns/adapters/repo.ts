@@ -541,7 +541,10 @@ export async function stepMailboxes(tx: CampaignsTx, campaignId: string, stepKey
 export async function saveStepMailboxes(tx: CampaignsTx, a: { workspaceId: string; campaignId: string; stepKey: string; ids: readonly string[]; now: Date }) {
   const mine = and(eq(campaignStepMailboxes.campaignId, a.campaignId), eq(campaignStepMailboxes.stepKey, a.stepKey));
   await tx.delete(campaignStepMailboxes).where(a.ids.length ? and(mine, notInArray(campaignStepMailboxes.credentialId, [...a.ids])) : mine);
-  if (a.ids.length) await tx.insert(campaignStepMailboxes).values(a.ids.map((credentialId, i) => ({ workspaceId: a.workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, credentialId, addedAt: new Date(a.now.getTime() + i) }))).onConflictDoNothing();
+  const retained = await tx.select({ addedAt: campaignStepMailboxes.addedAt }).from(campaignStepMailboxes).where(mine);
+  // Append after retained rows even when saves share a clock tick or the clock moves backwards.
+  const start = Math.max(a.now.getTime(), ...retained.map((r) => r.addedAt.getTime() + 1));
+  if (a.ids.length) await tx.insert(campaignStepMailboxes).values(a.ids.map((credentialId, i) => ({ workspaceId: a.workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, credentialId, addedAt: new Date(start + i) }))).onConflictDoNothing();
 }
 
 /** An SEO brief step's page and search, and the Brief run Make brief just started. */

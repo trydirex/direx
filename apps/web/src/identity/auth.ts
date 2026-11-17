@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Better Auth's own endpoints are not in the OpenAPI document, so these calls are written by
 // hand. `callbackURL` is a path on this site; sign-in returns there.
+import { queryOptions } from "@tanstack/react-query";
+import { api } from "@/client";
 
 const post = (path: string, body: unknown) =>
   fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -24,15 +26,18 @@ export async function holdInviteToken(token: string): Promise<void> {
   await post("/api/admission/token", { token }).catch(() => undefined);
 }
 
-export type SignInOptions = { google: boolean; microsoft: boolean };
+type SignInOptions = { google: boolean; microsoft: boolean };
 
-/** Which of Google and Microsoft this server is set up for, or null when the server can't say. */
-export async function signInOptions(): Promise<SignInOptions | null> {
-  const res = await fetch("/api/sign-in-options").catch(() => null);
-  if (!res?.ok) return null;
-  const body = (await res.json().catch(() => null)) as Partial<SignInOptions> | null;
-  return typeof body?.google === "boolean" && typeof body.microsoft === "boolean" ? { google: body.google, microsoft: body.microsoft } : null;
-}
+/**
+ * Which of Google and Microsoft this server is set up for, or null when the server can't say. Fetched
+ * with who is signed in (index.html preloads it), so the sign-in page opens with the right buttons.
+ */
+export const signInOptionsQuery = queryOptions({
+  queryKey: ["sign-in-options"],
+  queryFn: async (): Promise<SignInOptions | null> => (await api.GET("/api/sign-in-options").catch(() => undefined))?.data ?? null,
+  staleTime: Infinity,
+  meta: { sameForAnyone: true },
+});
 
 export async function signInWithPassword(email: string, password: string, callbackURL: string): Promise<void> {
   const res = await post("/api/auth/sign-in/email", { email, password, callbackURL });

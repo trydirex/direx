@@ -2,11 +2,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Field, Notice, Page } from "../components/layout";
 import { NativeButton, NativeInput } from "@/components/native";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ME } from "@/api/query";
 import { addPassword } from "./actions";
 import { message } from "./messages";
-import { holdInviteToken, resetPassword, sendPasswordReset, sendSignInLink, signInOptions, signInWith, signInWithPassword, signUpWithPassword, signupRefusal, type SignInOptions } from "./auth";
+import { holdInviteToken, resetPassword, sendPasswordReset, sendSignInLink, signInOptionsQuery, signInWith, signInWithPassword, signUpWithPassword, signupRefusal } from "./auth";
 
 type Mode = "sign_in" | "sign_up" | "forgot";
 
@@ -50,10 +50,7 @@ export function SignIn({
     if (inviteToken) void holdInviteToken(inviteToken);
   }, [inviteToken]);
   // Both buttons show until the server says which it is set up for, so a server that has them never loses them.
-  const [providers, setProviders] = useState<SignInOptions>({ google: true, microsoft: true });
-  useEffect(() => {
-    void signInOptions().then((o) => o && setProviders(o));
-  }, []);
+  const providers = useQuery(signInOptionsQuery).data ?? { google: true, microsoft: true };
   const [pending, setPending] = useState<"submit" | "link">();
   const fail = (e: Error) => setError(e.message);
   const signedIn = () => location.assign(callbackURL);

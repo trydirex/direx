@@ -40,6 +40,8 @@ export function problems(text: string): string[] {
   let fence = "";
   let fenceDepth = 0;
   let h1s = 0;
+  // Inside an HTML block, lines are raw HTML until a blank line: no headings, no Setext underlines.
+  let html = false;
   let paragraph: string[] = [];
   const listIndents: number[] = [];
   const checkParagraph = () => {
@@ -82,10 +84,16 @@ export function problems(text: string): string[] {
     }
     if (!line.trim()) {
       checkParagraph();
+      html = false;
       continue;
     }
     // Indented code cannot interrupt a paragraph; indented paragraph continuations are prose.
     if (/^( {4}| {0,3}\t)/.test(line) && paragraph.length === 0) continue;
+    if (paragraph.length === 0 && /^ {0,3}(<\/?[A-Za-z][A-Za-z0-9-]*(\s|\/?>|$)|<!--)/.test(line)) html = true;
+    if (html) {
+      paragraph.push(line);
+      continue;
+    }
     const atx = /^ {0,3}#{1,6}(\s|$)/.test(line);
     const setext = paragraph.length > 0 && /^ {0,3}(=+|-+)[ \t\r]*$/.test(line);
     if (/^ {0,3}#(\s|$)/.test(line) || (setext && line.trim().startsWith("="))) h1s++;
@@ -156,6 +164,14 @@ test("Setext underlines require paragraph text", () => {
   expect(problems("# Title\n\n---\n===\n")).toEqual([]);
   expect(problems("# Title\n\nSection\n---\n===\n")).toEqual([]);
   expect(problems("# Title\n\n* * *\n===\n")).toEqual([]);
+  expect(problems("# Title\n\n<div>\n===\n")).toEqual([]);
+  expect(problems("# Title\n\n<div>\n# Raw HTML\n</div>\n")).toEqual([]);
+  expect(problems("# Title\n\n<https://trydirex.com>\n===\n")).toEqual(["2 H1 headings, not 1"]);
+  expect(problems("# Title\n\n<div>\n\nTwo\n===\n")).toEqual(["2 H1 headings, not 1"]);
+});
+
+test("a fence closes only on a run of its own character", () => {
+  expect(problems("# Title\n~~~\n~~~`\n# Example\n~~~\n")).toEqual([]);
 });
 
 test("JSX checks exclude complete multiline code spans within a paragraph", () => {

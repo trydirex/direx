@@ -13,14 +13,14 @@ import { createFacts, describeFactChange, factKinds, factVersion } from "./modul
 import type { Media } from "./modules/media/index";
 import type { Exports } from "./modules/retention/index";
 import { credentialLabel, credentialReady, dataDir, suppressionHasher, type Vault } from "./modules/credentials/index";
-import { adminEmails, approverMayApprove, mayGrantRules, workspaceLive, type Mailer } from "./modules/identity/index";
+import { adminEmails, approverMayApprove, mayGrantRules, memberEmail, workspaceLive, type Mailer } from "./modules/identity/index";
 import { createItems, warn } from "./modules/items/index";
 import { createLessons, lessonCheckOpen } from "./modules/lessons/index";
 import { BRIEF_OUTPUT_KEY, briefSink, createPageReader, seoDefinitions, seoKinds, type Briefs } from "./modules/seo/index";
 import { COMPARISON_OUTPUT_KEY, competitorDefinitions, competitorKinds, createLabels, createMoves, LABELS_OUTPUT_KEY, POST_OUTPUT_KEY } from "./modules/competitors/index";
 import { newsletterAfterSend, newsletterKinds, newsletterWeekly } from "./modules/newsletter/index";
 import { createStandingRules, ruleStillCovers, standingRuleKinds, suspendForAgent, suspendOnProviderLimit, suspendOnStale } from "./modules/standing-rules/index";
-import { connectedMailboxes, createReplies, createReplyDesk, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
+import { connectedMailboxes, createReplies, createReplyDesk, mailMembers, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
 import { planDefinitions, planKinds, planSinks } from "./modules/plans/index";
 import { createLedger, type SigningKeys } from "./modules/ledger/index";
 import { accountHealthCheck, pauseOnAccountLimit, postAppearance, postLimitCheck, previewOf, socialKinds } from "./modules/social/index";
@@ -150,7 +150,11 @@ export async function compose(opts: WorkerOptions) {
     searchMailboxes: mailboxSearch({ plugins: () => plugins, vault: opts.vault, connected: connectedMailboxes, skipFor }),
     // Mail a search finds is received mail, so placement mail older than the skip list is taken aside as the poll's is.
     claim: (tx, e) => routePlacement(tx, { ...e, pluginId: "", trigger: EMAIL_RECEIVED }, matchExpected),
-    desk: createReplyDesk({ items: () => items, generate: () => models?.generate }),
+    desk: createReplyDesk({
+      items: () => items,
+      generate: () => models?.generate,
+      notify: mailMembers(opts.mailer, memberEmail),
+    }),
   });
   const consumers = [replies.intake, campaignReplies({ items: () => items, humanReply })];
   // Third-party plugins a Server admin installed run only in the sandbox (ADR 0026 rule 009). Where it

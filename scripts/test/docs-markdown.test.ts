@@ -38,6 +38,7 @@ export function problems(text: string): string[] {
   const found: string[] = [];
   // The open fence's run, such as "````"; it closes only on the same character, at least as long.
   let fence = "";
+  let fenceDepth = 0;
   let h1s = 0;
   let paragraph: string[] = [];
   const listIndents: number[] = [];
@@ -48,23 +49,21 @@ export function problems(text: string): string[] {
     paragraph = [];
   };
   for (const raw of text.split("\n")) {
-    // Tabs advance to four-column stops before measuring container indentation.
-    let line = raw.replace(/^[ \t]+/, (prefix) => {
-      let width = 0;
-      for (const char of prefix) width += char === "\t" ? 4 - width % 4 : 1;
-      return " ".repeat(width);
-    });
+    // Tabs advance to four-column stops, after a list marker too, before measuring container indentation.
+    let line = "";
+    for (const char of raw) line += char === "\t" ? " ".repeat(4 - (line.length % 4)) : char;
     if (line.trim()) {
       const indent = /^ */.exec(line)![0].length;
       while (listIndents.length && indent < listIndents.at(-1)!) listIndents.pop();
+      // A fence ends with the list item that holds it.
+      if (fence && listIndents.length < fenceDepth) fence = "";
       line = line.slice(listIndents.at(-1) ?? 0);
-      if (!fence && !/^ {0,3}(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$/.test(line)) {
-        const marker = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| (?= +\S)| *$)/.exec(line);
-        if (marker) {
-          checkParagraph();
-          listIndents.push((listIndents.at(-1) ?? 0) + marker[0].length);
-          line = line.slice(marker[0].length);
-        }
+      // One line can open several list items, as in "- - item".
+      let marker: RegExpExecArray | null;
+      while (!fence && !/^ {0,3}(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$/.test(line) && (marker = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| (?= +\S)| *$)/.exec(line))) {
+        checkParagraph();
+        listIndents.push((listIndents.at(-1) ?? 0) + marker[0].length);
+        line = line.slice(marker[0].length);
       }
     }
     const opener = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
@@ -76,6 +75,7 @@ export function problems(text: string): string[] {
     if (run && (run[0] === "~" || !opener![2]!.includes("`"))) {
       checkParagraph();
       fence = run;
+      fenceDepth = listIndents.length;
       continue;
     }
     if (!line.trim()) {
@@ -128,6 +128,13 @@ test("invalid backtick fence info does not hide headings", () => {
   expect(problems("# Title\n\n```inline```\n\n# Second\n")).toEqual(["2 H1 headings, not 1"]);
   expect(problems("# Title\n\n~~~ info `allowed`\n<Tabs />\n~~~\n")).toEqual([]);
   expect(problems("# Title\n\n```js\n<Tabs />\n``` trailing\n<Tabs />\n```\n")).toEqual([]);
+});
+
+test("list items hold their own fences, tabs and nested markers", () => {
+  expect(problems("# Title\n\n- ```\n  example\n\n# Second\n")).toEqual(["2 H1 headings, not 1"]);
+  expect(problems("# Title\n\n- ```\n  # not a title\n  ```\n")).toEqual([]);
+  expect(problems("# Title\n\n-\t# Second\n")).toEqual(["2 H1 headings, not 1"]);
+  expect(problems("# Title\n\n- - ```\n    <Tabs />\n    ```\n")).toEqual([]);
 });
 
 test("indented code is literal, while paragraph continuations remain prose", () => {

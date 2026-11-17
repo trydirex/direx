@@ -3,10 +3,6 @@
 Thanks for wanting to help. Direx has one maintainer with a few hours a week, so these rules keep
 reviews possible. The founder makes the final call on what gets merged.
 
-**Pull requests from outside can't be merged yet.** The [Contributor License Agreement](CLA.md) is
-still a draft, and nothing is merged without it. Until it is in force, issues and security reports
-are welcome, and a pull request will wait.
-
 ## Before you write code
 
 - **Work on an `accepted` issue.** Only issues with the `accepted` label are open for outside PRs.
@@ -65,8 +61,8 @@ The core is AGPL-3.0-only, and `packages/plugin-sdk` and `skills/` are MIT. Ever
 JavaScript source file starts with an SPDX header; `bun run check:license` checks it. Everything
 without a header, such as migrations, docs and prompts, is under the root [LICENSE](LICENSE).
 
-Before your first PR is merged, you sign the [Contributor License Agreement](CLA.md). Once the
-agreement is in force, a bot will ask you on the PR, and signing takes one click. The CLA lets KD Partners Ltd., the company behind Direx, license your contribution on
+Before your first PR is merged, you sign the [Contributor License Agreement](CLA.md). A bot asks
+you on the PR, and signing takes one click. The CLA lets KD Partners Ltd., the company behind Direx, license your contribution on
 any terms, including the paid cloud. We use a CLA, not a DCO sign-off.
 
 ## Security problems

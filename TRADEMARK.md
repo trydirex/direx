@@ -1,8 +1,5 @@
 # The Direx name and logo
 
-DRAFT. No lawyer has reviewed this text, and the marks are not registered. It becomes final
-together with [CLA.md](CLA.md).
-
 The code in this repository is open source. The name is not part of that. "Direx" and the Direx
 logo belong to KD Partners Ltd., a British Columbia company, and the AGPL and MIT licenses here give you no right to use them beyond
 what this page says.

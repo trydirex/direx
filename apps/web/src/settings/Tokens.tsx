@@ -55,7 +55,7 @@ export function Tokens(p: { workspaceId: string; role: Role; me: string }) {
   const maker = (userId: string) => (userId === p.me ? "you" : (members.data?.find((m) => m.userId === userId)?.email ?? "a former member"));
   return (
     <Page title="External tokens" description="A token lets a script, a connector such as Zapier, or your own agent read this Workspace and suggest work. It never approves or sends anything.">
-      {shown && <Shown token={shown} onHide={() => setShown(undefined)} />}
+      {shown && <Shown key={shown} token={shown} onHide={() => setShown(undefined)} />}
       <QueryBoundary query={tokens} skeleton={<Skeleton className="h-24 w-full" />}>
         {(data) => (
           <>
@@ -82,10 +82,19 @@ function Row(p: { workspaceId: string; token: ExternalToken; maker: string }) {
   const { token: t } = p;
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
   const [tone, state] = STATE[t.state];
   const revoke = async () => {
     setBusy(true);
-    await revokeToken(p.workspaceId, t.id).finally(() => setBusy(false));
+    setError(undefined);
+    try {
+      await revokeToken(p.workspaceId, t.id);
+    } catch {
+      setError(`Could not revoke ${t.name}. Try again.`);
+      return;
+    } finally {
+      setBusy(false);
+    }
     toast.add({ title: `Revoked ${t.name}. It stops working now.` });
     await client.invalidateQueries({ queryKey: inWorkspace(p.workspaceId) });
   };
@@ -101,6 +110,7 @@ function Row(p: { workspaceId: string; token: ExternalToken; maker: string }) {
           Made by {p.maker} on {day(t.createdAt)}. {t.revokedAt ? `Revoked on ${day(t.revokedAt)}.` : `Expires on ${day(t.expiresAt)}.`} {t.lastUsedAt ? `Last used on ${day(t.lastUsedAt)}.` : "Not used yet."}
         </p>
       </div>
+      {error && <Notice tone="error">{error}</Notice>}
       {(t.state === "live" || t.state === "stopped") && (
         <Button size="sm" variant="outline" pending={busy} label={`Revoke ${t.name}`} onClick={() => void revoke()}>
           Revoke
@@ -119,7 +129,17 @@ function Make(p: { workspaceId: string; choices: TokenChoices; onMade: (token: s
     const form = e.currentTarget;
     const f = new FormData(form);
     setBusy(true);
-    const r = await makeToken(p.workspaceId, { name: String(f.get("name") ?? ""), days: Number(f.get("days")), readers: f.getAll("reader").map(String), kinds: f.getAll("kind").map(String) }).finally(() => setBusy(false));
+    setError(undefined);
+    let r: Awaited<ReturnType<typeof makeToken>>;
+    try {
+      r = await makeToken(p.workspaceId, { name: String(f.get("name") ?? ""), days: Number(f.get("days")), readers: f.getAll("reader").map(String), kinds: f.getAll("kind").map(String) });
+    } catch {
+      await client.invalidateQueries({ queryKey: tokensQuery(p.workspaceId).queryKey });
+      setError("We couldn't confirm whether the token was made. Check the token list before trying again. If it appears there, revoke it before making another: its secret cannot be shown again.");
+      return;
+    } finally {
+      setBusy(false);
+    }
     if ("error" in r) {
       if (r.error === "step_up_required") return p.onStepUp();
       return setError(SAYS[r.error] ?? "The token could not be made. Try again.");

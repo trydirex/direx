@@ -2,7 +2,7 @@
 // External tokens in Settings: every role sees the list and revokes; only Owners and Admins get the
 // form, whose personal readers start unchecked; a new token shows once; a stale sign-in asks again.
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { toast } from "@/components/toast";
@@ -109,4 +109,69 @@ test("an Owner whose sign-in is too old is asked to sign in again, and a refusal
   await userEvent.type(again.getByRole("textbox", { name: /Name/ }), "Script");
   await userEvent.click(again.getByRole("button", { name: "Make token" }));
   expect(await screen.findByRole("heading", { name: "Confirm it's you" })).toBeTruthy();
+});
+
+
+test("a second token starts with Copy even when the previous token was copied and left visible", async () => {
+  const second = `dxt_${"y".repeat(43)}`;
+  let made = 0;
+  serve(() => reply(200, { token: made++ === 0 ? NEW : second }));
+  render(withQueries(<Tokens workspaceId={W} role="owner" me="u1" />));
+  const form = within(await screen.findByRole("region", { name: "Make a token" }));
+  await userEvent.type(form.getByRole("textbox", { name: /Name/ }), "First");
+  await userEvent.click(form.getByRole("button", { name: "Make token" }));
+  const writeText = vi.fn(() => Promise.resolve());
+  Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  await userEvent.click(await screen.findByRole("button", { name: "Copy" }));
+  expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
+  expect(writeText).toHaveBeenLastCalledWith(NEW);
+  await userEvent.type(form.getByRole("textbox", { name: /Name/ }), "Second");
+  await userEvent.click(form.getByRole("button", { name: "Make token" }));
+  expect(await screen.findByText(second)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Copied" })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Copy" }));
+  expect(writeText).toHaveBeenLastCalledWith(second);
+  await userEvent.click(screen.getByRole("button", { name: "Hide it" }));
+  expect(screen.queryByText(second)).toBeNull();
+});
+
+test.each([403, 500, "network"] as const)("a failed revocation (%s) reports an error and permits a retry", async (failure) => {
+  const { del } = serve();
+  del.mockImplementationOnce((() => failure === "network" ? Promise.reject(new TypeError("offline")) : reply(failure, { error: "failed" })) as never);
+  const added = vi.spyOn(toast, "add");
+  render(withQueries(<Tokens workspaceId={W} role="viewer" me="u1" />));
+  const button = await screen.findByRole("button", { name: "Revoke Zapier" });
+  const get = vi.mocked(api.GET);
+  const reads = get.mock.calls.length;
+  await userEvent.click(button);
+  expect((await screen.findByRole("alert")).textContent).toBe("Could not revoke Zapier. Try again.");
+  expect((button as HTMLButtonElement).disabled).toBe(false);
+  expect(added).not.toHaveBeenCalled();
+  expect(get.mock.calls.length).toBe(reads);
+  await userEvent.click(button);
+  await waitFor(() => expect(added).toHaveBeenCalledWith({ title: "Revoked Zapier. It stops working now." }));
+  expect(del).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).toBeNull();
+  await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(reads));
+});
+
+test("a lost creation response refreshes the list without replaying creation and permits recovery", async () => {
+  const { post } = serve();
+  post.mockRejectedValueOnce(new TypeError("connection lost"));
+  render(withQueries(<Tokens workspaceId={W} role="owner" me="u1" />));
+  const form = within(await screen.findByRole("region", { name: "Make a token" }));
+  const get = vi.mocked(api.GET);
+  const reads = () => get.mock.calls.filter((call) => call[0] === "/api/w/{workspaceId}/external-tokens").length;
+  const before = reads();
+  await userEvent.type(form.getByRole("textbox", { name: /Name/ }), "Script");
+  await userEvent.click(form.getByRole("button", { name: "Make token" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("Check the token list before trying again");
+  expect(reads()).toBeGreaterThan(before);
+  expect(post).toHaveBeenCalledTimes(1);
+  expect((form.getByRole("button", { name: "Make token" }) as HTMLButtonElement).disabled).toBe(false);
+  expect(screen.queryByRole("region", { name: "Your new token" })).toBeNull();
+  await userEvent.click(form.getByRole("button", { name: "Make token" }));
+  expect(await screen.findByText(NEW)).toBeTruthy();
+  expect(post).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).toBeNull();
 });

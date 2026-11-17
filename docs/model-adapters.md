@@ -7,8 +7,9 @@ Self-host only. Direx cloud uses its own keys and shows none of this.
 1. Install the CLI yourself on the machine running Direx. Direx installs nothing and ships no image
    with a CLI inside. You also need Linux and `bwrap` (bubblewrap), or the Docker setup below.
 2. Start the app with `bun run dev` from the repo root.
-3. Open **Models**, and under **Which AI runs** press **Sign in just for me** or **Sign in for this
-   Workspace**. Scheduled and other background work only uses a Workspace sign-in.
+3. Open **Settings**, then **AI models**, and under **Which AI runs** press **Sign in just for me**
+   or **Sign in for this Workspace**. Scheduled and other background work only uses a Workspace
+   sign-in.
 4. Follow the link. Claude Code gives you a code to paste back; Codex shows a code to enter there.
 5. Press **Test**, then choose the AI for the Workspace, and for any agent that should differ.
 

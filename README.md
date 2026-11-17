@@ -3,6 +3,8 @@
 Direx is an open-source marketing workspace: your business context, a marketing plan, and
 campaigns across channels. It only sends what a person approved.
 
+![Direx's Home page: what needs you, how campaigns are doing, ideas and the week ahead](docs/screenshots/home.png)
+
 ## What's in it
 
 - **Business context.** Facts about your business, proposed changes to them, and claims you
@@ -33,6 +35,12 @@ campaigns across channels. It only sends what a person approved.
 
 Every page lives under a Workspace, and an Organization can hold several Workspaces.
 
+| Review, one draft at a time | The week's calendar |
+|---|---|
+| ![Review: a post waiting for approval, with a key for each action](docs/screenshots/review.png) | ![Calendar: a week with a scheduled post and one that needs approval](docs/screenshots/calendar.png) |
+| **A Campaign's email step** | **Brand: what drafts may say** |
+| ![A Campaign's Content tab: an email template and the checks run on it](docs/screenshots/campaign.png) | ![Brand: facts about the business, each with who added it](docs/screenshots/brand.png) |
+
 ## Run it on your machine
 
 This is a development install, for trying Direx or working on it. It keeps its ports on your
@@ -52,7 +60,13 @@ and the password needs at least 12 characters.
 
 `bun run setup` is safe to run again. It installs dependencies, creates `.env`, starts Postgres in
 Docker and prepares the database. It never overwrites your `.env`, except to change the Postgres
-port when you ask it to.
+port when you ask it to. If port 5435 is taken, setup stops and says so; pick a free port with
+`DIREX_PG_PORT=5445 bun run setup`.
+
+After you sign up, Direx asks for your business name and walks you through setting it up.
+Drafting needs a model: sign in with a Claude Code or Codex subscription, or add an API key, under
+**Settings**, **AI models**. Everything else works before that, and a step that needs a model
+says so.
 
 If something is wrong, run this. It changes nothing, and tells you the next step for each problem:
 

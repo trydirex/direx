@@ -10,14 +10,12 @@ export type Pr = {
   number: number;
   title: string;
   body: string | null;
-  author_association: string;
   user: { login: string };
   head: { repo: { full_name: string } | null };
 };
 export type PrFile = { filename: string; additions: number; deletions: number };
 export type Get = <T>(path: string) => Promise<T | null>;
 
-const WRITERS = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
 const REQUIRED = ["What this changes", "Verification"];
 const MAX_TITLE = 72;
 const MAX_LINES = 500;
@@ -76,13 +74,19 @@ async function prFiles(get: Get, repo: string, n: number): Promise<PrFile[]> {
   }
 }
 
+/** Whether `login` can push to `repo`. A maintainer shows as "write"; a non-collaborator is a 404. */
+async function canWrite(get: Get, repo: string, login: string): Promise<boolean> {
+  const access = await get<{ permission: string }>(`/repos/${repo}/collaborators/${login}/permission`);
+  return access?.permission === "write" || access?.permission === "admin";
+}
+
 export async function problems(pr: Pr, repo: string, get: Get): Promise<string[]> {
   if (pr.user.login === "dependabot[bot]") return [];
   const body = pr.body ?? "";
   const out = [...titleProblems(pr.title), ...bodyProblems(body)];
-  // Pushing a branch to this repository takes write access. author_association alone isn't
-  // enough: in the event payload an org member whose membership is private is a CONTRIBUTOR.
-  if (WRITERS.has(pr.author_association) || pr.head.repo?.full_name === repo) return out;
+  // Pushing a branch to this repository takes write access. Otherwise ask GitHub: author_association
+  // won't do, as a MEMBER or COLLABORATOR may only read, and a private org member shows as CONTRIBUTOR.
+  if (pr.head.repo?.full_name === repo || (await canWrite(get, repo, pr.user.login))) return out;
 
   const n = linkedIssue(body);
   if (n === undefined) out.push("no linked issue; start the description with `Closes #N` for an issue labelled `accepted`");

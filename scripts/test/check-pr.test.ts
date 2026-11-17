@@ -14,7 +14,6 @@ const pr = (over: Partial<Pr> = {}): Pr => ({
   number: 7,
   title: "Add the backlinks count to the report",
   body: filled,
-  author_association: "CONTRIBUTOR",
   user: { login: "someone" },
   head: { repo: { full_name: "someone/r" } },
   ...over,
@@ -99,10 +98,19 @@ test("an outside PR over 500 lines or 10 files fails, reading every page of file
   ]);
 });
 
+const permission = (p: string) => ({ "/repos/o/r/collaborators/someone/permission": { permission: p } });
+
 test("a writer's PR is held to the title and template but needs no issue and has no size limit", async () => {
   const body = "## What this changes\n\nA fix.\n\n## Verification\n\nbun run check:task: passed\n";
-  expect(await problems(pr({ author_association: "MEMBER", body }), "o/r", api({}))).toEqual([]);
-  expect(await problems(pr({ author_association: "OWNER", title: "fix: things", body: null }), "o/r", api({}))).toHaveLength(3);
+  expect(await problems(pr({ body }), "o/r", api(permission("write")))).toEqual([]);
+  expect(await problems(pr({ title: "fix: things", body: null }), "o/r", api(permission("admin")))).toHaveLength(3);
+});
+
+test("an org member or collaborator who can only read is held to the issue and size rules", async () => {
+  const body = "## What this changes\n\nA fix.\n\n## Verification\n\nbun run check:task: passed\n";
+  expect(await problems(pr({ body }), "o/r", api({ ...permission("read"), ...small }))).toEqual([
+    "no linked issue; start the description with `Closes #N` for an issue labelled `accepted`",
+  ]);
 });
 
 test("a PR from a branch in this repository is a writer's, even when a private org member shows as CONTRIBUTOR", async () => {

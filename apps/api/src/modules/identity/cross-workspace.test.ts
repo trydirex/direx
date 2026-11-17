@@ -22,6 +22,8 @@ const OUTSIDE = [
   "GET /api/source",
   "GET /api/auth/*",
   "POST /api/auth/*",
+  // Before sign-in: whether Google and Microsoft are set up here, two booleans and no Workspace data.
+  "GET /api/sign-in-options",
   "GET /api/me",
   "GET /api/me/workspaces",
   // The caller's own deleted Workspaces where they are Owner, names and dates only, so they can reach the export (ADR 0030 rule 008).

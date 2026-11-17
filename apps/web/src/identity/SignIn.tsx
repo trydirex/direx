@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ME } from "@/api/query";
 import { addPassword } from "./actions";
 import { message } from "./messages";
-import { holdInviteToken, resetPassword, sendPasswordReset, sendSignInLink, signInWith, signInWithPassword, signUpWithPassword, signupRefusal } from "./auth";
+import { holdInviteToken, resetPassword, sendPasswordReset, sendSignInLink, signInOptions, signInWith, signInWithPassword, signUpWithPassword, signupRefusal, type SignInOptions } from "./auth";
 
 type Mode = "sign_in" | "sign_up" | "forgot";
 
@@ -49,6 +49,11 @@ export function SignIn({
   useEffect(() => {
     if (inviteToken) void holdInviteToken(inviteToken);
   }, [inviteToken]);
+  // Both buttons show until the server says which it is set up for, so a server that has them never loses them.
+  const [providers, setProviders] = useState<SignInOptions>({ google: true, microsoft: true });
+  useEffect(() => {
+    void signInOptions().then((o) => o && setProviders(o));
+  }, []);
   const [pending, setPending] = useState<"submit" | "link">();
   const fail = (e: Error) => setError(e.message);
   const signedIn = () => location.assign(callbackURL);
@@ -82,15 +87,21 @@ export function SignIn({
   return (
     <Narrow>
       <Page title={mode === "sign_up" ? "Sign up for Direx" : mode === "forgot" ? "Reset your password" : title} description={note ?? (mode !== "forgot" ? "Plans and drafts your marketing. Nothing goes out until you approve it." : undefined)}>
-        <div className="flex flex-col gap-2">
-          <NativeButton type="button" variant="outline" onClick={() => signInWith("google", callbackURL).catch(fail)}>
-            Continue with Google
-          </NativeButton>
-          <NativeButton type="button" variant="outline" onClick={() => signInWith("microsoft", callbackURL).catch(fail)}>
-            Continue with Microsoft
-          </NativeButton>
-          <p className="text-center text-sm text-muted-foreground">or use email</p>
-        </div>
+        {(providers.google || providers.microsoft) && (
+          <div className="flex flex-col gap-2">
+            {providers.google && (
+              <NativeButton type="button" variant="outline" onClick={() => signInWith("google", callbackURL).catch(fail)}>
+                Continue with Google
+              </NativeButton>
+            )}
+            {providers.microsoft && (
+              <NativeButton type="button" variant="outline" onClick={() => signInWith("microsoft", callbackURL).catch(fail)}>
+                Continue with Microsoft
+              </NativeButton>
+            )}
+            <p className="text-center text-sm text-muted-foreground">or use email</p>
+          </div>
+        )}
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {

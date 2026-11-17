@@ -24,6 +24,16 @@ export async function holdInviteToken(token: string): Promise<void> {
   await post("/api/admission/token", { token }).catch(() => undefined);
 }
 
+export type SignInOptions = { google: boolean; microsoft: boolean };
+
+/** Which of Google and Microsoft this server is set up for, or null when the server can't say. */
+export async function signInOptions(): Promise<SignInOptions | null> {
+  const res = await fetch("/api/sign-in-options").catch(() => null);
+  if (!res?.ok) return null;
+  const body = (await res.json().catch(() => null)) as Partial<SignInOptions> | null;
+  return typeof body?.google === "boolean" && typeof body.microsoft === "boolean" ? { google: body.google, microsoft: body.microsoft } : null;
+}
+
 export async function signInWithPassword(email: string, password: string, callbackURL: string): Promise<void> {
   const res = await post("/api/auth/sign-in/email", { email, password, callbackURL });
   if (res.status === 403) throw new Error("Confirm your email address first. We sent you a new link.");

@@ -10,10 +10,16 @@ import { AddPassword, ResetPassword, SignIn } from "./SignIn";
 
 let fetchSpy: ReturnType<typeof vi.spyOn>;
 let assign: ReturnType<typeof vi.fn>;
-/** Answers every fetch with `status` and `body`. */
-const answer = (status: number, body: unknown = {}) => fetchSpy.mockResolvedValue(new Response(JSON.stringify(body), { status }));
+const OPTIONS = "/api/sign-in-options";
+/** Answers every fetch with `status` and `body`. The card asks which providers are set up as it opens; that gets `options`, or a 404, which keeps both buttons. */
+const answer = (status: number, body: unknown = {}, options?: unknown) =>
+  fetchSpy.mockImplementation((path: RequestInfo | URL) =>
+    Promise.resolve(path === OPTIONS ? new Response(JSON.stringify(options ?? {}), { status: options ? 200 : 404 }) : new Response(JSON.stringify(body), { status })),
+  );
+/** What the card sent, leaving out its question about providers. */
+const calls = () => (fetchSpy.mock.calls as [string, RequestInit][]).filter(([path]) => path !== OPTIONS);
 const sent = () => {
-  const [path, init] = fetchSpy.mock.lastCall as [string, RequestInit];
+  const [path, init] = calls().at(-1)!;
   return { path, body: JSON.parse(init.body as string) as Record<string, unknown> };
 };
 
@@ -35,6 +41,26 @@ async function fill(email: string, password?: string) {
 test("the sign-in page links to this server's source code", () => {
   render(<SignIn callbackURL="/" />);
   expect(screen.getByRole("link", { name: "Get the source code" }).getAttribute("href")).toBe("/api/source");
+});
+
+test("the sign-in page drops the Google and Microsoft buttons this server isn't set up for", async () => {
+  answer(200, {}, { google: false, microsoft: true });
+  render(<SignIn callbackURL="/" />);
+  await vi.waitFor(() => expect(screen.queryByRole("button", { name: "Continue with Google" })).toBeNull());
+  expect(screen.getByRole("button", { name: "Continue with Microsoft" })).toBeTruthy();
+  cleanup();
+
+  answer(200, {}, { google: false, microsoft: false });
+  render(<SignIn callbackURL="/" />);
+  await vi.waitFor(() => expect(screen.queryByText("or use email")).toBeNull());
+  expect(screen.queryByRole("button", { name: /^Continue with/ })).toBeNull();
+  cleanup();
+
+  // A server that can't say keeps both, so a server set up for them never loses them.
+  answer(500);
+  render(<SignIn callbackURL="/" />);
+  await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledWith(OPTIONS));
+  expect(screen.getByRole("button", { name: "Continue with Google" })).toBeTruthy();
 });
 
 test("signing in with a password posts it and goes to the callback", async () => {
@@ -128,7 +154,7 @@ test("the email link needs an address first, then sends one", async () => {
   render(<SignIn callbackURL="/" />);
   await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
   expect((await screen.findByRole("alert")).textContent).toContain("Enter your email address first.");
-  expect(fetchSpy).not.toHaveBeenCalled();
+  expect(calls()).toHaveLength(0);
   await fill("sam@example.com");
   await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
   expect(await screen.findByText(/Check sam@example.com for a sign-in link/)).toBeTruthy();

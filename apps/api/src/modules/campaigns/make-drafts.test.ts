@@ -884,3 +884,95 @@ test("a template a run wrote carries a later warning into the drafts made from i
   expect(await said(kept)).toContain("Written with a lesson that was later withdrawn.");
   expect(await said(edited)).not.toContain("Written with a lesson that was later withdrawn.");
 });
+
+test("concurrent mailbox saves keep the primary consistent with retained order", async () => {
+  const a = await newCredential(`${crypto.randomUUID()}@acme.test`, "google");
+  const b = await newCredential(`${crypto.randomUUID()}@acme.test`, "google");
+  const id = await ready();
+  const setup = { type: "email", touchClass: "cold", audience: "everyone" } as const;
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [] }));
+  const locker = await appClient();
+  await locker.query("begin");
+  await locker.query("select set_config('app.workspace_id', $1, true)", [W]);
+  await locker.query("select 1 from campaign_steps where campaign_id = $1 and step_key = 'first' for update", [id]);
+  const saves = [
+    campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [a, b] }),
+    campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [b, a] }),
+  ];
+  try {
+    // Hold both saves at the same row lock, then let them finish in database order.
+    let waiting = 0;
+    for (let i = 0; i < 100 && waiting < 2; i++) {
+      waiting = Number((await q("select count(*) as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%campaign_steps%'"))[0].n);
+      if (waiting < 2) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(waiting).toBe(2);
+  } finally {
+    await locker.query("rollback");
+    await locker.end();
+    for (const result of await Promise.all(saves)) ok(result);
+  }
+  const rows = await q("select s.mailbox_credential_id, m.credential_id from campaign_steps s join campaign_step_mailboxes m using (workspace_id, campaign_id, step_key) where s.campaign_id = $1 and s.step_key = 'first' order by m.added_at, m.credential_id", [id]);
+  expect(rows).toHaveLength(2);
+  expect(rows[0].mailbox_credential_id).toBe(rows[0].credential_id);
+});
+
+test("mailbox additions follow retained senders across saves and legacy settings preserve the set", async () => {
+  const boxes: string[] = [];
+  for (let i = 0; i < 3; i++) boxes.push(await newCredential(`${crypto.randomUUID()}@acme.test`, "google"));
+  boxes.sort();
+  const [added, primary, second] = boxes as [string, string, string];
+  const id = await ready(primary);
+  const setup = { type: "email", touchClass: "cold", audience: "everyone" } as const;
+  const assigned = async () => (await q("select credential_id from campaign_step_mailboxes where campaign_id = $1 and step_key = 'first' order by added_at, credential_id", [id])).map((r) => r.credential_id);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [primary, second] }));
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [added, second, primary] }));
+  expect(await assigned()).toEqual([primary, second, added]);
+  expect((await q("select mailbox_credential_id from campaign_steps where campaign_id = $1 and step_key = 'first'", [id]))[0].mailbox_credential_id).toBe(primary);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: primary, audience: "no_reply_yet" }));
+  expect(await assigned()).toEqual([primary, second, added]);
+  expect((await campaigns.campaign(W, id))?.steps.find((s) => s.key === "first")?.audience).toBe("no_reply_yet");
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [second] }));
+  expect(await assigned()).toEqual([second]);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: added }));
+  expect(await assigned()).toEqual([added]);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: null }));
+  expect(await assigned()).toEqual([]);
+  // [A, B] then [C, B]: A goes, B keeps its place and becomes the primary, C follows it.
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [primary, second] }));
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [added, second] }));
+  expect(await assigned()).toEqual([second, added]);
+  expect((await q("select mailbox_credential_id from campaign_steps where campaign_id = $1 and step_key = 'first'", [id]))[0].mailbox_credential_id).toBe(second);
+});
+
+test("a step shares its drafts across its Mailboxes, a Person's next step keeps their sender, and a save keeps each draft's", async () => {
+  // Two fresh Mailboxes: the file's own is already busy that day, and the earliest free time wins.
+  const [box, other] = [await newCredential(`${crypto.randomUUID()}@acme.test`, "google"), await newCredential(`${crypto.randomUUID()}@acme.test`, "google")];
+  const id = await ready(box);
+  const setup = { type: "email", touchClass: "cold", audience: "everyone" } as const;
+  expect(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: box, mailboxCredentialIds: [other] })).toEqual({ ok: false, reason: "mailbox_twice" });
+  expect(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [other, other] })).toEqual({ ok: false, reason: "duplicate_mailbox" });
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [box, other] }));
+  // Saved again the other way round, each Mailbox keeps its place, so box stays the step's first.
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [other, box] }));
+  expect((await q("select mailbox_credential_id from campaign_steps where campaign_id = $1 and step_key = 'first'", [id]))[0].mailbox_credential_id).toBe(box);
+  const { revision } = await write(id);
+  const people = await addPeople(id, [person(), person(), person(), person()]);
+  const senderOf = async (itemId: string) => (await q("select a.credential_id from actions a join items i on i.action_id = a.id where i.id = $1", [itemId]))[0].credential_id as string;
+  const first = new Map<string, string>();
+  for (const r of await made(id)) first.set(r.personId, await senderOf(r.itemId!));
+  // Two each, taking turns.
+  expect([...first.values()].filter((m) => m === box)).toHaveLength(2);
+  expect([...first.values()].filter((m) => m === other)).toHaveLength(2);
+
+  // A new text revises every draft under the Mailbox it was written with.
+  expect(ok(await campaigns.saveTemplate(W, id, "first", { revision, subject: "Hey {{firstName}}", text: "Hi {{firstName}}, from {{senderName}}.", userId: owner })).revised).toBe(4);
+  for (const r of await made(id)) expect(await senderOf(r.itemId!)).toBe(first.get(r.personId));
+
+  // The follow-up lists the Mailboxes the other way round, and each Person still hears from the same one.
+  ok(await campaigns.setupStep(W, id, "second", { ...setup, mailboxCredentialIds: [other, box] }));
+  ok(await campaigns.saveTemplate(W, id, "second", { revision: 0, ...TEMPLATE, userId: owner }));
+  const second = ok(await campaigns.makeDrafts(W, id, "second", { timeZone: "UTC", userId: owner })).results;
+  expect(second.map((r) => r.personId).sort()).toEqual([...people].sort());
+  for (const r of second) expect(await senderOf(r.itemId!)).toBe(first.get(r.personId));
+});

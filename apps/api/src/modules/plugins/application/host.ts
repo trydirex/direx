@@ -331,7 +331,7 @@ export function createHost(deps: HostDeps) {
       try {
         await proc.ready;
       } catch (e) {
-        throw e instanceof NotStarted ? e : new NotStarted(`plugin ${id} did not start: ${message(e)}`, true);
+        throw e instanceof NotStarted && !e.retryable ? e : new NotStarted(`plugin ${id} did not start: ${message(e)}`, true);
       }
       const why = unhonoured(method, params, proc.sdkVersion);
       if (why) throw new CallFailed(`plugin ${id} was not sent ${why}`, { reason: "invalid_params" });

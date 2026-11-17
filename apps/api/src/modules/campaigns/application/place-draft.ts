@@ -5,7 +5,9 @@
 // and a failure there leaves the email waiting for a person.
 import type { Items } from "../../items";
 import type { Compose, Outreach } from "../../outreach";
-import { inWorkspace, linkAction, lockPersonStatus, requireApproved, setProposedText } from "../adapters/repo";
+import { planMailbox } from "../../schedule";
+import { activeActions, inWorkspace, linkAction, lockPersonStatus, requireApproved, setProposedText, stepMailboxes } from "../adapters/repo";
+import { assignSenders, type Sender } from "../domain/senders";
 
 export const groupKeyOf = (campaignId: string, stepKey: string) => `campaign:${campaignId}:step:${stepKey}`;
 const keyOf = (campaignId: string, stepKey: string, personId: string) => `${groupKeyOf(campaignId, stepKey)}:person:${personId}`;
@@ -19,6 +21,21 @@ const composeInput = (p: Placement, e: PlacedEmail): Compose => {
   const { submit: _, ...email } = e;
   return { ...email, personId: p.personId, idempotencyKey: keyOf(p.campaignId, p.stepKey, p.personId), groupKey: groupKeyOf(p.campaignId, p.stepKey) };
 };
+
+/**
+ * The Mailbox and send time for each of these People's new email in a step, from day `on`: shared
+ * across the step's Mailboxes, each Person keeping the sender their earlier email in the Campaign had.
+ * The planner's read isn't locked; each draft reserves its day when it is placed.
+ */
+export async function plannedSenders(workspaceId: string, campaignId: string, stepKey: string, personIds: readonly string[], a: { on: string; now: Date }): Promise<Map<string, Sender>> {
+  const { mailboxes, earlier } = await inWorkspace(workspaceId, async (tx) => ({ mailboxes: await stepMailboxes(tx, campaignId, stepKey), earlier: await activeActions(tx, campaignId, null) }));
+  const keep = new Map<string, string>();
+  // A sender that has left the step can't be kept, so it mustn't hide a later one that is still on it.
+  for (const x of earlier) if (x.stepKey !== stepKey && x.credentialId && mailboxes.includes(x.credentialId) && !keep.has(x.personId)) keep.set(x.personId, x.credentialId);
+  const free = new Map<string, Date[]>();
+  for (const m of mailboxes) free.set(m, await planMailbox(workspaceId, m, { on: a.on, count: personIds.length, notBefore: a.now, now: a.now }));
+  return assignSenders(personIds, free, keep);
+}
 
 /** A new email in its step. The same Person and step again returns the first one. */
 /** `proposedText` is a writer's words before anyone edits them, kept so a person's edits can be measured. */

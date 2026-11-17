@@ -43,6 +43,14 @@ Only an Owner can undo an opt-out, and only one that was read from a reply. They
 give a reason. Direx keeps the reason with the original words, and a later "stop" opts the Person
 out again. Unsubscribe clicks and bounces can't be undone.
 
+## Sending a Campaign step from several Mailboxes
+
+One Mailbox sends at most its daily limit, so an email step can use several. Tick them under Email
+accounts in the step's settings. Each new email goes from whichever Mailbox has the earliest free
+time, and the Mailboxes take turns when their times match. A person keeps the Mailbox their first
+email in the Campaign came from, so a follow-up doesn't arrive from a stranger. A draft never
+changes Mailbox once written: taking a Mailbox off a step leaves its drafts on it.
+
 ## If a send is cut off
 
 If the connection drops while a message is going out, Direx can't tell whether it was delivered.

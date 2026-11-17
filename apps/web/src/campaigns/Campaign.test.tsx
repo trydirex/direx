@@ -14,7 +14,7 @@ import { campaignStatus, resultTiles } from "./Overview";
 const W = "00000000-0000-4000-8000-0000000000aa";
 const ID = "00000000-0000-4000-8000-0000000000bb";
 const reply = (status: number, body: unknown) => Promise.resolve({ ...(status < 400 ? { data: body } : { error: body }), response: new Response(null, { status }) });
-const step = { key: "first", on: "2026-11-03", title: "First email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, templateRevision: 0, template: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, waitingOn: null, output: null, draftingMode: null, cancelled: false, waived: false, planChange: null };
+const step = { key: "first", on: "2026-11-03", title: "First email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, templateRevision: 0, template: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, waitingOn: null, output: null, draftingMode: null, cancelled: false, waived: false, planChange: null };
 /** A day `n` days from today, as the API sends days, so a running campaign stays running. */
 const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toLocaleDateString("en-CA");
 const campaign = { id: ID, planId: "p", title: "Q4 push", ownerUserId: "u", draftingMode: null, paused: false, status: "running", changesWaiting: false, createdBy: null, outsideContentAllowed: false, advance: "offer", advanceSetBy: null, advanceUpToCents: 0, notes: "", notesRevision: 0, notesUpdatedBy: null, notesUpdatedAt: null, goal: "4 meetings", startsOn: inDays(-10), anchor: { on: "2026-11-01", stepKey: null }, endsOn: inDays(20), planned: 1, done: 0, skipped: 0, sent: 3, replied: 1, steps: [step] } as unknown as Loaded;
@@ -103,14 +103,14 @@ test("an editor changes a step, picks its Mailbox and saves it; the Content tab 
   render(withQueries(<Campaign workspaceId={W} id={ID} role="owner" tab="drafts" />));
   expect(await screen.findByText(/· 5 of 5 written$/)).toBeTruthy();
   expect(screen.getByRole("button", { name: /First email/ }).getAttribute("aria-current")).toBe("true");
-  expect(screen.queryByRole("combobox", { name: "Email account" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Email accounts" })).toBeNull();
   await userEvent.click(screen.getByRole("button", { name: "Step settings" }));
-  await choose("Email account", "sam@acme.test");
+  await userEvent.click(screen.getByRole("checkbox", { name: "sam@acme.test" }));
   await choose("Who can receive this", "Subscribers who opted in");
   await userEvent.click(screen.getByRole("button", { name: "Save step" }));
   expect(put).toHaveBeenCalledWith("/api/w/{workspaceId}/campaigns/{id}/steps/{key}", {
     params: { path: { workspaceId: W, id: ID, key: "first" } },
-    body: { type: "email", touchClass: "consented_marketing", mailboxCredentialId: "b", audience: "everyone", dmChannel: null, dependsOnStepKey: null, utm: false },
+    body: { type: "email", touchClass: "consented_marketing", mailboxCredentialIds: ["b"], audience: "everyone", dmChannel: null, dependsOnStepKey: null, utm: false },
   });
   expect(await screen.findByText("Saved First email.")).toBeTruthy();
   // A saved step closes its drawer, so the page's own fields can be reached again.
@@ -204,7 +204,7 @@ test("an editor links steps: saves a link, turns an email into a DM, ties the la
   await userEvent.click(screen.getByRole("button", { name: "Save step" }));
   expect(put).toHaveBeenCalledWith("/api/w/{workspaceId}/campaigns/{id}/steps/{key}", {
     params: { path: { workspaceId: W, id: ID, key: "first" } },
-    body: { type: "dm", touchClass: "cold", mailboxCredentialId: null, audience: "no_reply_yet", dmChannel: "x", dependsOnStepKey: null, utm: true },
+    body: { type: "dm", touchClass: "cold", mailboxCredentialIds: [], audience: "no_reply_yet", dmChannel: "x", dependsOnStepKey: null, utm: true },
   });
 
   await userEvent.keyboard("{Escape}");

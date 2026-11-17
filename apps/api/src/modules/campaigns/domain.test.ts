@@ -6,6 +6,7 @@ import { numbersIn, reviewClaims } from "./domain/claims";
 import { parseCsv } from "./domain/csv";
 import { merge, missingFields, unknownFields } from "./domain/merge";
 import { DEFAULT_PACE, planSends } from "../schedule";
+import { assignSenders } from "./domain/senders";
 import { normaliseWebsite, websiteFor } from "./domain/website";
 import { REJECT_REASONS, REWRITE_PRESETS, rewriteInstruction } from "./domain/rewrite";
 import { sharedMailDomain } from "../people/index";
@@ -89,6 +90,36 @@ const NY = "America/New_York";
 // A step's emails are planned by the Mailbox's pace; these use the default, 50 a day from 09:00 to 17:00.
 const PER_DAY = DEFAULT_PACE.dailyLimit;
 const slots = (a: { on: string; count: number; timeZone: string; taken?: Record<string, number>; notBefore?: Date }) => planSends({ ...a, pace: DEFAULT_PACE });
+
+test("300 emails on 3 Mailboxes at 50 a day take 2 weekdays, none over its limit, Mailboxes taking turns", () => {
+  const people = Array.from({ length: 300 }, (_, i) => `p${i}`);
+  const free = new Map(["a", "b", "c"].map((m) => [m, slots({ on: "2026-11-05", count: 300, timeZone: NY })]));
+  const got = assignSenders(people, free, new Map());
+  expect(got.size).toBe(300);
+  const perDay = new Map<string, number>();
+  for (const s of got.values()) {
+    const key = `${s.credentialId} ${s.at!.toISOString().slice(0, 10)}`;
+    perDay.set(key, (perDay.get(key) ?? 0) + 1);
+  }
+  // Thursday and Friday, 50 each on each Mailbox.
+  expect([...perDay.entries()].sort()).toEqual(["a", "b", "c"].flatMap((m) => [[`${m} 2026-11-05`, PER_DAY], [`${m} 2026-11-06`, PER_DAY]]));
+  expect([got.get("p0"), got.get("p1"), got.get("p2")].map((s) => s!.credentialId)).toEqual(["a", "b", "c"]);
+});
+
+test("a Person keeps their earlier sender while it's on the step; a full Mailbox gives way to the earliest free one", () => {
+  const at = (h: number) => new Date(Date.UTC(2026, 10, 5, h));
+  const free = new Map([
+    ["a", [at(9), at(10)]],
+    ["b", [at(12)]],
+  ]);
+  // kim keeps b though a is earlier; sam's old Mailbox left the step, so sam is assigned again.
+  const got = assignSenders(["kim", "sam", "lee", "ann"], free, new Map([["kim", "b"], ["sam", "gone"]]));
+  expect(Object.fromEntries([...got].map(([p, s]) => [p, `${s.credentialId}@${s.at!.getUTCHours()}`]))).toEqual({ kim: "b@12", sam: "a@9", lee: "a@10" });
+  // ann has no time left on any Mailbox.
+  expect(got.has("ann")).toBe(false);
+  // With b full, kim still keeps b and waits unplaced, rather than moving to a.
+  expect(assignSenders(["lee", "kim"], new Map([["a", [at(9)]], ["b", []]]), new Map([["kim", "b"]])).get("kim")).toEqual({ credentialId: "b" });
+});
 
 test("a step sends from 09:00 local, spaced so the day's limit fits in the hours", () => {
   // 2026-11-03 is a Tuesday, after the US clock change: 09:00 in New York is 14:00 UTC.

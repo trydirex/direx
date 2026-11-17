@@ -17,7 +17,7 @@ const W = "00000000-0000-4000-8000-0000000000aa";
 const ID = "00000000-0000-4000-8000-0000000000bb";
 const C1 = "00000000-0000-4000-8000-0000000000c1";
 const C2 = "00000000-0000-4000-8000-0000000000c2";
-const step = { key: "launch", on: "2026-11-09", title: "Launch", inPlan: true, type: "clips" } as unknown as Step;
+const step = { key: "launch", on: "2026-11-09", title: "Launch", inPlan: true, type: "clips", mailboxCredentialIds: [] } as unknown as Step;
 const clip = (id: string, title: string) => ({ id, mediaId: id, startMs: 0, endMs: 31_000, title, caption: `${title} caption`, citations: ["f@1"], measureKey: null, why: "It states the offer." });
 const post = (over: Partial<Post>): Post => ({ id: crypto.randomUUID(), itemId: crypto.randomUUID(), clipId: C1, connection: "linkedin", network: "LinkedIn", accountName: "Ana", mode: "publish", text: "Caption", video: null, images: [], url: null, followUps: [], state: "needs_approval", reason: null, revision: 1, clean: true, warnings: [], at: "2026-11-09T09:00:00Z", ...over });
 const LI = { connection: "linkedin", credentialId: "00000000-0000-4000-8000-0000000000d1", networkId: "n1" };

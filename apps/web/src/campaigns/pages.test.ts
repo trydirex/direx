@@ -52,8 +52,8 @@ const campaign: Loaded = {
   sent: 3,
   replied: 1,
   steps: [
-    { key: "first", on: "2026-11-03", title: "First email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, templateRevision: 0, template: null, ...unlinked },
-    { key: "old", on: null, title: null, inPlan: false, type: "email", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, templateRevision: 0, template: null, ...unlinked },
+    { key: "first", on: "2026-11-03", title: "First email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, templateRevision: 0, template: null, ...unlinked },
+    { key: "old", on: null, title: null, inPlan: false, type: "email", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, templateRevision: 0, template: null, ...unlinked },
   ],
 };
 const people = [
@@ -67,12 +67,13 @@ test("an editor sets a step up, and a step the plan dropped says so", () => {
   const html = page("owner", "drafts");
   expect(html).toContain("Save step");
   // The setup form sits in the Step settings drawer, closed at first, so its choices are read from the form itself.
-  expect(selectOptions(withQueries(createElement(StepRow, { step: campaign.steps[0]!, steps: campaign.steps, boxes: [{ id: "b", name: "Sam's mailbox" }], edit: true, unfolded: true, onSave: async () => {} })))["Email account"]?.options).toContain("Sam's mailbox");
+  const form = renderToString(withQueries(createElement(StepRow, { step: campaign.steps[0]!, steps: campaign.steps, boxes: [{ id: "b", name: "Sam's mailbox" }], edit: true, unfolded: true, onSave: async () => {} })));
+  expect(form).toMatch(/<legend[^>]*>Email accounts<\/legend>.*type="checkbox".*Sam&#x27;s mailbox/);
   expect(html).toMatch(/no longer in the plan/i);
 });
 
-const page0 = { key: "page", on: "2026-11-02", title: "Launch page", inPlan: true, type: "manual", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, templateRevision: 0, template: null };
-const email0 = { key: "first", on: "2026-11-03", title: "First email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, templateRevision: 0, template: null };
+const page0 = { key: "page", on: "2026-11-02", title: "Launch page", inPlan: true, type: "manual", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, templateRevision: 0, template: null };
+const email0 = { key: "first", on: "2026-11-03", title: "First email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, templateRevision: 0, template: null };
 /** The Content tab shows one step at a time, the first unless one needs approval; `emailFirst` puts the waiting email step first. */
 const linkedPage = (role: "owner" | "viewer", output: Step["output"], emailFirst = false) =>
   renderToString(
@@ -303,7 +304,7 @@ test("each action calls its endpoint", async () => {
   const del = vi.spyOn(api, "DELETE").mockResolvedValue({ data: {} } as never);
   expect(await addPeople(W, ID, "email\na@b.co")).toEqual({ results: [] });
   expect(post.mock.calls[0]![0]).toBe("/api/w/{workspaceId}/campaigns/{id}/people");
-  expect(await saveStep(W, ID, "first", { type: "manual", touchClass: "cold", mailboxCredentialId: null, audience: "everyone" })).toBeNull();
+  expect(await saveStep(W, ID, "first", { type: "manual", touchClass: "cold", mailboxCredentialIds: [], audience: "everyone" })).toBeNull();
   expect(put.mock.calls[0]![0]).toBe("/api/w/{workspaceId}/campaigns/{id}/steps/{key}");
   expect(await removePerson(W, ID, "p")).toBeNull();
   expect(del.mock.calls[0]![0]).toBe("/api/w/{workspaceId}/campaigns/{id}/people/{personId}");

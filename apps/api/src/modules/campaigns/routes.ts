@@ -44,6 +44,7 @@ const Step = z
     type: z.string(),
     touchClass: z.string().nullable(),
     mailboxCredentialId: z.uuid().nullable(),
+    mailboxCredentialIds: z.array(z.uuid()),
     audience: z.string(),
     dmChannel: z.string().nullable(),
     dependsOnStepKey: z.string().nullable(),
@@ -177,7 +178,10 @@ const stepRoute = createRoute({
       z.strictObject({
         type: z.enum(["email", "manual", "post", "dm", "clips", "seo_brief"]),
         touchClass: z.enum(["cold", "consented_marketing"]).nullable(),
-        mailboxCredentialId: z.uuid().nullable(),
+        // The Mailboxes the step's emails are shared across, in the order a person picked them; or one
+        // Mailbox alone, as before. Not both.
+        mailboxCredentialId: z.uuid().nullable().optional(),
+        mailboxCredentialIds: z.array(z.uuid()).max(20).optional(),
         audience: z.enum(["everyone", "no_reply_yet"]),
         dmChannel: z.enum(["linkedin", "x"]).nullable().optional(),
         dependsOnStepKey: z.string().regex(/^[a-z0-9_-]{1,64}$/).nullable().optional(),

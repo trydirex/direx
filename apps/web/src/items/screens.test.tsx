@@ -1192,6 +1192,8 @@ test("the Calendar's one Add post opens on the first day shown still to come and
   expect(screen.getAllByRole("button", { name: /Add a post/ })).toHaveLength(1);
   await userEvent.click(screen.getByRole("button", { name: "Add a post" }));
   const form = await screen.findByRole("form", { name: `New post on ${dayLabel(3)}` });
+  // A screen reader hears what the dialog is for as it opens.
+  expect(screen.getByRole("dialog", { name: /^New post for / })).toBeTruthy();
   expect(await within(form).findByRole("option", { name: "X: Acme" })).toBeTruthy();
   await userEvent.type(within(form).getByRole("textbox", { name: "Post" }), "Hello from the calendar");
   await setDateTime("When", "2026-11-04T14:30");

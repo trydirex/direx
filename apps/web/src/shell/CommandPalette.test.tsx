@@ -71,6 +71,22 @@ test("Ctrl K opens it, typing filters, Enter on Calendar goes there and closes i
   await waitFor(() => expect(openDialog("Search and actions")).toBeNull());
 });
 
+test("every page in the section tabs can be reached by name, Newsletter and SEO included", async () => {
+  const user = userEvent.setup();
+  const router = await open("");
+  await user.keyboard("{Control>}k{/Control}");
+  for (const [typed, found] of [["newsl", ["Newsletter"]], ["seo", ["SEO"]], ["who is", ["Who is sending"]], ["review", ["Review", "Review time"]]] as const) {
+    await user.clear(await input());
+    await user.type(await input(), typed);
+    await waitFor(() => expect(options()).toEqual(found));
+  }
+  await user.clear(await input());
+  await user.type(await input(), "newsl");
+  await waitFor(() => expect(options()).toEqual(["Newsletter"]));
+  await user.keyboard("{Enter}");
+  await waitFor(() => expect(router.state.location.pathname).toBe(`/w/${W}/newsletter`));
+});
+
 test("Cmd K opens it from inside a field too", async () => {
   const user = userEvent.setup();
   await open("");
@@ -92,7 +108,27 @@ test("the button opens it with every screen listed; Escape closes it and gives f
   await user.click(button);
   const dialog = await screen.findByRole("dialog", { name: "Search and actions" });
   await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
-  expect(options()).toEqual(["Home", "Calendar", "Campaigns", "Audience", "Find companies", "Segments", "Brand", "Lessons", "Members", "Email and keys", "Social accounts", "AI models", "Auto-approve"]);
+  expect(options()).toEqual([
+    "Home",
+    "Review",
+    "Calendar",
+    "Campaigns",
+    "Newsletter",
+    "SEO",
+    "Audience",
+    "Find companies",
+    "Segments",
+    "Brand",
+    "Lessons",
+    "Settings",
+    "Members",
+    "Email and keys",
+    "Who is sending",
+    "Social accounts",
+    "AI models",
+    "Auto-approve",
+    "Review time",
+  ]);
   expect(await violations()).toEqual([]);
   await user.keyboard("{Escape}");
   await waitFor(() => expect(openDialog("Search and actions")).toBeNull());

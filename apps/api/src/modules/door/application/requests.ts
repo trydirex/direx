@@ -3,7 +3,8 @@
 // against its token's cap first, and only then against its Workspace's, so one busy token can't use
 // up the Workspace's allowance for the others. Counts live in Postgres, one statement each, so every
 // API process sees the same number. Over a cap is refused, never queued. Each request leaves one row:
-// reader, outcome, time, and nothing that was asked or answered.
+// reader, outcome, time, and nothing that was asked or answered. The exception is a token past its
+// cap: only its first refusal each minute leaves a row, so a flood can't grow the log without bound.
 import * as repo from "../adapters/repo";
 
 export type DoorOutcome = repo.DoorOutcome;
@@ -18,15 +19,16 @@ export function createRequests(d: { caps?: Caps; now?: () => Date } = {}) {
   const caps = d.caps ?? DEFAULT_CAPS;
   const now = d.now ?? (() => new Date());
   return {
-    /** Counts this request, or says how many seconds to wait. */
-    async admit(workspaceId: string, tokenId: string): Promise<{ ok: true } | { ok: false; retryAfter: number }> {
+    /** Counts this request, or says how many seconds to wait and whether this refusal is the token's first this minute. */
+    async admit(workspaceId: string, tokenId: string): Promise<{ ok: true } | { ok: false; retryAfter: number; first: boolean }> {
       const at = now();
       const minute = new Date(Math.floor(at.getTime() / MINUTE_MS) * MINUTE_MS);
-      const over = { ok: false as const, retryAfter: Math.max(1, Math.ceil((minute.getTime() + MINUTE_MS - at.getTime()) / 1000)) };
+      const retryAfter = Math.max(1, Math.ceil((minute.getTime() + MINUTE_MS - at.getTime()) / 1000));
       return repo.inWorkspace(workspaceId, async (tx) => {
         await repo.pruneCounters(tx, workspaceId, new Date(minute.getTime() - KEEP_MS));
-        if ((await repo.bumpCounter(tx, workspaceId, `token:${tokenId}`, minute)) > caps.perToken) return over;
-        if ((await repo.bumpCounter(tx, workspaceId, "workspace", minute)) > caps.perWorkspace) return over;
+        const over = async () => ({ ok: false as const, retryAfter, first: (await repo.bumpCounter(tx, workspaceId, `refused:${tokenId}`, minute)) === 1 });
+        if ((await repo.bumpCounter(tx, workspaceId, `token:${tokenId}`, minute)) > caps.perToken) return over();
+        if ((await repo.bumpCounter(tx, workspaceId, "workspace", minute)) > caps.perWorkspace) return over();
         return { ok: true as const };
       });
     },

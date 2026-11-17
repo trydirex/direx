@@ -35,10 +35,12 @@ test("a token's cap comes first and doesn't spend the Workspace's; the Workspace
   expect(await one.admit(W, a)).toEqual({ ok: true });
   expect(await two.admit(W, a)).toEqual({ ok: true });
   // Refused by its own cap at :30.5, so 30 seconds to the next minute; the Workspace's count stays at 2.
-  expect(await one.admit(W, a)).toEqual({ ok: false, retryAfter: 30 });
+  expect(await one.admit(W, a)).toEqual({ ok: false, retryAfter: 30, first: true });
   expect(await two.admit(W, b)).toEqual({ ok: true });
-  expect(await one.admit(W, b)).toEqual({ ok: false, retryAfter: 30 });
-  expect(await two.admit(W, c)).toEqual({ ok: false, retryAfter: 30 });
+  expect(await one.admit(W, b)).toEqual({ ok: false, retryAfter: 30, first: true });
+  expect(await two.admit(W, c)).toEqual({ ok: false, retryAfter: 30, first: true });
+  // A token's second refusal in the minute isn't its first, so the route records no second row.
+  expect(await two.admit(W, a)).toEqual({ ok: false, retryAfter: 30, first: false });
   // Another Workspace counts on its own.
   expect(await one.admit(OTHER, a)).toEqual({ ok: true });
   // A new minute starts every count again.

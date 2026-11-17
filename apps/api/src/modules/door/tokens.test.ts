@@ -3,7 +3,7 @@
 // secret, revoked by anyone, and accepted only while live, in their own Workspace, with their creator
 // still an Owner or Admin (ADR 0032 rules 005 and 011).
 import { beforeAll, expect, test } from "vitest";
-import { seedWorkspace, setRole, tokenAudit } from "./fixtures/members";
+import { seedWorkspace, setRole, softDeleteWorkspace, tokenAudit } from "./fixtures/members";
 import { createTokens } from "./index";
 
 const W = crypto.randomUUID();
@@ -104,6 +104,17 @@ test("a token stops while its creator isn't an Owner or Admin, and starts again 
   expect(await tokens.verify(W, r.token)).toBeNull();
   await setRole(W, admin, "admin");
   expect(await tokens.verify(W, r.token)).not.toBeNull();
+});
+
+test("a deleted Workspace's token stops, as any dead token does", async () => {
+  const D = crypto.randomUUID();
+  const dOwner = crypto.randomUUID();
+  await seedWorkspace(D, dOwner);
+  const r = await tokens.create(D, input, dOwner);
+  if (!r.ok) throw new Error(r.reason);
+  expect(await tokens.verify(D, r.token)).not.toBeNull();
+  await softDeleteWorkspace(D, dOwner);
+  expect(await tokens.verify(D, r.token)).toBeNull();
 });
 
 test("a use is recorded at most once a minute", async () => {

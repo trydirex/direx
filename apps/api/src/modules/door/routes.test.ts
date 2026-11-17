@@ -98,13 +98,14 @@ test("a reader the token didn't choose is 403, counted and recorded", async () =
   expect(await outcomes(t.id)).toEqual(["reader_not_allowed"]);
 });
 
-test("over the cap is 429 with Retry-After, and recorded", async () => {
+test("over the cap is 429 with Retry-After, recorded once a minute however often it repeats", async () => {
   const t = await token();
   for (let i = 0; i < 3; i++) expect((await post("read_changes", bearer(t.token))).status).toBe(200);
   const res = await post("read_changes", bearer(t.token));
   expect(await answer(res)).toEqual([429, { error: "rate_limited" }]);
   expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
-  expect((await outcomes(t.id))[0]).toBe("rate_limited");
+  expect((await post("read_changes", bearer(t.token))).status).toBe(429);
+  expect(await outcomes(t.id)).toEqual(["rate_limited", "ok", "ok", "ok"]);
 });
 
 test("a body over 16 KB is 413; bad JSON, an unknown field and a bad cursor are 400; each is recorded", async () => {

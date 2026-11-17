@@ -160,6 +160,7 @@
   "POST /api/connect/:workspaceId/:token",
   "GET /api/w/:workspaceId/mailbox-providers",
   "GET /api/w/:workspaceId/mailbox-providers",
+  "GET /api/w/:workspaceId/mailbox-providers",
   "POST /api/w/:workspaceId/mailboxes/:connection",
   "POST /api/w/:workspaceId/mailboxes/:connection",
   "POST /api/w/:workspaceId/mailboxes/:connection",

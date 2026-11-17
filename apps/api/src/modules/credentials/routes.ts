@@ -89,7 +89,7 @@ const MailboxProvider = z
 const providersRoute = route({
   method: "get",
   path: "/api/w/{workspaceId}/mailbox-providers",
-  request: { params: ws },
+  request: { params: ws, query: z.object({ purpose: z.enum(["connect", "existing"]).optional() }) },
   responses: { 200: json(z.object({ providers: z.array(MailboxProvider) }), "The ways to connect a Mailbox here"), ...errors },
 });
 const connectFormRoute = route({
@@ -306,8 +306,10 @@ function toJson(c: CredentialMeta) {
 export type CheckMailbox = (workspaceId: string, connection: string, credential: { username: string; password: string; settings: Record<string, string> }) => Promise<{ emailAddress: string; hasSent?: boolean }>;
 export type ProbeStart = { ok: true; check: { state: string; reason: string | null } } | { ok: false; reason: string };
 export type MailboxConnect = {
-  /** The providers this deployment offers. */
+  /** Providers currently available for new connections. */
   providers: () => readonly z.infer<typeof MailboxProvider>[];
+  /** Providers this deployment recognizes for existing Mailboxes, regardless of connect configuration. */
+  eligibleProviders: () => readonly z.infer<typeof MailboxProvider>[];
   check: CheckMailbox;
   /** Sends the Mailbox's header probe, approved by this member, on the wording version they saw. */
   probe?: (workspaceId: string, credentialId: string, member: Member, wordingVersion: string) => Promise<ProbeStart>;
@@ -408,7 +410,8 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
 
   return app
     .openapi(providersRoute, (c) => {
-      const providers = (mailboxes?.providers() ?? []).map(({ connection, label, connect, fields, presets }) => ({ connection, label, connect, fields, presets }));
+      const eligible = c.req.valid("query").purpose === "existing" ? mailboxes?.eligibleProviders() : mailboxes?.providers();
+      const providers = (eligible ?? []).map(({ connection, label, connect, fields, presets }) => ({ connection, label, connect, fields, presets }));
       return c.json({ providers }, 200);
     })
     .openapi(connectFormRoute, async (c) => {
@@ -446,7 +449,7 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
       if (!found) return c.json({ error: "missing" }, 404);
       const refused = mayTouch(m, found, true);
       if (refused) return c.json({ error: refused }, STATUS[refused]);
-      if (!mailboxes?.probe || !mailboxes.providers().some((p) => p.connection === found.connection)) return c.json({ error: "not_a_mailbox" }, 400);
+      if (!mailboxes?.probe || !mailboxes.eligibleProviders().some((p) => p.connection === found.connection)) return c.json({ error: "not_a_mailbox" }, 400);
       const started = await mailboxes.probe(m.workspaceId, credentialId, m, c.req.valid("json").probeWording);
       if (started.ok) return c.json({ check: started.check }, 200);
       if (started.reason === "stale_wording") return c.json({ error: started.reason }, 409);

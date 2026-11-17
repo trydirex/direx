@@ -82,6 +82,10 @@ export type MailboxProvider = S["MailboxProvider"];
 export const mailboxProvidersQuery = (workspaceId: string) =>
   queryOptions({ queryKey: inWorkspace(workspaceId, "mailbox-providers"), queryFn: async () => (await call(api.GET("/api/w/{workspaceId}/mailbox-providers", { params: at(workspaceId) }))).providers });
 
+/** Deployment-eligible providers recognize stored accounts even when new connections are unavailable. */
+export const existingMailboxProvidersQuery = (workspaceId: string) =>
+  queryOptions({ queryKey: inWorkspace(workspaceId, "mailbox-providers", "existing"), queryFn: async () => (await call(api.GET("/api/w/{workspaceId}/mailbox-providers", { params: { ...at(workspaceId), query: { purpose: "existing" } } }))).providers });
+
 export const mailboxProviders = async (workspaceId: string): Promise<MailboxProvider[]> => (await api.GET("/api/w/{workspaceId}/mailbox-providers", { params: at(workspaceId) })).data?.providers ?? [];
 
 /** The probe wording this page shows; the server refuses a Connect that names any other version. */

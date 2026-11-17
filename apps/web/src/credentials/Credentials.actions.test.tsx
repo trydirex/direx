@@ -38,10 +38,10 @@ afterEach(() => {
 });
 
 /** Every list the page reads, changeable between calls so a test can see the page read them again. */
-function serve(data: { credentials?: unknown[]; providers?: unknown[]; services?: unknown[]; checks?: unknown[]; events?: () => Promise<unknown> }) {
-  const get = vi.spyOn(api, "GET").mockImplementation(((path: string) => {
+function serve(data: { credentials?: unknown[]; providers?: unknown[]; existingProviders?: unknown[]; services?: unknown[]; checks?: unknown[]; events?: () => Promise<unknown> }) {
+  const get = vi.spyOn(api, "GET").mockImplementation(((path: string, options?: { params?: { query?: { purpose?: string } } }) => {
     if (path === "/api/w/{workspaceId}/credentials") return reply(200, { credentials: data.credentials ?? [] });
-    if (path === "/api/w/{workspaceId}/mailbox-providers") return reply(200, { providers: data.providers ?? [] });
+    if (path === "/api/w/{workspaceId}/mailbox-providers") return reply(200, { providers: (options?.params?.query?.purpose === "existing" ? data.existingProviders ?? data.providers : data.providers) ?? [] });
     if (path === "/api/w/{workspaceId}/key-services") return reply(200, { services: data.services ?? [] });
     if (path === "/api/w/{workspaceId}/outreach/mailbox-pauses") return reply(200, { pauses: [] });
     if (path === "/api/w/{workspaceId}/outreach/mailbox-checks") return reply(200, { checks: data.checks ?? [] });
@@ -362,4 +362,12 @@ test("each email account is a card with its name, its state and its own buttons"
   expect(a.getByRole("button", { name: "Disconnect a@example.com" })).toBeTruthy();
   expect(a.queryByRole("button", { name: "Disconnect b@example.com" })).toBeNull();
   expect(screen.queryByRole("table")).toBeNull();
+});
+
+test("stored Gmail retains mailbox controls when Google connections are unavailable", async () => {
+  serve({ providers: [], existingProviders: [google], credentials: [cred({ id: "m1", name: "stored@example.com", connection: "google", ownerUserId: "another-member" })] });
+  open();
+  expect(await screen.findByRole("button", { name: "Check again: stored@example.com" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "History of stored@example.com" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Connect Google" })).toBeNull();
 });

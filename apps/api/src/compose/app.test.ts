@@ -45,6 +45,55 @@ test("the ports read the server's own modules, and the worker's once it has star
   expect(worker.prospectingRuns.companies).toHaveBeenCalledWith(ws);
 });
 
+test("Gmail is offered as a Mailbox only once the Google client is set up", async () => {
+  const offered = async (purpose = "connect") => {
+    const res = await createApp({ worker: () => undefined }).app.request(`/api/w/${ws}/mailbox-providers?purpose=${purpose}`, { headers: { cookie } });
+    return ((await res.json()) as { providers: { connection: string }[] }).providers.map((p) => p.connection);
+  };
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "");
+  expect(await offered()).toEqual(["imap_smtp"]);
+  expect(await offered("existing")).toEqual(["google", "imap_smtp"]);
+  vi.stubEnv("DIREX_DEPLOYMENT", "cloud");
+  expect(await offered()).toEqual([]);
+  expect(await offered("existing")).toEqual(["google"]);
+  vi.stubEnv("DIREX_DEPLOYMENT", "self_host");
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "google-client");
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_SECRET", "g");
+  expect(await offered()).toEqual(["google", "imap_smtp"]);
+});
+
+test("stored Gmail stays recognizable without a Google client, while deployment restrictions still apply", async () => {
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "");
+  vi.stubEnv("DIREX_DEPLOYMENT", "self_host");
+  const { app, vault } = createApp({ worker: () => undefined });
+  const made = await post(app, `/api/w/${ws}/credentials`, { scope: "user", kind: "api_key", key: crypto.randomUUID(), name: "Stored mailbox", value: { key: "fixture" } });
+  expect(made.status).toBe(201);
+  const { credential } = (await made.json()) as { credential: { id: string } };
+  const stored = (await vault().find(ws, credential.id))!;
+  // Only recognition is under test: model the metadata of an already connected account.
+  const find = vi.spyOn(vault(), "find");
+  const check = () => post(app, `/api/w/${ws}/mailboxes/${credential.id}/check`, { probeWording: "outdated" });
+  try {
+    for (const deployment of ["self_host", "cloud"]) {
+      vi.stubEnv("DIREX_DEPLOYMENT", deployment);
+      find.mockResolvedValue({ ...stored, connection: "google" });
+      const gmail = await check();
+      expect(gmail.status).toBe(409);
+      expect(await gmail.json()).toEqual({ error: "stale_wording" });
+      find.mockResolvedValue({ ...stored, connection: "imap_smtp" });
+      const password = await check();
+      expect(password.status).toBe(deployment === "self_host" ? 409 : 400);
+      expect(await password.json()).toEqual({ error: deployment === "self_host" ? "stale_wording" : "not_a_mailbox" });
+    }
+    find.mockResolvedValue({ ...stored, connection: "unrelated" });
+    const other = await check();
+    expect(other.status).toBe(400);
+    expect(await other.json()).toEqual({ error: "not_a_mailbox" });
+  } finally {
+    find.mockRestore();
+  }
+});
+
 test("Ask's starts include clipping only once the worker has clip runs, and never on cloud", async () => {
   let worker: Worker | undefined;
   const { ports } = createApp({ worker: () => worker });

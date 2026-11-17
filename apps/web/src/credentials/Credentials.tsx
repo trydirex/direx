@@ -37,6 +37,7 @@ import {
   KINDS,
   mailboxChecksQuery,
   mailboxProvidersQuery,
+  existingMailboxProvidersQuery,
   paceQuery,
   placementResultsQuery,
   remove,
@@ -143,6 +144,7 @@ export function Credentials(p: { workspace: S["MyWorkspace"]; me: string; tab?: 
   const credentials = useQuery({ ...credentialsQuery(workspace.id), initialData: seed(p.credentials) });
   const providers = useQuery({ ...mailboxProvidersQuery(workspace.id), initialData: seed(p.providers) }).data ?? [];
   const services = useQuery({ ...keyServicesQuery(workspace.id), initialData: seed(p.services) }).data ?? [];
+  const existingProviders = useQuery({ ...existingMailboxProvidersQuery(workspace.id), initialData: seed(p.providers) }).data ?? [];
   const checks = useQuery({ ...mailboxChecksQuery(workspace.id), initialData: seed(p.checks) }).data ?? [];
   // A newsletter tool's key is set up, replaced and removed on the Newsletter page, so it shows here only as a pointer.
   const letterTools = new Set((useQuery({ ...newsletterQuery(workspace.id), enabled: !seeded }).data?.platforms ?? []).map((x) => x.connection));
@@ -188,7 +190,7 @@ export function Credentials(p: { workspace: S["MyWorkspace"]; me: string; tab?: 
     );
   }
 
-  const rowsOf = (all: Credential[]) => split(all, me, networks, services.map((s) => s.connection), providers.map((x) => x.connection));
+  const rowsOf = (all: Credential[]) => split(all, me, networks, services.map((s) => s.connection), existingProviders.map((x) => x.connection));
   const may = (c: Credential, mayChange: boolean) => ({ workspaceId: workspace.id, c, mayChange, mayRotate: mayChange && c.kind !== "oauth2" && (c.scope === "workspace" || c.ownerUserId === me), settle });
   const row = (c: Credential, mailbox: boolean, mayChange: boolean) => <Row key={c.id} mailbox={mailbox} {...may(c, mayChange)} />;
   const loaded = (children: (all: Credential[]) => ReactNode) => (

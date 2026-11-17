@@ -133,6 +133,14 @@ export function useWaitingByWorkspace(workspaceIds: string[]): Record<string, nu
 /** A local day as launch dates are written, such as "2026-11-10". */
 export const isoDay = (d: Date) => d.toLocaleDateString("en-CA");
 
+/** When something put on `day` goes: 9:00, or the next whole hour once 9:00 has passed. */
+export function firstSlot(day: Date, now = new Date()): Date {
+  const soon = new Date(now);
+  soon.setHours(soon.getHours() + 1, 0, 0, 0);
+  const nine = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9);
+  return nine < soon ? soon : nine;
+}
+
 export type MailboxDay = S["MailboxDays"]["days"][number];
 
 /** Each Mailbox's emails against its daily limit on the days from `start`, for the Calendar's lane. */

@@ -893,6 +893,9 @@ test("a step shares its drafts across its Mailboxes, a Person's next step keeps 
   expect(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: box, mailboxCredentialIds: [other] })).toEqual({ ok: false, reason: "mailbox_twice" });
   expect(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [other, other] })).toEqual({ ok: false, reason: "duplicate_mailbox" });
   ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [box, other] }));
+  // Saved again the other way round, each Mailbox keeps its place, so box stays the step's first.
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [other, box] }));
+  expect((await q("select mailbox_credential_id from campaign_steps where campaign_id = $1 and step_key = 'first'", [id]))[0].mailbox_credential_id).toBe(box);
   const { revision } = await write(id);
   const people = await addPeople(id, [person(), person(), person(), person()]);
   const senderOf = async (itemId: string) => (await q("select a.credential_id from actions a join items i on i.action_id = a.id where i.id = $1", [itemId]))[0].credential_id as string;

@@ -25,7 +25,7 @@ const ws = (id: string, name: string, org: string) => ({ id, name, role: "owner"
 test("every page renders, in Organization and Workspace terms", () => {
   const switcher = createElement(WorkspaceSwitcher, { workspaces: [ws(W, "Shop", "Acme"), ws("w2", "Blog", "Acme"), ws("w3", "Cafe", "Beta")], current: W, onSwitch: () => {} });
   const pages = {
-    signIn: render(createElement(SignIn, { callbackURL: "/" })),
+    signIn: render(withQueries(createElement(SignIn, { callbackURL: "/" }))),
     createOrg: render(createElement(CreateOrg, { onCreated: () => {} })),
     switcher: render(switcher),
     members: render(withQueries(createElement(Members, { workspace: ws(W, "Shop", "Acme") }))),
@@ -46,7 +46,7 @@ test("every page renders, in Organization and Workspace terms", () => {
 });
 
 test("the sign-in page leads with Google and Microsoft, then a password, in each mode, and keeps the other ways in", () => {
-  const page = (initialMode: "sign_in" | "sign_up" | "forgot") => render(createElement(SignIn, { callbackURL: "/", initialMode }));
+  const page = (initialMode: "sign_in" | "sign_up" | "forgot") => render(withQueries(createElement(SignIn, { callbackURL: "/", initialMode })));
   const signIn = page("sign_in");
   expect(signIn.indexOf("Continue with Google")).toBeLessThan(signIn.indexOf('type="password"'));
   expect(signIn).toContain("Nothing goes out until you approve it.");
@@ -70,7 +70,7 @@ test("the sign-in page leads with Google and Microsoft, then a password, in each
     expect(html).toContain("Continue with Google");
     expect(html).not.toMatch(/\b(tenant|account|project)\b/i);
   }
-  const stepUp = render(createElement(SignIn, { title: "Confirm it's you", callbackURL: "/x" }));
+  const stepUp = render(withQueries(createElement(SignIn, { title: "Confirm it's you", callbackURL: "/x" })));
   expect(stepUp).toContain('type="password"');
 });
 

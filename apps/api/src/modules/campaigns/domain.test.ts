@@ -98,7 +98,7 @@ test("300 emails on 3 Mailboxes at 50 a day take 2 weekdays, none over its limit
   expect(got.size).toBe(300);
   const perDay = new Map<string, number>();
   for (const s of got.values()) {
-    const key = `${s.credentialId} ${s.at.toISOString().slice(0, 10)}`;
+    const key = `${s.credentialId} ${s.at!.toISOString().slice(0, 10)}`;
     perDay.set(key, (perDay.get(key) ?? 0) + 1);
   }
   // Thursday and Friday, 50 each on each Mailbox.
@@ -114,9 +114,11 @@ test("a Person keeps their earlier sender while it's on the step; a full Mailbox
   ]);
   // kim keeps b though a is earlier; sam's old Mailbox left the step, so sam is assigned again.
   const got = assignSenders(["kim", "sam", "lee", "ann"], free, new Map([["kim", "b"], ["sam", "gone"]]));
-  expect(Object.fromEntries([...got].map(([p, s]) => [p, `${s.credentialId}@${s.at.getUTCHours()}`]))).toEqual({ kim: "b@12", sam: "a@9", lee: "a@10" });
+  expect(Object.fromEntries([...got].map(([p, s]) => [p, `${s.credentialId}@${s.at!.getUTCHours()}`]))).toEqual({ kim: "b@12", sam: "a@9", lee: "a@10" });
   // ann has no time left on any Mailbox.
   expect(got.has("ann")).toBe(false);
+  // With b full, kim still keeps b and waits unplaced, rather than moving to a.
+  expect(assignSenders(["lee", "kim"], new Map([["a", [at(9)]], ["b", []]]), new Map([["kim", "b"]])).get("kim")).toEqual({ credentialId: "b" });
 });
 
 test("a step sends from 09:00 local, spaced so the day's limit fits in the hours", () => {

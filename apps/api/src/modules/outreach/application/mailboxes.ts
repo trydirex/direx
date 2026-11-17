@@ -15,10 +15,10 @@ export const mailboxPaused = async (tx: OutreachTx, credentialId: string | null)
 export async function pauseOnBounces(tx: OutreachTx, credentialId: string, at: Date): Promise<void> {
   const state = await pauseOf(tx, credentialId);
   if (!state || state.pausedAt) return;
-  if (shouldPause(await latestSends(tx, credentialId, state.resumedAt, PAUSE_WINDOW))) await setPause(tx, credentialId, { reason: "bounces", by: null, at });
+  if (shouldPause(await latestSends(tx, credentialId, state.resumedAt, PAUSE_WINDOW))) await setPause(tx, credentialId, { reason: "bounces", by: null, at, resumedAt: state.resumedAt });
 }
 
-export function createMailboxPauses(deps: { ledger: () => Pick<Ledger, "resumeHeldBy">; now?: () => Date }) {
+export function createMailboxPauses(deps: { ledger: () => Pick<Ledger, "resumeMailboxPaused">; now?: () => Date }) {
   const now = deps.now ?? (() => new Date());
   return {
     paused: (workspaceId: string) => inWorkspace(workspaceId, pausedMailboxes),
@@ -35,7 +35,7 @@ export function createMailboxPauses(deps: { ledger: () => Pick<Ledger, "resumeHe
         return true;
       });
       if (!found) return { ok: false, reason: "not_found" };
-      if (!paused) await deps.ledger().resumeHeldBy(workspaceId, MAILBOX_PAUSED, { userId: who.userId }, async (_tx, held) => held.credentialId === credentialId);
+      if (!paused) await deps.ledger().resumeMailboxPaused(workspaceId, credentialId, { userId: who.userId });
       return { ok: true };
     },
   };

@@ -90,7 +90,9 @@ export function createReplies(deps: RepliesDeps) {
   async function bounces(tx: OutreachTx, e: InboundEvent, recipients: { email: string; status: string }[], at: Date) {
     let recorded = false;
     for (const { email, status } of recipients) {
-      const sent = await sentTo(tx, email);
+      // The notice flow exposes recipients, but no original-send Message-ID. Keep recipient
+      // matching within the receiving Mailbox; the notice's own Message-ID is not the send's.
+      const sent = await sentTo(tx, email, e.credentialId);
       if (!sent) continue;
       if (await record(tx, { workspaceId: e.workspaceId, credentialId: e.credentialId, eventId: `${e.eventId}:${email}`, senderEmail: email, personId: sent.personId, actionId: sent.actionId, kind: "bounce", status: "recorded", bounceStatus: status, receivedAt: at })) recorded = true;
       if (isHardBounce(status)) await suppress(tx, e.workspaceId, email, "hard_bounce", at);

@@ -14,7 +14,8 @@ const WHY = {
 
 export function MailboxPause(p: { workspaceId: string; credentialId: string; name: string; mayPause: boolean; mayResume: boolean }) {
   const client = useQueryClient();
-  const pause = useQuery(pausesQuery(p.workspaceId)).data?.find((x) => x.credentialId === p.credentialId);
+  const query = useQuery(pausesQuery(p.workspaceId));
+  const pause = query.data?.find((x) => x.credentialId === p.credentialId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const change = async (paused: boolean) => {
@@ -23,11 +24,15 @@ export function MailboxPause(p: { workspaceId: string; credentialId: string; nam
       const failed = await setPaused(p.workspaceId, p.credentialId, paused);
       setError(failed ? "That didn't save. Try again." : undefined);
       if (!failed) await client.invalidateQueries({ queryKey: inWorkspace(p.workspaceId) });
+    } catch {
+      setError("That didn't save. Try again.");
     } finally {
       setSaving(false);
     }
   };
   const failed = error && <span role="alert">{error}</span>;
+  if (query.isError) return <p role="alert">Couldn't load sending status. <Button size="sm" variant="outline" onClick={() => void query.refetch()}>Try again</Button></p>;
+  if (!query.isSuccess) return <p role="status">Loading sending status…</p>;
   if (!pause) {
     if (!p.mayPause) return null;
     return (

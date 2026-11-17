@@ -43,6 +43,7 @@ function serve(data: { credentials?: unknown[]; providers?: unknown[]; services?
     if (path === "/api/w/{workspaceId}/credentials") return reply(200, { credentials: data.credentials ?? [] });
     if (path === "/api/w/{workspaceId}/mailbox-providers") return reply(200, { providers: data.providers ?? [] });
     if (path === "/api/w/{workspaceId}/key-services") return reply(200, { services: data.services ?? [] });
+    if (path === "/api/w/{workspaceId}/outreach/mailbox-pauses") return reply(200, { pauses: [] });
     if (path === "/api/w/{workspaceId}/outreach/mailbox-checks") return reply(200, { checks: data.checks ?? [] });
     if (path === "/api/w/{workspaceId}/social/networks") return reply(200, { networks: [{ connection: "linkedin" }] });
     if (path === "/api/w/{workspaceId}/credentials/{id}/events") return data.events?.() ?? reply(200, { events: [] });

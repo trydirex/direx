@@ -11,7 +11,7 @@ bun run doctor                      report problems and their fixes, changes not
 bun run dev                         API on 3000, web on 5173
 bun run test                        tests, which need the database from setup
 bun run check:task                  run this before calling work finished
-bun run ci                          everything CI runs on each change
+bun run check:full                  everything CI's ci job runs on each change
 bun scripts/check-first-run.ts      setup to sign-in, in a temporary copy
 ```
 
@@ -28,7 +28,8 @@ bun scripts/check-first-run.ts      setup to sign-in, in a temporary copy
 ## Rules
 
 - Read `CONSTRAINTS.md` before writing code, and don't weaken it to make a change pass.
-- Don't commit, branch, push or open a pull request unless a person asks for that action.
+- Don't commit, branch, push or open a pull request unless a person asks for that action, for one task
+  or as a standing instruction.
 - Never edit, rename or delete a merged migration. Add a new one.
 - Each migration file runs in its own transaction. `CREATE INDEX CONCURRENTLY` needs a file whose first
   line is `-- direx:no-transaction`, holding one statement per `--> statement-breakpoint` chunk, with
@@ -48,3 +49,30 @@ bun scripts/check-first-run.ts      setup to sign-in, in a temporary copy
   prints it, and so does `bun run setup` on a production server with no Server admin. It belongs to the person:
   don't read, print or pass it on, and don't run either command on a production server yourself. The dev
   magic-link exception doesn't cover it.
+
+## Pull requests
+
+These rules apply to every coding agent, whoever runs it. People follow the same rules in
+`CONTRIBUTING.md`, and `scripts/check-pr.ts` checks the title, the template, the linked issue and the
+size in CI.
+
+- A person opens every pull request and answers for it. You can prepare the branch, the commits and
+  the description. Push or open a PR only when that person asks, once or as a standing instruction
+  such as "open a PR when a task is done". Open it ready for review, not as a draft, and never push
+  to `main`.
+- From outside the project, work only on an issue labelled `accepted`, and start the description with
+  `Closes #N`. Never invent an issue number.
+- Title: one imperative sentence of at most 72 characters, starting with a capital letter, with no
+  `feat:`-style prefix and no full stop. Pull requests are squash-merged, so the title and description
+  become the commit on `main`.
+- `gh pr create` and the API don't load the template. Copy `.github/pull_request_template.md` into the
+  description and replace each "Replace this line" placeholder.
+- Under Verification, list each command you ran and its result, and write
+  `Not run: <command> (<reason>)` for any you skipped. `bun run check:task` must pass.
+- Never add a `Co-authored-by:` trailer for an AI tool, yourself included: the CLA check can read it as
+  a person who hasn't signed. Saying which tools helped is optional; use the template's "AI use"
+  section or an `Assisted-by: <tool>` trailer.
+- Keep a PR to 500 changed lines and 10 files, not counting `bun.lock` and
+  `packages/db/migrations/meta/`. Split bigger work.
+- Leave `CONSTRAINTS.md`, `CLA.md`, `.github/` and merged migrations alone unless the issue asks for a
+  change there.

@@ -12,7 +12,7 @@ import { DropdownMenu } from "@astryxdesign/core/DropdownMenu";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { toast } from "@/components/toast";
 import { cn } from "@/lib/cn";
-import { addDays, approvable, approve, approveClean, approveLabel, chips, emptyStepsQuery, isoDay, ITEM_MESSAGES, mailboxDaysQuery, mayApprove, mayEdit, message, move, needsYouQuery, onDay, RANGE_CAP, rangeQuery, STATE_LABEL, weekStart, type BulkResult, type Chip, type Item, type MailboxDay, type Role } from "./actions";
+import { addDays, approvable, approve, approveClean, approveLabel, chips, emptyStepsQuery, firstSlot, isoDay, ITEM_MESSAGES, mailboxDaysQuery, mayApprove, mayEdit, message, move, needsYouQuery, onDay, RANGE_CAP, rangeQuery, STATE_LABEL, weekStart, type BulkResult, type Chip, type Item, type MailboxDay, type Role } from "./actions";
 import { campaignsQuery } from "../campaigns/actions";
 import { Select } from "../components/Input";
 import { AddPost, CampaignBands, dayName, LaunchMarker } from "./CalendarParts";
@@ -245,10 +245,7 @@ export function Calendar(p: { workspaceId: string; role: Role;
     if (key.startsWith(UNDATED)) {
       const i = waitingAll.find((x) => x.id === key.slice(UNDATED.length));
       if (!i?.movable) return;
-      const soon = new Date();
-      soon.setHours(soon.getHours() + 1, 0, 0, 0);
-      const nine = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9);
-      const at = nine < soon ? soon : nine;
+      const at = firstSlot(day);
       return working(key, async () => say("Moved", await move(p.workspaceId, [{ id: i.id, plannedAt: at.toISOString() }]), ` It waits for approval on ${dayName(day)}.`));
     }
     // Any move voids an approval, so an Item already on that day stays put.

@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: pr-policy
+
+# The rules in CONTRIBUTING.md and AGENTS.md ("Pull requests"): title and template for everyone,
+# plus a linked `accepted` issue and the size limit for authors without write access. On
+# pull_request, never pull_request_target: a fork's PR gets a read-only token and no secrets.
+# Labelling the issue `accepted` later doesn't re-run this; re-run the job by hand.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  pr-policy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun scripts/check-pr.ts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

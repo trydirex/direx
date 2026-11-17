@@ -8,7 +8,7 @@ import { beforeAll, expect, test, vi } from "vitest";
 import { loadLaterFields } from "@/testing";
 import { api } from "../client";
 import { buttons, withQueries, withoutButtons } from "../testing";
-import { approvable, approve, approveClean, approveLabel, cancel, chips, kindLabel, listTime, move, needsYou, onDay, resolveUnknown, resume, week, weekStart, type Item, type Role } from "./actions";
+import { approvable, approve, approveClean, approveLabel, cancel, chips, firstSlot, kindLabel, listTime, move, needsYou, onDay, resolveUnknown, resume, week, weekStart, type Item, type Role } from "./actions";
 import { Calendar } from "./Calendar";
 import { greeting, Home } from "./Home";
 import { BasisNotes, Content, ItemPanel, ItemDialog } from "./ItemPanel";
@@ -357,4 +357,11 @@ test("an email shows the Mailbox it goes from, and a post reads as a post on its
 test("a Campaign's notices and choices read as Campaign, not as an approval", () => {
   for (const kind of ["campaign_waiting", "campaign_launch_moved", "campaign_stall", "campaign_plan_unfinished"]) expect(kindLabel({ kind, workArea: "outreach" }), kind).toBe("Campaign");
   expect(kindLabel({ kind: "action", workArea: "outreach" })).toBe("Email");
+});
+
+test("something put on a day goes at 9:00, or the next whole hour once today is past it", () => {
+  const monday = new Date(2026, 10, 16);
+  expect(firstSlot(monday, new Date(2026, 10, 16, 7, 30))).toEqual(new Date(2026, 10, 16, 9));
+  expect(firstSlot(monday, new Date(2026, 10, 16, 20, 45))).toEqual(new Date(2026, 10, 16, 21));
+  expect(firstSlot(new Date(2026, 10, 18), new Date(2026, 10, 16, 20, 45))).toEqual(new Date(2026, 10, 18, 9));
 });

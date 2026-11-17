@@ -87,6 +87,13 @@ test("a 401 drops everything cached and marks the person signed out", async () =
   expect(client.getQueryData(inWorkspace("w1", "name"))).toBeUndefined();
 });
 
+test("a 401 keeps what is the same for anyone, such as the sign-in buttons", async () => {
+  const client = makeQueryClient();
+  await client.fetchQuery({ queryKey: ["sign-in-options"], queryFn: () => ({ google: true }), meta: { sameForAnyone: true } });
+  await expect(client.fetchQuery({ queryKey: [...ME, "workspaces"], queryFn: () => call(refused(401, "unauthorized")) })).rejects.toBeInstanceOf(ApiError);
+  expect(client.getQueryData(["sign-in-options"])).toEqual({ google: true });
+});
+
 test("a 404 inside a Workspace reads the person's Workspaces again, in case they were removed", async () => {
   const { client } = setup(<Name workspaceId="w1" load={() => Promise.resolve("Contoso")} />);
   client.setQueryData([...ME, "workspaces"], [{ id: "w1" }]);

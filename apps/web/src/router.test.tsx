@@ -2,7 +2,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, createRouter, RouterProvider } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { makeQueryClient } from "@/api/query";
 import { api } from "@/client";
@@ -49,6 +49,31 @@ test("signed out, any page asks for sign-in", async () => {
   serve(false);
   open(`/w/${W}/calendar`);
   expect(await screen.findByRole("heading", { name: "Sign in to Direx" })).toBeTruthy();
+});
+
+test.each(["in time", "after timeout"])("sign-in options arriving %s keep their provider settings", async (arrival) => {
+  serve(false);
+  const real = vi.mocked(api.GET).getMockImplementation()!;
+  const options = Promise.withResolvers<Awaited<ReturnType<typeof api.GET>>>();
+  vi.mocked(api.GET).mockImplementation(((...args: Parameters<typeof api.GET>) =>
+    args[0] === "/api/sign-in-options" ? options.promise : real(...args)) as typeof api.GET);
+  const client = makeQueryClient();
+  const timers = vi.spyOn(globalThis, "setTimeout");
+  open("/", client);
+  await waitFor(() => expect(client.getQueryData(["me"])).toBeNull());
+  expect(screen.getByRole("status").textContent).toContain("Loading");
+  expect(screen.queryByRole("heading", { name: "Sign in to Direx" })).toBeNull();
+  if (arrival === "after timeout") {
+    const timeout = timers.mock.calls.find(([, delay]) => delay === 3_000)![0];
+    await act(async () => { (timeout as () => void)(); });
+    expect(await screen.findByRole("heading", { name: "Sign in to Direx" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue with Google" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Continue with Microsoft" })).toBeTruthy();
+  }
+  options.resolve({ data: { google: false, microsoft: true }, response: new Response(null, { status: 200 }) } as never);
+  expect(await screen.findByRole("heading", { name: "Sign in to Direx" })).toBeTruthy();
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Continue with Google" })).toBeNull());
+  expect(screen.getByRole("button", { name: "Continue with Microsoft" })).toBeTruthy();
 });
 
 test("signed in, / opens the first Workspace's Home", async () => {

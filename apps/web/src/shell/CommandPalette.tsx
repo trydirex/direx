@@ -10,18 +10,24 @@ import { useRegisteredCommands, type Command } from "./commands";
 
 const destinations = [
   ["Home", "/w/$workspaceId"],
+  ["Review", "/w/$workspaceId/review"],
   ["Calendar", "/w/$workspaceId/calendar"],
   ["Campaigns", "/w/$workspaceId/campaigns"],
+  ["Newsletter", "/w/$workspaceId/newsletter"],
+  ["SEO", "/w/$workspaceId/seo"],
   ["Audience", "/w/$workspaceId/people"],
   ["Find companies", "/w/$workspaceId/people/find"],
   ["Segments", "/w/$workspaceId/people/cohorts"],
   ["Brand", "/w/$workspaceId/brand"],
   ["Lessons", "/w/$workspaceId/brand/lessons"],
+  ["Settings", "/w/$workspaceId/settings"],
   ["Members", "/w/$workspaceId/settings/members"],
   ["Email and keys", "/w/$workspaceId/settings/credentials"],
+  ["Who is sending", "/w/$workspaceId/settings/sending"],
   ["Social accounts", "/w/$workspaceId/settings/social"],
   ["AI models", "/w/$workspaceId/settings/models"],
   ["Auto-approve", "/w/$workspaceId/settings/rules"],
+  ["Review time", "/w/$workspaceId/settings/review-time"],
 ] as const;
 
 export const kbd = "rounded-sm border border-current px-1 font-sans text-xs opacity-80";

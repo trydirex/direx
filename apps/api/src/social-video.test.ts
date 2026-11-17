@@ -305,6 +305,8 @@ test("Threads fetches the video where Direx has a public address; on localhost i
   expect(th.fetched).toEqual([MiB]);
 
   baseUrl = "http://localhost:3000";
+  // Publishing moved the clock past WHEN, and a time already gone isn't drafted.
+  clock.at = new Date("2026-11-02T09:00:00Z");
   const later = await postStep();
   const [hand] = await draft(later, [{ ...(await account("threads", ["threads_content_publish"])), text: "Clip", mediaId }]);
   expect(hand).toMatchObject({ ok: true, mode: "manual" });

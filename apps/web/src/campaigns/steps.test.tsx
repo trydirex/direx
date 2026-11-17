@@ -274,6 +274,18 @@ test("when writing drafts fails outright, the post step says to try again", asyn
   expect((await screen.findByRole("alert")).textContent).toBe("That didn't go through. Try again.");
 });
 
+test("a post step whose day has passed starts at a time still to come, and a time gone is refused in words", async () => {
+  const { put } = serve({ get: social([]), put: () => reply(400, { error: "slot_in_past" }) });
+  showPost();
+  await userEvent.click(await screen.findByRole("checkbox", { name: /Instagram/ }));
+  await userEvent.type(screen.getByRole("textbox", { name: "Text" }), "Launch day");
+  await userEvent.click(screen.getByRole("button", { name: "Save as drafts" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("That time has passed. Pick a new one.");
+  // The step is on 3 November, which has passed, so its 9:00 would only be refused.
+  const { plannedAt } = (put.mock.calls[0]![1] as { body: { plannedAt: string } }).body;
+  expect(new Date(plannedAt).getTime()).toBeGreaterThan(Date.now());
+});
+
 test("Save as drafts with no text says to write it, and sends nothing", async () => {
   const { put } = serve({ get: social([]) });
   showPost();

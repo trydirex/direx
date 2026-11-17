@@ -229,7 +229,7 @@ test("Settings opens on its Overview, with the Settings screens linked and Overv
   const router = open(`/w/${W}/settings`);
   await waitFor(() => expect(router.state.location.pathname).toBe(`/w/${W}/settings`));
   const settings = await screen.findByRole("navigation", { name: "Settings" });
-  expect(within(settings).getAllByRole("link").map((l) => l.textContent)).toEqual(["Overview", "Email and keys", "Who is sending", "Social accounts", "AI models", "Auto-approve", "Review time", "Members"]);
+  expect(within(settings).getAllByRole("link").map((l) => l.textContent)).toEqual(["Overview", "Email and keys", "Who is sending", "Social accounts", "AI models", "Auto-approve", "Review time", "Members", "External tokens"]);
   expect(within(settings).getByRole("link", { name: "Overview" }).getAttribute("aria-current")).toBe("page");
   expect(await screen.findByRole("heading", { level: 1, name: "Settings" })).toBeTruthy();
 });
@@ -266,6 +266,7 @@ test.each([
   "/brand/lessons",
   "/settings/sending",
   "/settings/members",
+  "/settings/tokens",
   "/settings/credentials?connect_error=expired",
   "/settings/social?connected=k1",
   "/settings/models",

@@ -85,7 +85,7 @@ There are two ways to reach it:
 The installer is safe to run again: it keeps `.env` and every password, and skips what is already
 done. Back up the `direx-data` volume, which holds the vault's root key, apart from the database.
 
-No release image is published yet. Until one is, build it on the server and install that:
+To run code newer than the latest release, build the image on the server and install that:
 
 ```
 docker build -f deploy/docker/Dockerfile -t ghcr.io/trydirex/direx:local .

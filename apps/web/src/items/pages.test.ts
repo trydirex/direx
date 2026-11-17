@@ -8,7 +8,7 @@ import { beforeAll, expect, test, vi } from "vitest";
 import { loadLaterFields } from "@/testing";
 import { api } from "../client";
 import { buttons, withQueries, withoutButtons } from "../testing";
-import { approvable, approve, approveClean, approveLabel, cancel, chips, listTime, move, needsYou, onDay, resolveUnknown, resume, week, weekStart, type Item, type Role } from "./actions";
+import { approvable, approve, approveClean, approveLabel, cancel, chips, kindLabel, listTime, move, needsYou, onDay, resolveUnknown, resume, week, weekStart, type Item, type Role } from "./actions";
 import { Calendar } from "./Calendar";
 import { greeting, Home } from "./Home";
 import { BasisNotes, Content, ItemPanel, ItemDialog } from "./ItemPanel";
@@ -352,4 +352,9 @@ test("an email shows the Mailbox it goes from, and a post reads as a post on its
   expect(show({ text: "https://acme.test/q4" }, { kind: "post", account: "Acme", network: "LinkedIn", link: { url: "https://acme.test/q4", title: "Q4 ops", description: null, site: "Acme", image: false } })).not.toContain("<img");
   // Without an appearance, the same post content stays as it was stored.
   expect(show({ text: "Three things we learned" }, null)).toContain("&quot;text&quot;: &quot;Three things we learned&quot;");
+});
+
+test("a Campaign's notices and choices read as Campaign, not as an approval", () => {
+  for (const kind of ["campaign_waiting", "campaign_launch_moved", "campaign_stall", "campaign_plan_unfinished"]) expect(kindLabel({ kind, workArea: "outreach" }), kind).toBe("Campaign");
+  expect(kindLabel({ kind: "action", workArea: "outreach" })).toBe("Email");
 });

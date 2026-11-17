@@ -8,7 +8,7 @@ import { EmptyState, Notice } from "../components/layout";
 import { Button } from "@/components/Button";
 import { Input, Textarea } from "@/components/Input";
 import { useAction } from "../components/useAction";
-import { approve, approveClean, detail, ITEM_MESSAGES, message, type BulkResult, type ItemState } from "../items/actions";
+import { approve, approveClean, detail, firstSlotValue, ITEM_MESSAGES, message, type BulkResult, type ItemState } from "../items/actions";
 import { Content, PostEditor } from "../items/ItemPanel";
 import { Rewrite } from "../items/Rewrite";
 import { StateChip } from "../items/StateChip";
@@ -188,7 +188,8 @@ export function PostStep(p: { workspaceId: string; id: string; step: Step; edit:
   const [runId, setRunId] = useState<string>();
   const [texts, setTexts] = useState<Record<string, string>>({});
   const [followUp, setFollowUp] = useState("");
-  const [when, setWhen] = useState(step.on ? `${step.on}T09:00` : "");
+  // 9:00 on the step's day, or the next whole hour once that has passed, so the default is never refused.
+  const [when, setWhen] = useState(() => (step.on ? firstSlotValue(new Date(`${step.on}T00:00`)) : ""));
   const [previews, setPreviews] = useState<Record<string, Preview>>({});
   const [problems, setProblems] = useState<string[]>([]);
   const [written, setWritten] = useState(false);
@@ -261,8 +262,8 @@ export function PostStep(p: { workspaceId: string; id: string; step: Step; edit:
             if (empty.length) return setProblems([perAccount ? `Write the text for ${empty.map((o) => o.label).join(", ")} first.` : "Write the post's text first."]);
             await writing.run(async () => {
               const results = await draftPosts(workspaceId, id, step.key, new Date(when).toISOString(), picked.map(targetOf));
-              setProblems(results ? results.filter((r) => !r.ok).map((r) => `${r.connection}: ${sayPost(r)}`) : ["That didn't go through. Try again."]);
-              setWritten(!!results?.some((r) => r.ok));
+              setProblems(typeof results === "string" ? [results] : results.filter((r) => !r.ok).map((r) => `${r.connection}: ${sayPost(r)}`));
+              setWritten(typeof results !== "string" && results.some((r) => r.ok));
               await reload();
               return null;
             });

@@ -1,0 +1,8 @@
+# Each entry is an exception in CONSTRAINTS.md. osv-scanner reads this file from beside bun.lock.
+
+# E2: picomatch ReDoS. No fixed release yet; picomatch only runs in dev and build tooling
+# (vite, vitest, dependency-cruiser) on glob patterns from this repo, never on user input.
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-31
+reason = "E2 in CONSTRAINTS.md: picomatch 4.0.7, dev tooling only, no fixed release"

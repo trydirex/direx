@@ -147,6 +147,12 @@ export function firstSlot(day: Date, now = new Date()): Date {
   return nine < soon ? soon : nine;
 }
 
+/** `firstSlot` as a date and time field's value, such as "2026-11-17T10:00". */
+export function firstSlotValue(day: Date, now = new Date()): string {
+  const at = firstSlot(day, now);
+  return `${isoDay(at)}T${String(at.getHours()).padStart(2, "0")}:00`;
+}
+
 export type MailboxDay = S["MailboxDays"]["days"][number];
 
 /** Each Mailbox's emails against its daily limit on the days from `start`, for the Calendar's lane. */

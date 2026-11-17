@@ -8,7 +8,7 @@ import { beforeAll, expect, test, vi } from "vitest";
 import { loadLaterFields } from "@/testing";
 import { api } from "../client";
 import { buttons, withQueries, withoutButtons } from "../testing";
-import { approvable, approve, approveClean, approveLabel, cancel, chips, firstSlot, kindLabel, listTime, move, needsYou, onDay, resolveUnknown, resume, week, weekStart, type Item, type Role } from "./actions";
+import { approvable, approve, approveClean, approveLabel, cancel, chips, firstSlot, firstSlotValue, kindLabel, listTime, move, needsYou, onDay, resolveUnknown, resume, week, weekStart, type Item, type Role } from "./actions";
 import { Calendar } from "./Calendar";
 import { greeting, Home } from "./Home";
 import { BasisNotes, Content, ItemPanel, ItemDialog } from "./ItemPanel";
@@ -369,6 +369,9 @@ test("something put on a day goes at 9:00, or the next whole hour once today is 
   expect(firstSlot(monday, new Date(2026, 10, 16, 7, 30))).toEqual(new Date(2026, 10, 16, 9));
   expect(firstSlot(monday, new Date(2026, 10, 16, 20, 45))).toEqual(new Date(2026, 10, 16, 21));
   expect(firstSlot(new Date(2026, 10, 18), new Date(2026, 10, 16, 20, 45))).toEqual(new Date(2026, 10, 18, 9));
+  // As a date and time field shows it; a day already gone starts at the next whole hour today.
+  expect(firstSlotValue(monday, new Date(2026, 10, 16, 7, 30))).toBe("2026-11-16T09:00");
+  expect(firstSlotValue(new Date(2026, 10, 11), new Date(2026, 10, 17, 8, 10))).toBe("2026-11-17T09:00");
 });
 
 const replyContent = { signalId: "s1", label: "interested", quote: "can we talk <b>Friday</b>", owner: { userIds: ["u1", "u2"], rule: "approver" as const } };

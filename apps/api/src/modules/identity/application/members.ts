@@ -29,7 +29,11 @@ async function change(m: Member, userId: string, to: Role | null, now: Date, onC
   });
   if (r === null || typeof r === "string") return r;
   // The change has committed, so a follow-up that fails is logged, never answered as a failed change.
-  await onChange?.(m.workspaceId, userId, r.from, to).catch((e: unknown) => console.error("after a membership change", e));
+  try {
+    await onChange?.(m.workspaceId, userId, r.from, to);
+  } catch (e) {
+    console.error("after a membership change", e);
+  }
   return null;
 }
 

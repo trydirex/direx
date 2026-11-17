@@ -6,7 +6,8 @@ import { afterEach, expect, test } from "vitest";
 import { behavePlugin } from "./fixtures/behave-plugin";
 import { parseManifest } from "@direx/plugin-sdk";
 import { behaveManifest } from "./fixtures/manifest";
-import { CallFailed, createHost } from "./application/host";
+import { CallFailed, createHost, NotStarted } from "./application/host";
+import { spawnPlugin } from "./adapters/process";
 import { inProcessCall } from "./application/in-process";
 
 const dir = join(import.meta.dirname, "fixtures");
@@ -28,6 +29,25 @@ function setup(entry: string) {
 const fail = (p: Promise<unknown>) => p.then(() => expect.unreachable(), (e: unknown) => e as CallFailed);
 const SKIP = [{ from: "seed@example.com", subject: "placement", after: 0, before: 1 }];
 const token = { accessToken: "t", expiresAt: "2030-01-01T00:00:00Z" };
+
+test("a closed pipe during initialize reports a retryable startup failure without sending a call", async () => {
+  const writes: string[] = [];
+  const host = createHost({
+    confinement: "external", hostVersion: "0.2.0", log: () => {},
+    spawn: async (plugin, log) => ({
+      ...spawnPlugin(plugin.entry, plugin.dir, log),
+      write(line) {
+        writes.push(line);
+        throw new Error("closed pipe");
+      },
+    }),
+  });
+  hosts.push(host);
+  const error = await fail(host.call({ manifest, entry: join(dir, "behave.ts"), dir }, W, "execute", {}));
+  expect(error).toBeInstanceOf(NotStarted);
+  expect(error).toMatchObject({ retryable: true, message: expect.stringMatching(/did not start: could not write/) });
+  expect(writes.map((line) => JSON.parse(line).method)).toEqual(["initialize"]);
+});
 
 test("process path: a plugin's typed failure arrives as fields, and an unknown reason as failed with its wait", async () => {
   const sdk = setup("behave.ts");

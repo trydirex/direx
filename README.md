@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/header.svg" alt="Direx" width="640"></p>
+
 # Direx
 
 Direx is an open-source marketing workspace: your business context, a marketing plan, and

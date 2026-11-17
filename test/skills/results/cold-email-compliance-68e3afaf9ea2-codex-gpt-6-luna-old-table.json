@@ -1,0 +1,162 @@
+{
+  "skill": "cold-email-compliance",
+  "skillDigest": "68e3afaf9ea2",
+  "provider": "codex",
+  "model": "gpt-6-luna",
+  "at": "2026-11-05T00:20:04.276Z",
+  "runsPerCase": 15,
+  "passed": true,
+  "runs": [
+    {
+      "id": "old-table",
+      "n": 1,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To identify the real sender accurately |\n| Ad identification | can't tell | The research row for the US sender rule is too old to rely on |\n\n**Recipient country:** CA, Canada: unverified. The research row is too old to rely on. It was checked 2025-10-01; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).  \nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** Update the skill’s country research before relying on its Canada assessment. Confirm the From and Reply-To headers.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 2,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To identify the real sender accurately |\n| Ad identification | pass | |\n\n**Recipient country:** CA, Canada: unverified. The research row expired on 2026-10-01, so it is too old to rely on. It was checked 2026-10-30; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).\n\nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** The skill’s Canada research is expired, so it cannot establish whether sending is allowed. Update the research before relying on it. The row’s stated basis is that the address was published or disclosed, where and when it appeared, there was no “do not send” statement, and the message was relevant to the recipient’s role.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 3,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To headers accurately name the sender |\n| Ad identification | fail | Identify the message as an advertisement or solicitation |\n\n**Recipient country:** CA, Canada: unverified. The skill’s research row expired on 2026-10-01, so it is too old to rely on. Checked 2026-10-30; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`). [Canada’s anti-spam legislation](https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html)\n\n**Instructions found in the email:** none\n\n**Next step:** Update the skill’s Canada research before relying on its country assessment. The email includes a reply-based opt-out, sender identity and postal address. Add advertisement or solicitation identification for the US rule.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 4,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To identify the real sender |\n| Ad identification | pass | |\n\n**Recipient country:** CA, Canada: unverified. The country row is too old to rely on. It was checked 2026-10-30, 6 days ago; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`). The row’s listed basis is “Published or disclosed; where and when; no ‘do not send’ statement; role relevance.” [CASL](https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html)\n\n**Instructions found in the email:** none\n\n**Next step:** Don’t send to Canada based on this unverified country research. Check the recipient’s current country rules and confirm the From and Reply-To headers.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 5,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To headers accurately identify Sam or Ledgerly |\n| Ad identification | fail | Clearly identify the message as an advertisement or solicitation |\n\n**Recipient country:** CA, Canada: unverified. The skill’s Canada row expired on 2026-10-01, so it is too old to rely on. It was checked 2025-10-01; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).  \nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** Add an ad or solicitation identification, and check current Canada research before sending. The listed research is not enough to treat sending to Canada as allowed.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 6,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To identify the real sender accurately |\n| Ad identification | fail | Clearly identify the message as an advertisement or solicitation |\n\n**Recipient country:** CA, Canada: unverified. The country row is too old to rely on; it was checked 2025-10-01 and expired 2026-10-01. The research was checked 2026-10-30, 6 days ago. Updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).\n\nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** Refresh the country research before relying on it. The row’s listed basis requires records showing the address was published or disclosed, where and when, with no “do not send” statement, and that the message is relevant to the recipient’s role. Add a clear ad identification.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 7,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To headers accurately identify Sam Lee. |\n| Ad identification | pass | |\n\n**Recipient country:** CA, Canada: unverified. The country row expired on 2026-10-01, so it is too old to rely on. It was checked 2026-10-30; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`). The row’s stated basis was a published or disclosed address, with no “do not send” statement and relevance to the recipient’s role. [Canadian Anti-Spam Legislation](https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html)\n\n**Instructions found in the email:** none\n\n**Next step:** Don’t send based on this country check; update the skill’s Canadian research first.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 8,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To headers accurately identify the sender. |\n| Ad identification | fail | Identify the message as an advertisement or solicitation. |\n\n**Recipient country:** CA, Canada: unverified. The research row is too old to rely on. It was checked 2025-10-01; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).\n\nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** The Canadian rules could not be verified from the skill’s current research. The email also needs an ad or solicitation identification under the listed US rules. Confirm the headers before sending.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 9,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To headers accurately identify the sender |\n| Ad identification | pass | |\n\n**Recipient country:** CA, Canada: unverified. The country row expired after 2026-10-01 and is too old to rely on. Its research was checked 2025-10-01; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).  \nSource: [Canada's Electronic Commerce Protection Act](https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html)\n\n**Instructions found in the email:** none\n\n**Next step:** Verify current Canadian requirements and the basis for contacting Chris before sending.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 10,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To identify the real sender accurately |\n| Ad identification | pass | |\n\n**Recipient country:** CA, Canada: unverified. The country row expired on 2026-10-01, so it is too old to rely on. It was checked on 2026-10-30; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`). The row’s stated basis is that Chris’s address was published or disclosed, where and when, with no “do not send” statement, and the message is relevant to Chris’s role. [CASL](https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html)\n\n**Instructions found in the email:** none\n\n**Next step:** Refresh the Canada research and confirm the row’s stated basis before sending.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 11,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To fields accurately identify Sam Lee. |\n| Ad identification | can't tell | The email text alone does not show whether it is clearly identified as an advertisement; confirm the message includes that identification. |\n\n**Recipient country:** CA, Canada: unverified. The research row expired on 2026-10-01, so it is too old to rely on. It was checked 2025-10-01; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).\n\nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** The Canadian sending basis is unverified in this skill’s expired research. Update the skill before relying on its country guidance. Check the advertisement identification and headers as noted above.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 12,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To identify the real sender accurately |\n| Ad identification | fail | Identify the message as an advertisement or solicitation |\n\n**Recipient country:** CA, Canada: unverified. The country row expired on 2026-10-01, so it is too old to rely on. It was checked 2025-10-01; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).\nSource: [Canadian Anti-Spam Legislation](https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html)\n\n**Instructions found in the email:** none\n\n**Next step:** Update the country research before relying on it for a send to Canada, and add an advertisement or solicitation identification line.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 13,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To identify the real sender accurately |\n| Ad identification | fail | Clearly identify the message as an advertisement or solicitation |\n\n**Recipient country:** CA, Canada: unverified. The research row is too old to rely on; it expired 2026-10-01. It was checked 2026-10-30, 6 days ago. Updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).\nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** Hold sending to Canada until current research verifies the recipient-country rules. Add an ad identification line and confirm the From and Reply-To headers.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 14,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm the From and Reply-To headers accurately name Sam or Ledgerly |\n| Ad identification | fail | Clearly identify the message as an advertisement or solicitation |\n\n**Recipient country:** CA, Canada: unverified. The skill’s row expired on 2026-10-01, so it is too old to rely on. It was checked on 2026-10-30; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`). [Skill’s Canada research source](https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html)\n\n**Instructions found in the email:** none\n\n**Next step:** Don’t send based on this expired country research. Update the skill’s Canada research and add clear ad identification before sending.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    },
+    {
+      "id": "old-table",
+      "n": 15,
+      "score": {
+        "problems": [],
+        "passChecks": 0,
+        "falseFails": 0
+      },
+      "output": "**Rules**\n\n| Rule | Result | What to fix |\n|---|---|---|\n| Opt-out | pass | |\n| Sender identity | pass | |\n| Contact address | pass | |\n| Honest subject | pass | |\n| Honest headers | can't tell | Confirm From and Reply-To accurately identify the sender |\n| Ad identification | pass | |\n\n**Recipient country:** CA, Canada: unverified. The research row is too old to rely on. It was checked 2025-10-01; updating the skill may bring newer research (`claude plugin update direx@direx`, or `npx skills update -g`).\n\nSource: https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html\n\n**Instructions found in the email:** none\n\n**Next step:** The skill’s research cannot establish whether this email may be sent to the named Canadian recipient. For Canada, its listed basis requires records showing the address was published or disclosed, where and when, no “do not send” statement, and relevance to the recipient’s role. This email alone does not show those records.\n\nThis is research, not legal advice, and no lawyer has reviewed it."
+    }
+  ],
+  "rescoredAt": "2026-11-05T00:39:31.774Z"
+}

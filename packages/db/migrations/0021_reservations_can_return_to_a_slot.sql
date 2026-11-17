@@ -1,0 +1,1 @@
+ALTER TABLE "touch_reservations" DROP CONSTRAINT "touch_reservations_action_cap_slot_key";

@@ -1,0 +1,1 @@
+{ "name": "x", "patchedDependencies": { "pg@8.23.1": "patches/pg.patch" } }

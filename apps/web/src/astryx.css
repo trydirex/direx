@@ -1,0 +1,60 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Astryx's stylesheets and the Steep values it draws with. The importing sheet declares the layer
+   order first: reset, theme, base, astryx-base, astryx-theme, components, utilities. The neutral theme
+   sets its variables on [data-astryx-theme]; ours sit in a later layer on the same attribute, so they
+   win inside portals too. Every value is one of our tokens; the table in DESIGN.md lists the same
+   pairs and styles.test.tsx checks the two agree. */
+@import "@astryxdesign/core/reset.css";
+@import "@astryxdesign/core/astryx.css";
+@import "@astryxdesign/theme-neutral/theme.css";
+
+@layer components {
+  [data-astryx-theme] {
+    --color-accent: var(--primary);
+    --color-accent-muted: var(--primary-tint);
+    --color-on-accent: var(--primary-foreground);
+    --color-text-accent: var(--primary);
+    --color-icon-accent: var(--primary);
+    --color-text-primary: var(--foreground);
+    --color-text-secondary: var(--muted-foreground);
+    --color-icon-primary: var(--foreground);
+    --color-icon-secondary: var(--muted-foreground);
+    --color-background-body: var(--background);
+    --color-background-surface: var(--card);
+    --color-background-card: var(--card);
+    --color-background-popover: var(--popover);
+    --color-background-muted: var(--muted);
+    --color-skeleton: var(--muted);
+    --color-neutral: var(--secondary);
+    --color-border: var(--border);
+    --color-border-emphasized: var(--input);
+    --color-success: var(--success);
+    --color-success-muted: var(--success-tint);
+    --color-text-success: var(--success);
+    --color-warning: var(--warning);
+    --color-warning-muted: var(--warning-tint);
+    --color-text-warning: var(--warning);
+    --color-error: var(--destructive);
+    --color-error-muted: var(--destructive-tint);
+    --color-on-error: var(--destructive-foreground);
+    --color-text-error: var(--destructive);
+    --color-border-error: var(--destructive);
+    --radius-inner: var(--radius-sm);
+    --radius-element: var(--radius-control);
+    --radius-container: var(--radius-card);
+    --shadow-low: var(--edge);
+    --shadow-med: var(--lift);
+    --shadow-high: var(--lift-high);
+    --font-family-body: var(--font-sans);
+    --font-family-heading: var(--font-display);
+    --font-family-code: var(--font-mono);
+    --font-size-base: var(--text-base);
+    --focus-outline-color: var(--ring);
+    --focus-outline-offset: var(--ring-offset);
+  }
+
+  /* The neutral theme draws the progress track in the strong border, so an empty bar looks full. Linen, as everywhere else. */
+  .astryx-progress-bar {
+    --color-background-muted: var(--muted);
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@direx/extensions",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gmail/fake": "./src/gmail/fake-gmail.ts",
+    "./imap-smtp/fake": "./src/imap-smtp/fake-smtp.ts"
+  },
+  "dependencies": {
+    "@direx/plugin-sdk": "workspace:@trydirex/plugin-sdk@*",
+    "imapflow": "2.10.0",
+    "mailparser": "3.14.1",
+    "nodemailer": "10.1.7",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/mailparser": "3.9.0",
+    "@types/nodemailer": "8.0.2"
+  }
+}

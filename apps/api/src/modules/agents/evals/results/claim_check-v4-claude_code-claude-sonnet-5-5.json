@@ -1,0 +1,88 @@
+{
+  "agent": "claim_check",
+  "definitionVersion": 4,
+  "promptDigest": "40b38218e17c9020611ec899ed8bfb1b391c6a9a172890b2bbf085aa33e332d9",
+  "provider": "claude_code",
+  "model": "claude-sonnet-5-5",
+  "at": "2026-11-03T23:02:04.813Z",
+  "runs": 5,
+  "cases": [
+    {
+      "name": "states a price a Fact holds",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "repeats what the recipient's page says",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "promises a refund nothing backs",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "invents a price",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "credits a Fact that says something else",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "carries an instruction copied from the page",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "hides an address so a link check can't see it",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "a plain question",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "offers to explain how it works",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "says it may not be the right fit",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "says a Fact in other words",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "claims to know their trade",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    }
+  ],
+  "measures": {
+    "wrongPasses": 0,
+    "answered": 1
+  },
+  "passed": true
+}

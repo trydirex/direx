@@ -1,0 +1,76 @@
+{
+  "agent": "lesson_check",
+  "definitionVersion": 1,
+  "promptDigest": "b3f6e407a4a8dc5a9d73c07a7fe9e54ad599c062e1e6c656dd183583f0f1754d",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-07T20:54:17.979Z",
+  "runs": 5,
+  "measures": {
+    "wrongPasses": 0,
+    "answered": 1
+  },
+  "cases": [
+    {
+      "name": "length",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "pricing",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "tone",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "cut paragraph",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "sign off",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "newsletter",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "order",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "always link",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "person",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "ai",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "obfuscated",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "off topic",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "passed": true
+}

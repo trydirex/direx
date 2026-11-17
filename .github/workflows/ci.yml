@@ -1,0 +1,94 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Core only: no extension packages are installed in this repo, so this job is also
+  # the zero-extension build.
+  ci:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: direx_owner
+          POSTGRES_PASSWORD: direx_owner_ci
+          POSTGRES_DB: direx
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U direx_owner" --health-interval 2s --health-timeout 5s --health-retries 20
+      # Transaction-mode pool for the concurrency tests, as in docker-compose.yml.
+      pgbouncer:
+        image: edoburu/pgbouncer:v1.24.1-p1
+        env:
+          DB_HOST: postgres
+          DB_USER: direx_app
+          DB_PASSWORD: direx_app_ci
+          AUTH_TYPE: scram-sha-256
+          POOL_MODE: transaction
+          MAX_CLIENT_CONN: 200
+          DEFAULT_POOL_SIZE: 20
+          STATS_USERS: direx_app
+        ports: ["6432:5432"]
+      # A real SMTP and IMAP server for the mail plugin tests, as in docker-compose.yml.
+      greenmail:
+        image: greenmail/standalone:2.1.14
+        env:
+          GREENMAIL_OPTS: -Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users=alice:secret@example.com -Dgreenmail.users.login=email
+        ports: ["3025:3025", "3143:3143", "3465:3465", "3993:3993"]
+    env:
+      # Throwaway credentials for the CI service container only.
+      DIREX_DB_OWNER_URL: postgres://direx_owner:direx_owner_ci@localhost:5432/direx
+      DIREX_DB_APP_URL: postgres://direx_app:direx_app_ci@localhost:5432/direx
+      DIREX_DB_POOL_URL: postgres://direx_app:direx_app_ci@localhost:6432/direx
+    steps:
+      # The floor and coverage checks diff against the merge base, which needs full history.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # ESLint, dependency-cruiser, drizzle-kit and openapi-typescript run on Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      # The sandbox and the clip tools, so their tests run here instead of skipping. Ubuntu 24.04 blocks
+      # the unprivileged user namespaces bubblewrap needs unless this AppArmor switch is off.
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: bun install --frozen-lockfile
+      - run: bun run ci
+      - run: bun run check:coverage
+        env:
+          DIREX_BASE: origin/${{ github.base_ref || github.event.repository.default_branch }}
+      # A person loosens the bar by adding this label; see CONSTRAINTS.md.
+      - run: bun run check:floor
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'constraints-approved') }}
+        env:
+          DIREX_BASE: origin/${{ github.base_ref || github.event.repository.default_branch }}
+      - run: bun run check:web
+      - run: bun run check:security
+
+  # From an empty checkout to a signed-in person, with no services and no .env. The oldest Node
+  # that doctor accepts, so that floor stays true.
+  first-run:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun scripts/check-first-run.ts

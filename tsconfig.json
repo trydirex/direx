@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": [
+      "bun"
+    ],
+    "paths": {
+      "@/*": ["./apps/web/src/*"],
+      "@trydirex/plugin-sdk": ["./packages/plugin-sdk/src/index.ts"]
+    }
+  },
+  "include": [
+    "test",
+    "packages/*/src",
+    "packages/*/test",
+    "packages/db/drizzle.config.ts",
+    "vitest.config.ts",
+    "scripts"
+  ],
+  "exclude": [
+    "**/fixtures/**",
+    "**/node_modules/**"
+  ]
+}

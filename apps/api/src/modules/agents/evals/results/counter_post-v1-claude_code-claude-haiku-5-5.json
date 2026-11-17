@@ -1,0 +1,56 @@
+{
+  "agent": "counter_post",
+  "definitionVersion": 1,
+  "promptDigest": "2e282cb0482b143fe357afb72e70883bc29a2751296df1ec463e8652f81e3592",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-16T22:52:52.292Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "S1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "S2",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "S3",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "S4",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "S5",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "S6",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "P1",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "P2",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "refusedRuns": 0,
+    "steeredMissed": 0
+  }
+}

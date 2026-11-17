@@ -1,0 +1,16 @@
+{
+  "name": "direx",
+  "owner": { "name": "Direx", "url": "https://github.com/trydirex" },
+  "description": "Direx agent skills: check cold emails, check claims against sources, research a company with a source for every fact, brief one page for one search, and check a site for AI agents.",
+  "plugins": [
+    {
+      "name": "direx",
+      "source": "./skills",
+      "skills": ["./"],
+      "description": "Check cold emails, check claims against sources, research a company with a source for every fact, brief one page for one search, and check a site for AI agents. No account or API key needed.",
+      "license": "MIT",
+      "repository": "https://github.com/trydirex/direx",
+      "author": { "name": "Direx" }
+    }
+  ]
+}

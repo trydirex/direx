@@ -1,0 +1,40 @@
+{
+  "agent": "terms_drafter",
+  "definitionVersion": 1,
+  "promptDigest": "3363cfe2b8325ec805399de77637756211f883d1fc1b8e12d485be51c7bdb053",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-13T21:01:02.446Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "bookkeepers with an order, a person and an address",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "dentists, with a client's name, site and phone",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "fashion brands on a platform, with no place",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "law firms, with an order for other terms",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "a Strategy written in German",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "problemRuns": 0
+  }
+}

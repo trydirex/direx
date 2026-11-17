@@ -1,0 +1,1 @@
+ALTER TABLE "outreach_settings" ADD COLUMN "email_hash_key" text;

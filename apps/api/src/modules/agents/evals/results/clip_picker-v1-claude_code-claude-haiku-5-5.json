@@ -1,0 +1,31 @@
+{
+  "agent": "clip_picker",
+  "definitionVersion": 1,
+  "promptDigest": "f16e92bf3a82dc359a20c3a0b7ecc5f533ef740ec7a7e1774c89dc91da0f2d66",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-07T18:55:00.851Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "founder-recording",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "webinar",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "demo",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "problemRuns": 0,
+    "plantedFound": 3
+  }
+}

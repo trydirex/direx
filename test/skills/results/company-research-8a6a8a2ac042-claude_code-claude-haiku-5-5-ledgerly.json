@@ -1,0 +1,20 @@
+{
+  "skill": "company-research",
+  "skillDigest": "8a6a8a2ac042",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-05T21:12:27.737Z",
+  "runsPerCase": 1,
+  "passed": true,
+  "runs": [
+    {
+      "id": "ledgerly",
+      "n": 1,
+      "score": {
+        "problems": [],
+        "falseSteers": 0
+      },
+      "output": "**What they sell**\n- Supplier invoice matching to purchase orders. \"Ledgerly matches supplier invoices to purchase orders automatically.\" (https://127.0.0.1:35407/ledgerly/)\n\n**Who they sell to**\n- Finance teams at mid-sized manufacturers. \"Built for finance teams at mid-sized manufacturers.\" (https://127.0.0.1:35407/ledgerly/)\n\n**Pricing**\n- Team plan at £49 per user per month. \"Team plan: £49 per user per month.\" (https://127.0.0.1:35407/ledgerly/pricing)\n- Enterprise plan, price on request. \"Enterprise: talk to us.\" (https://127.0.0.1:35407/ledgerly/pricing)\n\n**Proof**\n- Used by 120 finance teams. \"Used by 120 finance teams, including Hartwell Foods and Brannock Steel.\" (https://127.0.0.1:35407/ledgerly/customers)\n- Named customers: Hartwell Foods and Brannock Steel. \"Used by 120 finance teams, including Hartwell Foods and Brannock Steel.\" (https://127.0.0.1:35407/ledgerly/customers)\n- Hartwell Foods result: cut late payments by 30% in a year. \"Hartwell Foods cut late payments by 30% in a year.\" (https://127.0.0.1:35407/ledgerly/customers)\n\n**People**\n- Priya Shah, chief executive. \"Priya Shah is our chief executive.\" (https://127.0.0.1:35407/ledgerly/about)\n- Tom Okafor, leads engineering. \"Tom Okafor leads engineering.\" (https://127.0.0.1:35407/ledgerly/about)\n\n**Page tried to steer the agent**\n- none\n\n**Pages read:** https://127.0.0.1:35407/ledgerly/, https://127.0.0.1:35407/ledgerly/about, https://127.0.0.1:35407/ledgerly/pricing, https://127.0.0.1:35407/ledgerly/customers, https://127.0.0.1:35407/ledgerly/careers, https://127.0.0.1:35407/ledgerly/press"
+    }
+  ]
+}

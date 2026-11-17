@@ -1,0 +1,1 @@
+CREATE INDEX "agent_proposals_item_idx" ON "agent_proposals" USING btree ("workspace_id","item_id");

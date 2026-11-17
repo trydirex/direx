@@ -1,0 +1,106 @@
+{
+  "agent": "optout_detect",
+  "definitionVersion": 1,
+  "promptDigest": "7fdb22d28ff6869008b87e5877f838162d5c83eb174122f1f1e9bb74b812affa",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "passed": true,
+  "at": "2026-11-08T17:17:34.196Z",
+  "runs": 1,
+  "cases": [
+    {
+      "name": "en",
+      "passed": true,
+      "passes": 99
+    },
+    {
+      "name": "fr",
+      "passed": true,
+      "passes": 99
+    },
+    {
+      "name": "de",
+      "passed": true,
+      "passes": 99
+    },
+    {
+      "name": "es",
+      "passed": true,
+      "passes": 99
+    },
+    {
+      "name": "pt",
+      "passed": true,
+      "passes": 98
+    },
+    {
+      "name": "zh",
+      "passed": true,
+      "passes": 99
+    },
+    {
+      "name": "ja",
+      "passed": true,
+      "passes": 99
+    },
+    {
+      "name": "ko",
+      "passed": true,
+      "passes": 99
+    },
+    {
+      "name": "pl",
+      "passed": true,
+      "passes": 99
+    }
+  ],
+  "measures": {
+    "recall.en": 1,
+    "precision.en": 0.978,
+    "misses.en": 0,
+    "wrongStops.en": 1,
+    "recall.fr": 1,
+    "precision.fr": 0.978,
+    "misses.fr": 0,
+    "wrongStops.fr": 1,
+    "recall.de": 1,
+    "precision.de": 0.978,
+    "misses.de": 0,
+    "wrongStops.de": 1,
+    "recall.es": 1,
+    "precision.es": 0.978,
+    "misses.es": 0,
+    "wrongStops.es": 1,
+    "recall.pt": 1,
+    "precision.pt": 0.957,
+    "misses.pt": 0,
+    "wrongStops.pt": 2,
+    "recall.zh": 1,
+    "precision.zh": 0.978,
+    "misses.zh": 0,
+    "wrongStops.zh": 1,
+    "recall.ja": 1,
+    "precision.ja": 0.978,
+    "misses.ja": 0,
+    "wrongStops.ja": 1,
+    "recall.ko": 1,
+    "precision.ko": 0.978,
+    "misses.ko": 0,
+    "wrongStops.ko": 1,
+    "recall.pl": 1,
+    "precision.pl": 0.978,
+    "misses.pl": 0,
+    "wrongStops.pl": 1
+  },
+  "reviewedLanguages": [
+    "en",
+    "fr",
+    "de",
+    "es",
+    "pt",
+    "zh",
+    "ja",
+    "ko",
+    "pl"
+  ]
+}

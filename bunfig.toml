@@ -1,0 +1,3 @@
+[test]
+# Refuses Bun's own test runner; see test/no-bun-test.ts.
+preload = ["./test/no-bun-test.ts"]

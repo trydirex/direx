@@ -1,0 +1,4 @@
+ALTER TABLE "campaign_people" ADD COLUMN "after_campaign_id" uuid;--> statement-breakpoint
+ALTER TABLE "campaign_people" ADD COLUMN "conflict_item_id" uuid;--> statement-breakpoint
+ALTER TABLE "campaign_people" ADD CONSTRAINT "campaign_people_after_fk" FOREIGN KEY ("workspace_id","after_campaign_id") REFERENCES "public"."campaigns"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "campaign_people" ADD CONSTRAINT "campaign_people_conflict_item_fk" FOREIGN KEY ("workspace_id","conflict_item_id") REFERENCES "public"."items"("workspace_id","id") ON DELETE no action ON UPDATE no action;

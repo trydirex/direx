@@ -1,0 +1,353 @@
+{
+  "agent": "recipient_writer",
+  "promptRevision": "2026-11-14",
+  "purpose": "person_skeleton",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-15T21:47:23.822Z",
+  "runs": 3,
+  "cases": [
+    {
+      "name": "a bakery",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "an accounting firm",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a logistics company",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a dental clinic",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a software company",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a landscaper",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a law office",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a gym",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a bookshop",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a consultancy",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a bakery",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "an accounting firm",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a logistics company",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a dental clinic",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a software company",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a landscaper",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a law office",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a gym",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a bookshop",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a consultancy",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a bakery",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "an accounting firm",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a logistics company",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a dental clinic",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a software company",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a landscaper",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a law office",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a gym",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a bookshop",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    },
+    {
+      "name": "a consultancy",
+      "drafted": true,
+      "kept": 1,
+      "addedSentences": 1
+    }
+  ],
+  "shorter": [
+    {
+      "name": "a bakery",
+      "before": 43,
+      "after": 24
+    },
+    {
+      "name": "an accounting firm",
+      "before": 45,
+      "after": 26
+    },
+    {
+      "name": "a logistics company",
+      "before": 41,
+      "after": 28
+    },
+    {
+      "name": "a dental clinic",
+      "before": 40,
+      "after": 21
+    },
+    {
+      "name": "a software company",
+      "before": 40,
+      "after": 21
+    },
+    {
+      "name": "a landscaper",
+      "before": 42,
+      "after": 30
+    },
+    {
+      "name": "a law office",
+      "before": 42,
+      "after": 23
+    },
+    {
+      "name": "a gym",
+      "before": 40,
+      "after": 21
+    },
+    {
+      "name": "a bookshop",
+      "before": 42,
+      "after": 30
+    },
+    {
+      "name": "a consultancy",
+      "before": 36,
+      "after": 17
+    },
+    {
+      "name": "a bakery",
+      "before": 51,
+      "after": 32
+    },
+    {
+      "name": "an accounting firm",
+      "before": 42,
+      "after": 23
+    },
+    {
+      "name": "a logistics company",
+      "before": 41,
+      "after": 22
+    },
+    {
+      "name": "a dental clinic",
+      "before": 40,
+      "after": 21
+    },
+    {
+      "name": "a software company",
+      "before": 44,
+      "after": 25
+    },
+    {
+      "name": "a landscaper",
+      "before": 41,
+      "after": 29
+    },
+    {
+      "name": "a law office",
+      "before": 41,
+      "after": 28
+    },
+    {
+      "name": "a gym",
+      "before": 43,
+      "after": 24
+    },
+    {
+      "name": "a bookshop",
+      "before": 42,
+      "after": 28
+    },
+    {
+      "name": "a consultancy",
+      "before": 37,
+      "after": 24
+    },
+    {
+      "name": "a bakery",
+      "before": 40,
+      "after": 21
+    },
+    {
+      "name": "an accounting firm",
+      "before": 45,
+      "after": 26
+    },
+    {
+      "name": "a logistics company",
+      "before": 40,
+      "after": 27
+    },
+    {
+      "name": "a dental clinic",
+      "before": 40,
+      "after": 21
+    },
+    {
+      "name": "a software company",
+      "before": 45,
+      "after": 27
+    },
+    {
+      "name": "a landscaper",
+      "before": 40,
+      "after": 35
+    },
+    {
+      "name": "a law office",
+      "before": 42,
+      "after": 29
+    },
+    {
+      "name": "a gym",
+      "before": 42,
+      "after": 23
+    },
+    {
+      "name": "a bookshop",
+      "before": 42,
+      "after": 30
+    },
+    {
+      "name": "a consultancy",
+      "before": 40,
+      "after": 23
+    }
+  ],
+  "measures": {
+    "runs": 30,
+    "withinBar": 30,
+    "share": 1,
+    "drafted": 30,
+    "shorterRuns": 30,
+    "shortened": 29,
+    "shorterShare": 0.9666666666666667
+  },
+  "passed": true
+}

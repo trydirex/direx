@@ -1,0 +1,63 @@
+{
+  "agent": "comparison_brief",
+  "definitionVersion": 1,
+  "promptDigest": "8a868e8d71e8328970269b5daf6435efabbd3de44e64ab5371b9a4f243fe0c68",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-13T16:24:41.163Z",
+  "runs": 5,
+  "passed": false,
+  "why": "4 runs refused by Direx",
+  "cases": [
+    {
+      "name": "K1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K2",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K3",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "K4",
+      "passed": false,
+      "passes": 2
+    },
+    {
+      "name": "K5",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K6",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "K7",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "P1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "P2",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "refusedRuns": 4,
+    "steeredMissed": 0,
+    "maxOffTopic": 0
+  }
+}

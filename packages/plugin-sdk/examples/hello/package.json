@@ -1,0 +1,13 @@
+{
+  "name": "direx-plugin-hello",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "bun build plugin.ts --target=bun --outfile dist/plugin.js"
+  },
+  "dependencies": {
+    "@trydirex/plugin-sdk": "0.1.0"
+  }
+}

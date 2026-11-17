@@ -1,0 +1,2 @@
+ALTER TABLE "credentials" DROP CONSTRAINT "credentials_oauth2_check";--> statement-breakpoint
+ALTER TABLE "credentials" ADD CONSTRAINT "credentials_oauth2_check" CHECK ("credentials"."kind" <> 'oauth2' or ("credentials"."connection" is not null and "credentials"."scope" = 'user'));

@@ -1,0 +1,228 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The one stylesheet. Values are the "Steep" direction (founder, 2026-11-10): serif titles on warm paper,
+   an ink accent, one peach callout. Body 15px. Colours are written as hex so the contrast test can read them. Astryx reads them through
+   astryx.css. Tailwind's own theme is reset,
+   so only these tokens exist: no bg-blue-500, no shadow utilities. A dark theme is one more block
+   that redefines the :root colours. See apps/web/DESIGN.md. The layer order comes first so Tailwind's
+   imports, and Astryx's (ADR 0020, astryx.css, loaded with the signed-in shell) slot into it: Astryx's
+   base sits above Tailwind's reset, and our utilities above everything. */
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
+@import "tailwindcss";
+
+
+:root {
+  --background: #f8f6f2; /* the page (warm paper); panels sit on it in card white */
+  --foreground: #1c1a17; /* body text and titles */
+  --heading: #1c1a17; /* kept until no class uses it; same as foreground */
+  --muted: #f1eee8; /* linen: Held, hover, quiet cards */
+  --muted-foreground: #6b665d; /* secondary text; warm grey, 4.5:1 on linen and primary-tint */
+  --faint: #a8a299; /* decoration only, never text */
+  --border: #e9e4dc; /* hairline dividers and card outlines */
+  --input: #8a8378; /* control outlines: 3:1 on paper, linen and white */
+  --primary: #1c1a17; /* ink: primary buttons, links, selection, focus */
+  --primary-hover: #33302b;
+  --primary-foreground: #ffffff;
+  --primary-tint: #f3e6dc; /* the selected row and nav item, quiet chips: a clay tint */
+  --secondary: #f1eee8;
+  --secondary-foreground: #1c1a17;
+  --accent: #f1eee8; /* a hover surface; Astryx's accent is our primary */
+  --accent-foreground: #1c1a17;
+  --popover: #ffffff;
+  --popover-foreground: #1c1a17;
+  --card: #ffffff;
+  --card-foreground: #1c1a17;
+  --ring: #1c1a17;
+  --ring-offset: 2px; /* the focus outline sits this far out */
+  --edge: 0 0 0 1px var(--border); /* a resting panel's hairline */
+  --lift: 0 0 0 1px rgb(0 0 0 / 0.05), 0 4px 24px 0 rgb(0 0 0 / 0.08); /* toasts, hover cards */
+  --lift-high: 0 0 0 1px rgb(0 0 0 / 0.05), 0 8px 40px 0 rgb(0 0 0 / 0.1); /* dialogs, drawers */
+  /* The one warm callout, at most once per screen: sienna on peach, never sienna on white. */
+  --peach: #fbe1d1;
+  --peach-foreground: #5d2a1a;
+  --scheduled: #2f5d8a; /* Scheduled: slate, so the state marketers check most reads at a glance */
+  --scheduled-tint: #e3ecf5;
+  --success: #267b4c; /* Sent and Applied */
+  --success-tint: #daf7e3;
+  --warning: #975800; /* warning counts */
+  --warning-tint: #fef0d4;
+  --destructive: #c1332c; /* errors, and Pause all sending */
+  --destructive-tint: #fdecea;
+  --destructive-foreground: #ffffff;
+  /* One colour per channel: Calendar blocks and small marks, never text on their own. */
+  --channel-email: #2b6f6a; /* teal, so email never reads as the ink accent */
+  --channel-post: #3862a7;
+  --channel-newsletter: #a06024;
+  --channel-seo: #9b3f5c; /* raspberry, clear of violet */
+}
+
+@theme {
+  --*: initial;
+
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+  /* Below this the queue and the open Item stack. */
+  --breakpoint-split: 1100px;
+
+  --font-sans: "Inter Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Page and section titles only. */
+  --font-display: "Source Serif 4 Variable", "Source Serif 4", Georgia, ui-serif, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 15px;
+  --text-base--line-height: 1.45;
+  --text-md: 17px; /* a card or form section's heading */
+  --text-lg: 22px; /* section title */
+  --text-lg--line-height: 1.25;
+  --text-xl: 30px; /* page title */
+  --text-xl-phone: 26px;
+  --text-xl--line-height: 1.2;
+
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --tracking-tight: -0.015em;
+  --tracking-tighter: -0.04em;
+  --tracking-wide: 0.08em;
+
+  /* A 4px grid: p-2 is 8px, p-4 is 16px. Arbitrary values are linted out. */
+  --spacing: 4px;
+
+  /* Postmark (2026-11-12): one small scale, so a button, a filter and a state never look alike. */
+  --radius-sm: 4px; /* kbd, small tags, state chips */
+  --radius-control: 8px; /* buttons and inputs */
+  --radius-card: 12px; /* cards, panels, popups, previews */
+  --radius-full: 9999px; /* filter pills and count badges only */
+
+  /* Sizes come from the 4px grid: controls min-h-11 (44px), small controls min-h-9 (36px), the
+     WCAG 2.2 floor is 24px (6); sidebar w-62 (248px), Ask panel w-90 (360px). */
+  --container-sm: 24rem; /* dialogs and toasts */
+  --container-content: 1200px;
+  --container-form: 48rem; /* one-column pages outside the shell: setup, Server */
+
+  /* The only two animations: skeletons and spinners. Popups appear without one. */
+  --animate-pulse: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-spin: spin 1s linear infinite;
+  @keyframes pulse {
+    50% { opacity: 0.5; }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-heading: var(--heading);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-tint: var(--primary-tint);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-tint: var(--success-tint);
+  --color-scheduled: var(--scheduled);
+  --color-scheduled-tint: var(--scheduled-tint);
+  --color-warning: var(--warning);
+  --color-warning-tint: var(--warning-tint);
+  --color-channel-email: var(--channel-email);
+  --color-channel-post: var(--channel-post);
+  --color-channel-newsletter: var(--channel-newsletter);
+  --color-channel-seo: var(--channel-seo);
+  --color-destructive: var(--destructive);
+  --color-destructive-tint: var(--destructive-tint);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-peach: var(--peach);
+  --color-peach-foreground: var(--peach-foreground);
+  --color-transparent: transparent;
+  --color-current: currentColor;
+}
+
+@layer base {
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 {
+    color: var(--foreground);
+    font-weight: 500;
+    text-wrap: balance;
+  }
+  /* The serif stays at 400 at every size; tighter tracking does the work bold would. */
+  h1, h2 { font-family: var(--font-display); font-weight: 400; letter-spacing: var(--tracking-tight); font-variant-numeric: lining-nums; }
+  h1 { font-size: var(--text-xl); line-height: var(--text-xl--line-height); }
+  @media (width < 48rem) {
+    h1 { font-size: var(--text-xl-phone); }
+  }
+  h2 { font-size: var(--text-lg); line-height: var(--text-lg--line-height); }
+  h3 { font-size: var(--text-base); }
+  /* A fieldset won't shrink below its content by default, so on a phone its rows run off the screen. */
+  fieldset {
+    min-inline-size: 0;
+  }
+  a {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+  /* Native controls look like Direx ones. These need more specificity than Tailwind's reset (plain
+     `button`), and still sit in the base layer, so any utility class wins. Our components carry
+     data-slot and Astryx's buttons data-astryx-pressable, so neither is touched. */
+  button:not([data-slot], [data-astryx-pressable], [role="combobox"]) {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+    padding: 0 12px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-full);
+    background: var(--card);
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button:not([data-slot], [data-astryx-pressable], [role="combobox"]):hover { background: var(--accent); }
+  button:not([data-slot], [data-astryx-pressable], [role="combobox"]):disabled { opacity: 0.5; cursor: not-allowed; }
+  input:not([data-slot]):not([type="checkbox"], [type="radio"], [role="combobox"]), select:not([data-slot]), textarea:not([data-slot]) {
+    min-height: 32px;
+    padding: 5px 10px;
+    border: 1px solid var(--input);
+    border-radius: var(--radius-control);
+    background: var(--card);
+  }
+  input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); width: 16px; height: 16px; }
+  /* Screens not yet moved keep readable spacing between their blocks; moved ones use Page. */
+  :where(main:not([data-page])) > * + * { margin-top: 16px; }
+  :where(main:not([data-page]) ul, main:not([data-page]) ol) { display: flex; flex-direction: column; gap: 8px; }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: var(--ring-offset);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

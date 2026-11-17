@@ -1,0 +1,1 @@
+ALTER TABLE "placement_list_state" ADD COLUMN "pinned_root_hash" text DEFAULT '' NOT NULL;

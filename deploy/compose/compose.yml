@@ -1,0 +1,81 @@
+# Direx on a server: Postgres and Direx, from the published image. Start it with install.sh,
+# which writes .env next to this file first. Development uses the root docker-compose.yml, and
+# deploy/docker/compose.yml is the local sandbox build. Its own project name, so an install on a
+# machine that also has a development checkout doesn't take over that checkout's Postgres.
+name: direx-server
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: direx_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run install.sh first}
+      POSTGRES_DB: direx
+    # No ports: only Direx reaches the database, over the Compose network.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "direx_owner", "-d", "direx"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  direx:
+    image: ghcr.io/trydirex/direx:${DIREX_VERSION:?run install.sh first}
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DIREX_DATA_DIR: /home/bun/.direx
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # The server only, for Tailscale or a reverse proxy on the same machine. A public domain is
+    # served by the caddy service instead (install.sh --public).
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      # Holds the vault's root key. Without it, a restart loses every stored credential, so back
+      # it up apart from the database.
+      - direx-data:/home/bun/.direx
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    # A stop finishes what is already sending, up to 330 s (ADR 0027 rule 004).
+    stop_grace_period: 6m
+    restart: unless-stopped
+    # The sandbox around Claude Code, Codex and the clip tools needs these, as in
+    # deploy/docker/compose.yml, which explains each line.
+    security_opt:
+      - seccomp=../docker/seccomp-bwrap.json
+      - apparmor=unconfined
+      - systempaths=unconfined
+      - no-new-privileges
+    cap_drop: [ALL]
+    user: bun
+
+  # Automatic HTTPS for a public domain. Only with install.sh --public, which sets
+  # COMPOSE_PROFILES=public and DIREX_DOMAIN in .env.
+  caddy:
+    image: caddy:2
+    profiles: [public]
+    environment:
+      DIREX_DOMAIN: ${DIREX_DOMAIN:-}
+    depends_on:
+      - direx
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  direx-data:
+  caddy-data:
+  caddy-config:

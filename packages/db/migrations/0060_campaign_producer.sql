@@ -1,0 +1,1 @@
+ALTER TABLE "campaign_actions" ADD COLUMN "producer" jsonb;

@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+coverage
+.git
+# A local browser-tool profile, when one exists: never part of an image.
+.gstack

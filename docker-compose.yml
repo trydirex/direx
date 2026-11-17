@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: direx_owner
+      POSTGRES_PASSWORD: direx_owner_dev
+      POSTGRES_DB: direx
+    ports:
+      - "127.0.0.1:${DIREX_PG_PORT:-5435}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  # Transaction-mode pool, as in production. Every database name routes to postgres, so
+  # the per-file test databases work through it. Dev-only password, same as .env.example.
+  # Optional: start it with `docker compose --profile pool up`.
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p1
+    profiles: [pool]
+    depends_on:
+      - postgres
+    environment:
+      DB_HOST: postgres
+      DB_USER: direx_app
+      DB_PASSWORD: direx_app_dev
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      STATS_USERS: direx_app
+    ports:
+      - "127.0.0.1:${DIREX_POOL_PORT:-6435}:5432"
+  # A real SMTP and IMAP server for the mail plugin tests. Throwaway user, tests only.
+  greenmail:
+    image: greenmail/standalone:2.1.14
+    environment:
+      GREENMAIL_OPTS: -Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users=alice:secret@example.com -Dgreenmail.users.login=email
+    ports:
+      - "127.0.0.1:3025:3025"
+      - "127.0.0.1:3143:3143"
+      - "127.0.0.1:3465:3465"
+      - "127.0.0.1:3993:3993"
+volumes:
+  pgdata:

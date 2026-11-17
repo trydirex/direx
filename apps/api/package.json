@@ -1,0 +1,35 @@
+{
+  "name": "@direx/api",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_ENV=development ICU_TIMEZONE_FILES_DIR=../../deploy/icu-tz bun --watch --env-file=../../.env src/main.ts",
+    "start": "ICU_TIMEZONE_FILES_DIR=../../deploy/icu-tz bun --env-file=../../.env src/main.ts",
+    "worker": "DIREX_ROLE=worker bun run start",
+    "build": "bun scripts/gen-openapi.ts && NODE_OPTIONS=--max-old-space-size=3072 tsc -p . && bun build src/main.ts --target bun --outdir dist"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "4.0.92",
+    "@ai-sdk/google": "4.0.108",
+    "@ai-sdk/openai": "4.0.105",
+    "@direx/db": "workspace:*",
+    "@direx/extensions": "workspace:*",
+    "@direx/plugin-sdk": "workspace:@trydirex/plugin-sdk@*",
+    "@hono/zod-openapi": "1.6.3",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@openrouter/ai-sdk-provider": "3.1.0",
+    "ai": "7.0.157",
+    "better-auth": "1.7.14",
+    "hono": "4.13.14",
+    "libphonenumber-js": "1.13.15",
+    "nodemailer": "10.1.7",
+    "pg-boss": "12.38.0",
+    "tldts": "7.5.4",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "8.0.2",
+    "imapflow": "2.10.0"
+  }
+}

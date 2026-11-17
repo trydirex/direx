@@ -1,0 +1,4 @@
+ALTER TABLE "placement_probes" ADD COLUMN "report_action_id" uuid;--> statement-breakpoint
+ALTER TABLE "placement_probes" ADD CONSTRAINT "placement_probes_report_action_fk" FOREIGN KEY ("workspace_id","report_action_id") REFERENCES "public"."actions"("workspace_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "placement_probes_report_action_idx" ON "placement_probes" USING btree ("workspace_id","report_action_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "placement_probes_sent_message_key" ON "placement_probes" USING btree ("workspace_id","message_id") WHERE "placement_probes"."direction" = 'send';

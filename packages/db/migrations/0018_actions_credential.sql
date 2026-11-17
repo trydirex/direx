@@ -1,0 +1,2 @@
+ALTER TABLE "actions" ADD COLUMN "credential_id" uuid;--> statement-breakpoint
+ALTER TABLE "actions" ADD CONSTRAINT "actions_credential_fk" FOREIGN KEY ("workspace_id","credential_id") REFERENCES "public"."credentials"("workspace_id","id") ON DELETE no action ON UPDATE no action;

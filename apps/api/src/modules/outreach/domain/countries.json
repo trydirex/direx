@@ -1,0 +1,736 @@
+{
+  "about": "Whether a business may send an unsolicited email to a named person at another business, by recipient country. From Direx research note r35 (read 2026-10-30). Research, not legal advice; no lawyer has reviewed it. A country not listed here is unverified.",
+  "statuses": {
+    "open": "Allowed on the evidence read, if the record shows the basis given",
+    "held": "The text read needs consent, or the answer is unclear",
+    "unverified": "The primary text could not be read; never treat as allowed"
+  },
+  "countries": [
+    {
+      "code": "US",
+      "name": "United States",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Postal address, ad identification, opt-out honoured within 10 business days. State laws not checked",
+      "entitySplit": false,
+      "source": "https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.federalregister.gov/api/v1/documents.json?conditions[cfr][title]=16&conditions[cfr][part]=316&order=newest&per_page=1&fields[]=publication_date",
+        "match": "\"publication_date\":\"([0-9-]+)\""
+      }
+    },
+    {
+      "code": "CA",
+      "name": "Canada",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Published or disclosed; where and when; no \"do not send\" statement; role relevance",
+      "entitySplit": false,
+      "source": "https://laws-lois.justice.gc.ca/eng/acts/E-1.6/FullText.html",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://laws-lois.justice.gc.ca/eng/acts/E-1.6/",
+        "match": "last amended(?:</a>)? on (\\d{4}-\\d{2}-\\d{2})"
+      }
+    },
+    {
+      "code": "GB",
+      "name": "United Kingdom",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Corporate subscriber recorded as such. Sole trader or non-LLP partnership: consent or soft opt-in only",
+      "entitySplit": true,
+      "source": "https://www.legislation.gov.uk/uksi/2003/2426/regulation/22",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.legislation.gov.uk/changes/affected/uksi/2003/2426/data.feed",
+        "match": "totalResults>(\\d+)<"
+      }
+    },
+    {
+      "code": "AU",
+      "name": "Australia",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Particular person or role, conspicuous publication, reasonable to assume agreement. Re-read the current compilation first, including the rest of cl 4(2)",
+      "entitySplit": false,
+      "source": "https://www.legislation.gov.au/C2004A01214/asmade/2003-12-12/text/original/pdf",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://api.prod.legislation.gov.au/v1/Versions/Find(titleId='C2004A01214',asAtSpecification='Latest')",
+        "match": "\"registerId\":\"([^\"]+)\""
+      }
+    },
+    {
+      "code": "NZ",
+      "name": "New Zealand",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Published in business capacity, no refusal statement, relevant to role",
+      "entitySplit": false,
+      "source": "https://www.dia.govt.nz/spam-frequently-asked-questions",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.dia.govt.nz/spam-frequently-asked-questions",
+        "match": null
+      }
+    },
+    {
+      "code": "FR",
+      "name": "France",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Legitimate interest, relevance to the job, information, objection. Be careful with guessed addresses",
+      "entitySplit": false,
+      "source": "https://www.cnil.fr/fr/la-prospection-commerciale-par-courrier-electronique",
+      "confidence": "H for guidance",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.cnil.fr/fr/la-prospection-commerciale-par-courrier-electronique",
+        "match": null
+      }
+    },
+    {
+      "code": "IE",
+      "name": "Ireland",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Address reasonably appears commercial; message solely about that activity. Check for amendments first",
+      "entitySplit": false,
+      "source": "https://www.irishstatutebook.ie/eli/2011/si/336/made/en/print",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.irishstatutebook.ie/eli/2011/si/336/made/en/print",
+        "match": null
+      }
+    },
+    {
+      "code": "FI",
+      "name": "Finland",
+      "status": "open",
+      "verdict": "Allowed with conditions",
+      "basis": "Entity and job relevance. Sole traders held",
+      "entitySplit": true,
+      "source": "https://www.finlex.fi/fi/lainsaadanto/2014/917",
+      "confidence": "H for s.202; M for named",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://opendata.finlex.fi/finlex/avoindata/v1/akn/fi/act/statute-consolidated/2014/917",
+        "match": "date=\"([0-9-]+)\" name=\"dateConsolidated\""
+      }
+    },
+    {
+      "code": "DE",
+      "name": "Germany",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.gesetze-im-internet.de/uwg_2004/__7.html",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.gesetze-im-internet.de/uwg_2004/__7.html",
+        "match": null
+      }
+    },
+    {
+      "code": "AT",
+      "name": "Austria",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.rtr.at/rtr/service/rechtsvorschriften/gesetze/TKG_2021_en-gb.pdf",
+      "confidence": "H (2021 text)",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.rtr.at/rtr/service/rechtsvorschriften/gesetze/TKG_2021_en-gb.pdf",
+        "match": null
+      }
+    },
+    {
+      "code": "IT",
+      "name": "Italy",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.garanteprivacy.it/home/docweb/-/docweb-display/docweb/10224476",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.garanteprivacy.it/home/docweb/-/docweb-display/docweb/10224476",
+        "match": null
+      }
+    },
+    {
+      "code": "ES",
+      "name": "Spain",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.boe.es/buscar/act.php?id=BOE-A-2002-13758",
+        "match": null
+      }
+    },
+    {
+      "code": "DK",
+      "name": "Denmark",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://forbrugerombudsmanden.dk/alle-emner/uanmodede-henvendelser/uanmodede-elektroniske-henvendelser-spam",
+      "confidence": "H for guidance",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://forbrugerombudsmanden.dk/alle-emner/uanmodede-henvendelser/uanmodede-elektroniske-henvendelser-spam",
+        "match": null
+      }
+    },
+    {
+      "code": "CZ",
+      "name": "Czechia",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://uoou.gov.cz/cinnost/obchodni-sdeleni/casto-kladene-otazky-k-zakonu-c-4802004-sb",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://uoou.gov.cz/cinnost/obchodni-sdeleni/casto-kladene-otazky-k-zakonu-c-4802004-sb",
+        "match": null
+      }
+    },
+    {
+      "code": "MT",
+      "name": "Malta",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://legislation.mt/eli/sl/586.1/eng/pdf",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://legislation.mt/eli/sl/586.1/eng/pdf",
+        "match": null
+      }
+    },
+    {
+      "code": "GR",
+      "name": "Greece",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.dpa.gr/sites/default/files/2019-09/%CE%9D3471_06.PDF",
+      "confidence": "M (old text)",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.dpa.gr/sites/default/files/2019-09/%CE%9D3471_06.PDF",
+        "match": null
+      }
+    },
+    {
+      "code": "RO",
+      "name": "Romania",
+      "status": "held",
+      "verdict": "Consent required on text",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.dataprotection.ro/servlet/ViewDocument?id=859",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.dataprotection.ro/servlet/ViewDocument?id=859",
+        "match": null
+      }
+    },
+    {
+      "code": "SE",
+      "name": "Sweden",
+      "status": "held",
+      "verdict": "Unclear for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/marknadsforingslag-2008486_sfs-2008-486/",
+      "confidence": "H text; L on named",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.riksdagen.se/sv/dokument-och-lagar/dokument/svensk-forfattningssamling/marknadsforingslag-2008486_sfs-2008-486/",
+        "match": null
+      }
+    },
+    {
+      "code": "LU",
+      "name": "Luxembourg",
+      "status": "held",
+      "verdict": "Unclear for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://cnpd.public.lu/dam-assets/en/legislation/droit-lux/doc_loi30052005_en.pdf",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://cnpd.public.lu/dam-assets/en/legislation/droit-lux/doc_loi30052005_en.pdf",
+        "match": null
+      }
+    },
+    {
+      "code": "HR",
+      "name": "Croatia",
+      "status": "held",
+      "verdict": "Unclear for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://narodne-novine.nn.hr/clanci/sluzbeni/2022_07_76_1116.html",
+      "confidence": "H text; L on named",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://narodne-novine.nn.hr/clanci/sluzbeni/2022_07_76_1116.html",
+        "match": null
+      }
+    },
+    {
+      "code": "PL",
+      "name": "Poland",
+      "status": "unverified",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://api.sejm.gov.pl/eli/acts/DU/2024/1513/text.html",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://api.sejm.gov.pl/eli/acts/DU/2024/1513/text.html",
+        "match": null
+      }
+    },
+    {
+      "code": "BE",
+      "name": "Belgium",
+      "status": "unverified",
+      "verdict": "Consent required for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.ejustice.just.fgov.be/eli/arrete/2003/04/04/2003011238/justel",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.ejustice.just.fgov.be/eli/arrete/2003/04/04/2003011238/justel",
+        "match": null
+      }
+    },
+    {
+      "code": "NL",
+      "name": "Netherlands",
+      "status": "unverified",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://wetten.overheid.nl/BWBR0009950/",
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://repository.officiele-overheidspublicaties.nl/bwb/BWBR0009950/manifest.xml",
+        "match": "_latestItem=\"([^/\"]+)/"
+      }
+    },
+    {
+      "code": "PT",
+      "name": "Portugal",
+      "status": "unverified",
+      "verdict": "Unclear for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2004-106523049",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://diariodarepublica.pt/dr/legislacao-consolidada/lei/2004-106523049",
+        "match": null
+      }
+    },
+    {
+      "code": "EE",
+      "name": "Estonia",
+      "status": "unverified",
+      "verdict": "Unclear for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.riigiteataja.ee/en/eli/516032022003/consolide",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.riigiteataja.ee/en/eli/516032022003/consolide",
+        "match": null
+      }
+    },
+    {
+      "code": "LV",
+      "name": "Latvia",
+      "status": "unverified",
+      "verdict": "Unclear for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://likumi.lv/ta/en/en/id/96619",
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://likumi.lv/ta/en/en/id/96619",
+        "match": null
+      }
+    },
+    {
+      "code": "LT",
+      "name": "Lithuania",
+      "status": "unverified",
+      "verdict": "Consent required likely",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: e-seimas 403; snippet",
+      "watch": null
+    },
+    {
+      "code": "HU",
+      "name": "Hungary",
+      "status": "unverified",
+      "verdict": "Unclear for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: njt.hu reset; snippet",
+      "watch": null
+    },
+    {
+      "code": "SK",
+      "name": "Slovakia",
+      "status": "unverified",
+      "verdict": "Consent required likely",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: slov-lex body not loaded; snippet",
+      "watch": null
+    },
+    {
+      "code": "SI",
+      "name": "Slovenia",
+      "status": "unverified",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: pisrs 500; snippet",
+      "watch": null
+    },
+    {
+      "code": "BG",
+      "name": "Bulgaria",
+      "status": "unverified",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: lex.bg 403",
+      "watch": null
+    },
+    {
+      "code": "CY",
+      "name": "Cyprus",
+      "status": "unverified",
+      "verdict": "Consent required on text",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.cylaw.org/nomoi/enop/non-ind/2004_1_112/full.html",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.cylaw.org/nomoi/enop/non-ind/2004_1_112/full.html",
+        "match": null
+      }
+    },
+    {
+      "code": "CH",
+      "name": "Switzerland",
+      "status": "held",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.fedlex.admin.ch/filestore/fedlex.data.admin.ch/eli/cc/1988/223_223_223/20250101/de/html/fedlex-data-admin-ch-eli-cc-1988-223_223_223-20250101-de-html.html",
+      "confidence": "H text; L on scope",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.fedlex.admin.ch/filestore/fedlex.data.admin.ch/eli/cc/1988/223_223_223/20250101/de/html/fedlex-data-admin-ch-eli-cc-1988-223_223_223-20250101-de-html.html",
+        "match": null
+      }
+    },
+    {
+      "code": "NO",
+      "name": "Norway",
+      "status": "held",
+      "verdict": "Consent required for named",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://lovdata.no/dokument/NL/lov/2009-01-09-2/KAPITTEL_3",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://lovdata.no/dokument/NL/lov/2009-01-09-2/KAPITTEL_3",
+        "match": null
+      }
+    },
+    {
+      "code": "IS",
+      "name": "Iceland",
+      "status": "unverified",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: althingi.is 403; snippet",
+      "watch": null
+    },
+    {
+      "code": "JP",
+      "name": "Japan",
+      "status": "held",
+      "verdict": "Unclear, one check away",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.soumu.go.jp/main_sosiki/joho_tsusin/d_syohi/pdf/m_mail_pamphlet.pdf",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.soumu.go.jp/main_sosiki/joho_tsusin/d_syohi/pdf/m_mail_pamphlet.pdf",
+        "match": null
+      }
+    },
+    {
+      "code": "KR",
+      "name": "South Korea",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.law.go.kr/LSW/lsLawLinkInfo.do?chrClsCd=010202&lsJoLnkSeq=1000688185&lsId=000030&print=print",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.law.go.kr/LSW/lsLawLinkInfo.do?chrClsCd=010202&lsJoLnkSeq=1000688185&lsId=000030&print=print",
+        "match": null
+      }
+    },
+    {
+      "code": "SG",
+      "name": "Singapore",
+      "status": "held",
+      "verdict": "Allowed with conditions, held on one gap",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://sso.agc.gov.sg/Act/SCA2007",
+      "confidence": "H read parts",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": null,
+      "watchNote": "The source refuses automated reads (HTTP 403), so nothing watches it; the 180-day re-read covers it."
+    },
+    {
+      "code": "IN",
+      "name": "India",
+      "status": "held",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.meity.gov.in/static/uploads/2024/06/2bf1f0e9f04e6fb4f8fef35e82c42aa5.pdf",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": null,
+      "watchNote": "The source refuses automated reads (HTTP 403), so nothing watches it; the 180-day re-read covers it."
+    },
+    {
+      "code": "BR",
+      "name": "Brazil",
+      "status": "unverified",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: Planalto blocked the request",
+      "watch": null
+    },
+    {
+      "code": "MX",
+      "name": "Mexico",
+      "status": "held",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.diputados.gob.mx/LeyesBiblio/pdf/LFPC.pdf",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.diputados.gob.mx/LeyesBiblio/pdf/LFPC.pdf",
+        "match": null
+      }
+    },
+    {
+      "code": "ZA",
+      "name": "South Africa",
+      "status": "held",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.gov.za/sites/default/files/gcis_document/201409/3706726-11act4of2013popi.pdf",
+      "confidence": "H",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": {
+        "url": "https://www.gov.za/sites/default/files/gcis_document/201409/3706726-11act4of2013popi.pdf",
+        "match": null
+      }
+    },
+    {
+      "code": "AE",
+      "name": "United Arab Emirates",
+      "status": "unverified",
+      "verdict": "Unclear",
+      "basis": null,
+      "entitySplit": false,
+      "source": null,
+      "confidence": "L",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "sourceNote": "Primary text not read: tdra.gov.ae timed out; snippet",
+      "watch": null
+    },
+    {
+      "code": "IL",
+      "name": "Israel",
+      "status": "unverified",
+      "verdict": "Consent required",
+      "basis": null,
+      "entitySplit": false,
+      "source": "https://www.gov.il/en/departments/faq/17052018_7",
+      "confidence": "M",
+      "checked": "2026-10-30",
+      "warnAfter": "2027-01-30",
+      "expiresAfter": "2027-10-30",
+      "watch": null,
+      "watchNote": "The source refuses automated reads (HTTP 403), so nothing watches it; the 180-day re-read covers it."
+    }
+  ]
+}

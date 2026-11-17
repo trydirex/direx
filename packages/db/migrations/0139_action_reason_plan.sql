@@ -1,0 +1,1 @@
+ALTER TABLE "actions" ADD COLUMN "reason_plan" text;

@@ -1,0 +1,567 @@
+[
+  {
+    "kind": "queue",
+    "name": "agents.run",
+    "options": {
+      "retryLimit": 5,
+      "retryDelay": 5,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "ask.start",
+    "options": {
+      "retryLimit": 3,
+      "retryDelay": 10,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "campaigns.settle_sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "campaigns.stall_check",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "clips.cut",
+    "options": {
+      "retryLimit": 2,
+      "retryDelay": 30,
+      "expireInSeconds": 3600
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "clips.transcribe",
+    "options": {
+      "retryLimit": 2,
+      "retryDelay": 30,
+      "expireInSeconds": 18000
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "competitors.weekly_read",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "docs.write_back",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "docs.write_back_one",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "ledger.dispatch",
+    "options": {
+      "retryLimit": 5,
+      "retryDelay": 5,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "ledger.sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "media.sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "models.hold_watch",
+    "options": {
+      "retryLimit": 5,
+      "retryDelay": 5,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "newsletter.after_send",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "newsletter.weekly",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "next_steps.follow_up_cards",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "next_steps.start",
+    "options": {
+      "retryLimit": 3,
+      "retryDelay": 10,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "outreach.mailbox_polls",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "outreach.newsletter_sync_one",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "outreach.newsletter_sync_sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "outreach.reply",
+    "options": {
+      "retryLimit": 5,
+      "retryDelay": 5,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "outreach.reply_text_sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "placement.daily",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "placement.sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "plugins.poll",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "prospecting.company_read",
+    "options": {
+      "retryLimit": 5,
+      "retryDelay": 5,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "prospecting.company_verify",
+    "options": {
+      "retryLimit": 5,
+      "retryDelay": 5,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "prospecting.handover",
+    "options": {
+      "retryLimit": 5,
+      "retryDelay": 5,
+      "retryBackoff": true
+    }
+  },
+  {
+    "kind": "queue",
+    "name": "retention.export",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "retention.export_sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "retention.sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "seo.briefs.weekly",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "social.health_sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
+    "name": "standing_rules.cap_sweep",
+    "options": null
+  },
+  {
+    "kind": "schedule",
+    "name": "campaigns.settle_sweep",
+    "cron": "*/5 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "campaigns.stall_check",
+    "cron": "30 7 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "competitors.weekly_read",
+    "cron": "0 7 * * 1",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "docs.write_back",
+    "cron": "*/5 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "ledger.sweep",
+    "cron": "* * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "media.sweep",
+    "cron": "30 4 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "newsletter.after_send",
+    "cron": "*/10 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "newsletter.weekly",
+    "cron": "0 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "next_steps.follow_up_cards",
+    "cron": "0 7 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "outreach.mailbox_polls",
+    "cron": "* * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "outreach.newsletter_sync_sweep",
+    "cron": "0 5 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "outreach.reply_text_sweep",
+    "cron": "0 3 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "placement.daily",
+    "cron": "0 6 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "placement.sweep",
+    "cron": "*/5 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "retention.export_sweep",
+    "cron": "20 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "retention.sweep",
+    "cron": "15 3 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "seo.briefs.weekly",
+    "cron": "0 6 * * 1",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "social.health_sweep",
+    "cron": "0 4 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "standing_rules.cap_sweep",
+    "cron": "5 0 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "work",
+    "name": "agents.run",
+    "options": {
+      "pollingIntervalSeconds": 1
+    }
+  },
+  {
+    "kind": "work",
+    "name": "ask.start",
+    "options": {
+      "pollingIntervalSeconds": 1,
+      "includeMetadata": true
+    }
+  },
+  {
+    "kind": "work",
+    "name": "campaigns.settle_sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "campaigns.stall_check",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "clips.cut",
+    "options": {
+      "pollingIntervalSeconds": 2
+    }
+  },
+  {
+    "kind": "work",
+    "name": "clips.transcribe",
+    "options": {
+      "pollingIntervalSeconds": 2
+    }
+  },
+  {
+    "kind": "work",
+    "name": "competitors.weekly_read",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "docs.write_back",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "docs.write_back_one",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "ledger.dispatch",
+    "options": {
+      "pollingIntervalSeconds": 1
+    }
+  },
+  {
+    "kind": "work",
+    "name": "ledger.sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "media.sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "models.hold_watch",
+    "options": {
+      "pollingIntervalSeconds": 5
+    }
+  },
+  {
+    "kind": "work",
+    "name": "newsletter.after_send",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "newsletter.weekly",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "next_steps.follow_up_cards",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "next_steps.start",
+    "options": {
+      "pollingIntervalSeconds": 1,
+      "includeMetadata": true
+    }
+  },
+  {
+    "kind": "work",
+    "name": "outreach.mailbox_polls",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "outreach.newsletter_sync_one",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "outreach.newsletter_sync_sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "outreach.reply",
+    "options": {
+      "pollingIntervalSeconds": 1
+    }
+  },
+  {
+    "kind": "work",
+    "name": "outreach.reply_text_sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "placement.daily",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "placement.sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "plugins.poll",
+    "options": {
+      "pollingIntervalSeconds": 1
+    }
+  },
+  {
+    "kind": "work",
+    "name": "prospecting.company_read",
+    "options": {
+      "pollingIntervalSeconds": 1,
+      "includeMetadata": true
+    }
+  },
+  {
+    "kind": "work",
+    "name": "prospecting.company_verify",
+    "options": {
+      "pollingIntervalSeconds": 1,
+      "includeMetadata": true
+    }
+  },
+  {
+    "kind": "work",
+    "name": "prospecting.handover",
+    "options": {
+      "pollingIntervalSeconds": 1,
+      "includeMetadata": true
+    }
+  },
+  {
+    "kind": "work",
+    "name": "retention.export",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "retention.export_sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "retention.sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "seo.briefs.weekly",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "social.health_sweep",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "standing_rules.cap_sweep",
+    "options": null
+  }
+]

@@ -1,0 +1,616 @@
+{
+  "large": [
+    "actions",
+    "action_events",
+    "approvals",
+    "model_calls",
+    "items",
+    "item_events",
+    "people",
+    "agent_run_events",
+    "agent_run_parts",
+    "trigger_events",
+    "ask_messages",
+    "campaign_people",
+    "door_requests"
+  ],
+  "checkFrom": 137,
+  "files": {
+    "0000_roles.sql": {
+      "sha256": "1163f686cfabf831e70b442cb207ab43ff55dc626cc14faba64fd80e039d10eb",
+      "description": "Create the direx_app and direx_system login roles, lock down the public schema, and add the system schema"
+    },
+    "0001_example_notes.sql": {
+      "sha256": "097f85bf7149d9951f2d55e2ac16d61b10c8d86bd93909f6f1b59a937f8d8e93",
+      "description": "Create the example notes and note_comments tables with a workspace-scoped composite foreign key"
+    },
+    "0002_example_notes_rls.sql": {
+      "sha256": "7adcc2ce7fd446fd3dbe5d94730d6bc66e621091b472ac93ee288c9d4c54b8f9",
+      "description": "Force row level security on notes and note_comments with a workspace_isolation policy"
+    },
+    "0003_pgboss.sql": {
+      "sha256": "a81cad39d2ad4b79bf7a295c42bab3f4395eb3750cfb7de53dd58eddf8e7734c",
+      "description": "pg-boss 12.38.0 schema (version 46) from getConstructionPlans, plus direx_app grants"
+    },
+    "0004_ledger.sql": {
+      "sha256": "b6e12e274f483b23b55ab68296c67d3c237a93550bc348216e7dd49a7edb39cf",
+      "description": "Create the action ledger tables actions, approvals and action_events with composite workspace foreign keys"
+    },
+    "0005_ledger_rls.sql": {
+      "sha256": "091fe02c1e1d1a7fc2a42309df88460d913ac7504496e8fed2175f18d6126578",
+      "description": "Force row level security on the ledger tables; approvals may only be voided and action_events are append-only"
+    },
+    "0006_plugin_triggers.sql": {
+      "sha256": "90859f146433c1cf7affc9a6bfafb9ed7fedb0857a8f8f83e5a582d743d0ad79",
+      "description": "Create the plugin trigger tables trigger_events and trigger_cursors"
+    },
+    "0007_plugin_triggers_rls.sql": {
+      "sha256": "324a958cbbff88307395219d68f5a83cd4070f3e8b613f80780b33f03f31f2f0",
+      "description": "Force row level security on the plugin trigger tables; trigger_events is append-only and cursors are never deleted"
+    },
+    "0008_people_and_touch_reservations.sql": {
+      "sha256": "5fdadc9c13c9fe67dc1f2e06d4db7e9b7ae465e8b397c359efd3ebcea4521bb3",
+      "description": "Create people, person_keys, person_links and touch_reservations with workspace-scoped composite foreign keys"
+    },
+    "0009_people_and_touch_reservations_rls.sql": {
+      "sha256": "e11ce581121675da97d50d6b57d8c447b9d58d3b2b9198c10153fcc9c8e65cb4",
+      "description": "Force row-level security on the people and reservation tables; keep records, links and reservations from being deleted"
+    },
+    "0010_identity_keys.sql": {
+      "sha256": "ff60cb36e2247cb608bc669bb318540ba30b6d1f034b24349acce9c45ae14dfe",
+      "description": "Create identity_keys, one row per key value in a workspace, locked while a key is added"
+    },
+    "0011_identity_keys_rls.sql": {
+      "sha256": "9debc3e934189a7457c0ca7b51303cdac8f16112e83878bf9fc1ea9ae6af0b89",
+      "description": "Force row-level security on identity_keys; its rows are never deleted"
+    },
+    "0012_auth.sql": {
+      "sha256": "54c19f37e5a9c9180ce14335ec15e7b9e80f3bc26b29b98945acaf3488d0373f",
+      "description": "Create the auth schema with Better Auth's user, session, account and verification tables (uuid ids, timestamptz), and grant the app role access"
+    },
+    "0013_auth_id_defaults.sql": {
+      "sha256": "a60af0083201d5cbe551001ee7b95321360c142c54ea9505c055f63dff1a39fb",
+      "description": "Give the four auth tables' uuid ids a gen_random_uuid() default, since Better Auth leaves id generation to the database"
+    },
+    "0014_identity.sql": {
+      "sha256": "60385cff3bb09567be752ac75a83b554acff57c6e3b65aa1375351f3b037d5c2",
+      "description": "Create organizations, workspaces (workspace_id generated from id), workspace_members, workspace_invites and the append-only workspace_audit, with workspace-paired foreign keys"
+    },
+    "0015_identity_rls.sql": {
+      "sha256": "29eccef40bfc7b49e5a5271fc3f991229586aa00641b43c8e4767807e851df2a",
+      "description": "Forced RLS on the identity tables: the workspace policy, two SELECT-only app.user_id policies for listing a user's Workspaces, organizations readable only through a visible Workspace, and an append-only audit"
+    },
+    "0016_credentials.sql": {
+      "sha256": "ee39907f2a6886b02c171fd180613913fc51b2f2f6cf2ccadc276a4f435f00de",
+      "description": "Create the credential vault tables: workspace_keys (one active wrapped data key per Workspace), credentials (sealed values, scope and kind checks, live-key uniqueness) and the value-free credential_access_events"
+    },
+    "0017_credentials_rls.sql": {
+      "sha256": "51ff04bd170e4e97e4d257dbb7d22e2d6235fc9a6332b869c4d581c56a643014",
+      "description": "Forced RLS on the credential vault tables; the app role cannot delete keys or credentials, and access events are append-only"
+    },
+    "0018_actions_credential.sql": {
+      "sha256": "663d5bab341ff412eda13a3892ebe8085cead7e4a4b67d8d242dc09f31f93802",
+      "description": "Add actions.credential_id with a workspace-paired foreign key to credentials"
+    },
+    "0019_items.sql": {
+      "sha256": "97d01d7b996362167452f78cd6367586a3d1a5a659e4eae4955af3d6fe3bdc40",
+      "description": "Adds items and item_events: one row per Item, with an Action Item holding no state or triage of its own."
+    },
+    "0020_items_rls.sql": {
+      "sha256": "b84766412e5bf7889c96531ce4edbc8e92c6430f7c73cc170aca8689ae1ad790",
+      "description": "Forced RLS on items and item_events; items are never deleted and their events are append-only."
+    },
+    "0021_reservations_can_return_to_a_slot.sql": {
+      "sha256": "83687205f2ac1c32d86ce93de8a53070c86e0e8926c1419d9f7e0155cd24926a",
+      "description": "Drops the one-row-per-slot constraint on touch_reservations, so an Action moved away from a slot and back gets a new newest reservation."
+    },
+    "0022_models.sql": {
+      "sha256": "0dcb1e1b0155580eee34607d0c31223c2b35617ba930eb4fd09c2d96583d9dba",
+      "description": "Budget reservations and the model call ledger, connections, settings and incidents tables"
+    },
+    "0023_models_rls.sql": {
+      "sha256": "6475b94053c8e12a9e0b99a32e3c017e82b391122fe459c17dd548cb98f5fa39",
+      "description": "Forced RLS on those tables; calls and reservations are never deleted, revisions and incidents never change"
+    },
+    "0024_deployment_root_key.sql": {
+      "sha256": "8ec0eee0d9df6a2ff1f2809a50e95db8c7ca1eabeb17820c7ce3d0b3752843e7",
+      "description": "Adds deployment_root_key: the id of the root key this deployment first ran with, so a lost or different key refuses to start."
+    },
+    "0025_deployment_root_key_grants.sql": {
+      "sha256": "37eeb9206f6edb6bf9d88f99b940cfe329f255dbdccc7a621a2b7d052a3a9598",
+      "description": "The app role may only insert and read deployment_root_key."
+    },
+    "0026_approval_keys.sql": {
+      "sha256": "694a81618c75af5aa23a8f5e36a5ceb49951c03b6fd6851d011d4135bc2996c9",
+      "description": "Adds approval_keys: one sealed signing key per Workspace, apart from credentials so no credential path can reach one."
+    },
+    "0027_approval_keys_rls.sql": {
+      "sha256": "90b69bcd22853aeb4be305176b1193b93da5df58d2fda2fbd2b753b114f17a51",
+      "description": "Forced RLS on approval_keys; keys are retired, never deleted."
+    },
+    "0028_system_secrets.sql": {
+      "sha256": "8b673f3c4c5e85c036829693dd59909a71d680ce6c98321e83951223cc1d1f30",
+      "description": "System Workspace secrets: created_by may be null there, and reads at startup are recorded"
+    },
+    "0029_facts.sql": {
+      "sha256": "5b7c28348eba4d6a131116cd083f0d8e9b1816700a4696c33160f4826ee4d043",
+      "description": "Adds facts and fact_versions: one live fact per slot, with versions that never change."
+    },
+    "0030_facts_rls.sql": {
+      "sha256": "2e6b8ed5b6518b20e9b2ac817e93714682a41726452f95ce043dffc076758386",
+      "description": "Forced RLS on facts and fact_versions; facts are retired, never deleted, and versions are insert only."
+    },
+    "0031_agents.sql": {
+      "sha256": "f03dd91f0d69b9c56b9c74c0fb3d9edc7908d6e779e64e45243aa3e7045e787d",
+      "description": "Adds agent runs, their parts, events, proposals, cancellations, settings and setting revisions."
+    },
+    "0032_agents_rls.sql": {
+      "sha256": "548779aefbd60c63e0c5f6e9df8abb6c978430684380a72050181dc772499cc0",
+      "description": "Forced RLS on the agent tables; runs are never deleted, and parts, events, cancellations and revisions are insert only."
+    },
+    "0033_plans.sql": {
+      "sha256": "2593bc670fd08269cc780f2aac6d4fa635465fd9f0797a4932b855b10a9bdc7b",
+      "description": "Tables for Strategy, marketing plans and their versions, step progress and measure readings."
+    },
+    "0034_plans_rls.sql": {
+      "sha256": "13c209f88eb7c112351a0103344598358ac9679b523acba81656fc1a186f32fb",
+      "description": "Forced RLS on the plan tables; nothing is deleted, and versions, progress and readings are insert only."
+    },
+    "0035_agents_event_ref.sql": {
+      "sha256": "d4e2f9cb3d722f34dd9cdf2207041213159b28e886e775406599a647cf98d9c4",
+      "description": "agents: add the address of a failed page to run events"
+    },
+    "0036_plans_draft_run.sql": {
+      "sha256": "4484c8b8621f503ac616c09c22cada8616e956379448163da552f73b9b72b493",
+      "description": "A plan or Strategy draft records the run that wrote it."
+    },
+    "0037_outreach.sql": {
+      "sha256": "9ca10e885a895e2ae0c2f812a6f26ad0039534c5e8487c3143f3a50dc28de94d",
+      "description": "Outreach settings, suppressions, unsubscribe tokens and eligibility records; actions remember an unknown outcome."
+    },
+    "0038_outreach_rls_sweep.sql": {
+      "sha256": "953595a601039785ca26299c6dd571c35d10320e8f5c7aa972e7e359c1d13497",
+      "description": "Forced RLS on outreach tables and the overdue Action sweep function."
+    },
+    "0039_campaigns.sql": {
+      "sha256": "2c188182ad8ef8b097c9c1ac117f5fc3c77c8d4e67e7600232b6c6b8f598959d",
+      "description": "Add campaigns, campaign_steps, campaign_people and campaign_actions, with composite foreign keys"
+    },
+    "0040_campaigns_rls.sql": {
+      "sha256": "3e45ae0c9088061b71c66bccf84c89c65c2800d57ba968919930a223d7df69e7",
+      "description": "Force row level security on the campaign tables, and revoke delete and link updates from direx_app"
+    },
+    "0041_trigger_scope.sql": {
+      "sha256": "d8356bc4ea0ab97b29409fc8685abc03874d8f4735f1e8c021c2c5b7476864ce",
+      "description": "Key trigger cursors and seen event ids by credential, so each mailbox keeps its own place"
+    },
+    "0042_reply_signals.sql": {
+      "sha256": "28fa44700d1ce23672c5e7750840cb5000c1d652192e6349d84c2c25f56ce86c",
+      "description": "Add reply_signals for inbound opt-outs and bounces, and two suppression reasons"
+    },
+    "0043_reply_signals_rls.sql": {
+      "sha256": "12d8da3fd5127212e7d2e50432789513d78db74cf3aace02a5430ed6122cc31e",
+      "description": "Force row level security on reply_signals and keep its rows from being deleted"
+    },
+    "0044_connected_mailboxes.sql": {
+      "sha256": "b5e36d7165a4cb89090ff2dced4495335e9889eb5bb9f985c193572bae8652bc",
+      "description": "Add a system function listing connected Gmail mailboxes for the poll sweep"
+    },
+    "0045_clear_old_reply_text.sql": {
+      "sha256": "d0695388ce2043fed46b1a9c54ba433b78ca8651e2f39ae5fca94e35143643dc",
+      "description": "Add a system function clearing reply text older than 30 days"
+    },
+    "0046_reply_read_back.sql": {
+      "sha256": "b0e79f4b72231484e9eb2c4bbc48735fedd2cc38bc3fb3d9bc74b921c875c59b",
+      "description": "Allow a read_back signal, marking a search of a new Person's recent mail"
+    },
+    "0047_cli_subscription_calls.sql": {
+      "sha256": "8e0460061c3ed6936a6f9a736629bf3ed1131e1180befbff60eeb9bd64a714be",
+      "description": "Allow subscription CLI calls in the call ledger"
+    },
+    "0048_campaign_people_conflicts.sql": {
+      "sha256": "d8a218a1239da62c63a8d26effa7a3d390a3f4dc8a322221870bc3230e3dc880",
+      "description": "Add after_campaign_id and conflict_item_id to campaign_people, for someone in two campaigns"
+    },
+    "0049_boring_war_machine.sql": {
+      "sha256": "d20876d87879217850bbf7c5aa1a38445ce175286406b42526fd23f483a7d112",
+      "description": "Add the adapter choice to model settings, per-agent choices, and stored CLI sign-ins"
+    },
+    "0050_model_adapters_rls.sql": {
+      "sha256": "5fce68e887ad8db5aba26235f9c06ff38d2e898ee208d0da0eeed63925c45cf9",
+      "description": "Force row level security on agent model choices and CLI sign-ins"
+    },
+    "0051_mailbox_connections.sql": {
+      "sha256": "db201b3f099341cfb6f32d6db3811fbd1de056c8437359a9b04e2720f5d57372",
+      "description": "List mailboxes on any provider's connection for the poll sweep"
+    },
+    "0052_credential_connections.sql": {
+      "sha256": "275e45f8b6116f7a413a15dbb8fd932c6e9887804d9f0caeff1851e3ffcfac2e",
+      "description": "Let a non-OAuth credential name a connection, for app-password mailboxes"
+    },
+    "0053_social_accounts.sql": {
+      "sha256": "f78bc1f0ae4ced07b63229d244fcc533ad50e4e719d091e2ef4dc07f2852f175",
+      "description": "social_accounts: one row per network target under a credential, with forced RLS"
+    },
+    "0054_standing_rules.sql": {
+      "sha256": "47aee8783a692e136f382b1fe4c06aa53f7f1d9e0a883f86ef6509983717e5f5",
+      "description": "standing rule tables with forced RLS, and approvals.standing_rule_id"
+    },
+    "0055_item_rule_note.sql": {
+      "sha256": "ba9402d9986cf201479ea104c0063b51777156c0bbba47125cff4b01f73fbc5f",
+      "description": "items.rule_note: why a standing rule left an Item waiting"
+    },
+    "0058_active_rule_steps.sql": {
+      "sha256": "26a2270b7ed280450d44dca2b17f6bc92b1ec6364941ad894c089393f3e21338",
+      "description": "system.active_rule_steps for the daily sweep"
+    },
+    "0056_action_result.sql": {
+      "sha256": "e36213062fef71b820bde3a67e367a612c4343a68b81d7fe9e7f7002563fdb34",
+      "description": "actions.result: a sent effect's public link and follow-up results"
+    },
+    "0057_social_posts.sql": {
+      "sha256": "2471046bfa9a005832d51a67e601c2295e56c040e5e28f2982818c0f013476cd",
+      "description": "social_posts with forced RLS; post steps with no touch class; Scheduled for non-Action Items"
+    },
+    "0059_prospecting.sql": {
+      "sha256": "19e7a835bd6edd78ff008ae5cd6e7f8820107bae89b9f25888dbe411fbdff48a",
+      "description": "prospect_runs, companies, snapshots, signals, addresses and cohorts with forced RLS"
+    },
+    "0060_campaign_producer.sql": {
+      "sha256": "3a811b3cfa06258b917584d16be72bb85d46e0ce7ba19c3d79b94c9ee13f2607",
+      "description": "Add a nullable producer record to campaign_actions: which reader and writer made a per-person draft, and the Fact versions the writer was shown"
+    },
+    "0061_prospect_people.sql": {
+      "sha256": "6890976b31e31c25d5edc8277103bd81d43081c95f13fa172b631b7e5bad7edd",
+      "description": "Adds prospect_people, the names status on prospect_companies, and unknown as an address kind"
+    },
+    "0062_prospect_handovers.sql": {
+      "sha256": "e7c726105b1b4a6755de890c1d7c1a8bed8b2d4d17cfdabe702534d31b5a7174",
+      "description": "Hand-over of a cohort to a Campaign: the job's cursor and each address's result"
+    },
+    "0063_draft_checks.sql": {
+      "sha256": "6be0ecc31e2eef911254847b78629a716a1ec57ac4fcf6440aec5c2a4acd8b46",
+      "description": "Typed Item warnings: each is a code and its words, old words wrapped as unspecified; a check record on each campaign action link"
+    },
+    "0064_eligibility_record.sql": {
+      "sha256": "84a9c0ad7ed6caf2c53c7d25688ccde74e2c225383580c5e03e5b9211bc27e4b",
+      "description": "Fuller eligibility record: entity type, scope, expiry and country confidence on each Person; the sender's own country in outreach settings"
+    },
+    "0065_prospect_terms.sql": {
+      "sha256": "796cd4eb9fdcd9535c6ff4589227bd74a3013e52d87bbaa6b3bbe0387b1f42b6",
+      "description": "prospect_terms: the latest proposed search terms per Workspace"
+    },
+    "0066_agent_written_rules.sql": {
+      "sha256": "4c6493150bdbe3e62e79691ea362992a33aa7aeb265d1c5576d9b73f38fa3e6f",
+      "description": "Agent-written standing rules: mode, producer and allowed Facts on rules, nullable template revision and daily cap, the producer digest on approvals, and the campaign's outside-content answer"
+    },
+    "0067_newsletter_subscribers.sql": {
+      "sha256": "7a53f461a565d2c959f2a475830b695c94c433cfd98c8bf0e48d320b4de43726",
+      "description": "newsletter_subscribers: every address seen on a connected newsletter list, with forced RLS; the app role cannot delete rows"
+    },
+    "0068_newsletter_issues.sql": {
+      "sha256": "4070a17fb2c63e32df09cf221d14207e3ab5797bf2730f0863eca44e4925fd5d",
+      "description": "newsletter_settings (list, weekday, time, zone, read-only) and newsletter_issues (one per slot, with sent and stats)"
+    },
+    "0069_newsletter_rls.sql": {
+      "sha256": "9588f1fc74fe1c8505ba0d6cfe6b3db793d6325c4bbf2bbdeb14155b20f044f4",
+      "description": "Forced RLS on newsletter_settings and newsletter_issues; the app role cannot delete an issue"
+    },
+    "0070_mailbox_header_checks.sql": {
+      "sha256": "aef61befd26390bf8660e849f8e8e19ef7738c0078000c589324db043423d16d",
+      "description": "mailbox_header_checks: one row per Mailbox opt-out header check, ordered by seq, forced RLS, no deletes"
+    },
+    "0071_newsletter_workspaces.sql": {
+      "sha256": "eec5ff7990414af7222ddd72d24bccbc21f2c62ba47070e0dedebf5d64ccccb8",
+      "description": "system.newsletter_workspaces(): the Workspaces whose weekly newsletter is on, for the weekly job; ids only, audited"
+    },
+    "0072_newsletter_read_only_reason.sql": {
+      "sha256": "2a93471793f9167e48527a26ee38a3a8272581b5b60f426fba35c102cec1eda6",
+      "description": "newsletter_settings.read_only_reason: the plan or reason a tool gave for refusing to send, set and cleared together with read_only_since"
+    },
+    "0073_outside_touches.sql": {
+      "sha256": "36a4507f2094403e553732c9ba5782a0a46b8c03035b28becc9058aeeaa442af",
+      "description": "outside_touches: calls and hand-sent messages Direx didn't send, with forced RLS; never updated, and only a manual entry under 10 minutes old can be deleted"
+    },
+    "0074_seo_briefs.sql": {
+      "sha256": "4ca87fb23f073e4695d7b0951b10401421a261f5e0f53f486cfeda7ef03100ce",
+      "description": "seo_briefs: SEO briefs a person approved, with the page, query, selector, numbers and page text as read; forced RLS, insert only"
+    },
+    "0075_campaign_dms.sql": {
+      "sha256": "596ae0a73d65e7328b300c5cf725b6020d282c1cc6784deea3b47b325fe13ee1",
+      "description": "campaign_dms: DMs a DM step drafted for a person to send by hand, with forced RLS and no deletes; DM steps with a LinkedIn or X channel; X as a person key kind"
+    },
+    "0076_workspaces_org_id_locked.sql": {
+      "sha256": "33f20f792ea97610d46525ad3e52a0711d041a002df87d2b59fd0bb38bbf32b7",
+      "description": "workspaces: direx_app keeps UPDATE on name and deleted_at only, so the app can't move a Workspace into another Organization"
+    },
+    "0077_social_account_health.sql": {
+      "sha256": "e5c337253b973cfc10420649c30cd4900a3bae115ea71242aa5abfa3b53474df",
+      "description": "social_account_health: each social account's daily budget for posts, replies and links, a person's lower limits, and whether it is paused; forced RLS, no deletes"
+    },
+    "0078_step_links.sql": {
+      "sha256": "32c108656837bcfb5164ab616e730ecfb05528c13714c68e0477c34309215d22",
+      "description": "Add step links: a step waiting on another step's output, the post account whose URL is that output, UTM switch, and versioned step outputs"
+    },
+    "0079_media.sql": {
+      "sha256": "825f169f83b375288e8292dcb686c20cf574556447cd5056c5635cb1deba1c2c",
+      "description": "media: files a person uploaded and clips cut from them, with size, hash and storage key; forced RLS, no deletes, a delete only marks the row"
+    },
+    "0080_media_sweep.sql": {
+      "sha256": "b005dc4968b00aaba4f794493643f29caf0502d306a5333d0a756fdee04103f4",
+      "description": "system.media_sweep_due: marks sources older than a number of days deleted and lists deleted media whose bytes are still stored, across Workspaces, with an audit row"
+    },
+    "0081_relationship_holds.sql": {
+      "sha256": "9503e4498b3d0d34a205cd9474cbb15d8d61f6d6e8a091f5d0cf8c238e5aac34",
+      "description": "Create relationship_holds, correspondents, hold_releases and hold_hooks for rule (b) relationship holds"
+    },
+    "0082_relationship_holds_rls.sql": {
+      "sha256": "e4c4342d8b5e7db65ace20e84248cfc18652ac2aa95ee49d5914a481d34b839f",
+      "description": "Force row level security on the four relationship-hold tables; holds can't be deleted and releases can't be changed"
+    },
+    "0083_email_hash_key.sql": {
+      "sha256": "0298861e4191c2b69d9db461cdc2c8b5eda2d8e320c143315ed39daadc15acfe",
+      "description": "Add outreach_settings.email_hash_key, the random per-Workspace key that relationship holds hash addresses with"
+    },
+    "0084_clips.sql": {
+      "sha256": "f61c6f77303630ef02e65a578a64698acf99a7fd5efba2e0618c655d84cf2aef",
+      "description": "clip_runs and clips: a video's clip run (state, transcript, moments kept and dropped) and the clips cut from it; forced RLS, no deletes"
+    },
+    "0085_clip_steps.sql": {
+      "sha256": "03d2c08c7b25b60132e0a66090c6558715540a59a4d69dd8b0a96fdfbd3cf11d",
+      "description": "clips steps: campaign step type clips with its setup and clip run, and social_posts.clip_id in the one-post-per-account key so one account can carry several clips of one step"
+    },
+    "0086_agent_lessons.sql": {
+      "sha256": "584fd6196c2305acaa8dbbd41bb719a81d98300e1ef2eeeae87af08bc31a9588",
+      "description": "Agent lessons: agent_lessons, append-only agent_lesson_versions, agent_lesson_events and agent_run_lessons, and agent_runs.lesson_digest for the set fixed at first claim; forced RLS, no deletes"
+    },
+    "0087_clip_step_runs.sql": {
+      "sha256": "bc39df201ab89b3fcd24dd2f32ff412b7fe0431555ee99eb58530fa953c02b3f",
+      "description": "clip_step_runs: a clips step takes one recording after another; each step's one recording is copied over (failing the migration if any is left behind), then campaign_steps.clip_setup and clip_run_id are dropped; forced RLS, no updates or deletes"
+    },
+    "0088_campaign_advance.sql": {
+      "sha256": "5709caacc8dd7f0d27296812b5886d24756d7657ba69c533ae84c11bd764e098",
+      "description": "campaigns.advance: offer (default) or run, with who set it, when, and the time zone drafts are timed in; run needs a setter and a zone"
+    },
+    "0089_seo_steps.sql": {
+      "sha256": "2210aa7b5f01198c57b8a852dca0d0bd489f4015e2659863620c916080eaa860",
+      "description": "seo_brief steps: the step type (no touch class), campaign_steps.seo_setup and brief_run_id (only on a seo_brief step), and selector 'step' for seo_briefs"
+    },
+    "0090_step_drafting_mode.sql": {
+      "sha256": "abf4097cebc7b5287e753831a06c97328033e5a1c87738ca665402bcbe2e4af6",
+      "description": "Each email step's drafting mode, copied from its Campaign, and a system read of per-Person steps for the follow-up job"
+    },
+    "0091_campaign_anchor.sql": {
+      "sha256": "c7b58ad0024c351c96697b7161e66ba8820023a47b5e08c07a712c24c7e31ddd",
+      "description": "A Campaign's launch date and the step it follows, step cancel and go-ahead marks, the stall wait time, and a system read of steps others wait on"
+    },
+    "0092_anchored_campaigns.sql": {
+      "sha256": "58d9e232ad783956eaa567d02d66254fa6f661c916c8dadae7a894484f151424",
+      "description": "A system read of Campaigns whose launch follows a step, for the daily job that moves a launch once that step's post is live"
+    },
+    "0093_agent_choice_revisions.sql": {
+      "sha256": "83be7dbbd549dfd8fc21687643c5590c6a492a078a30f1ae2fd9d955ba2f73ac",
+      "description": "Add the append-only history of agent model choices, and paused_at on agent_model_choices"
+    },
+    "0094_agent_choice_revisions_rls.sql": {
+      "sha256": "18acd065f9b313ff8d2bf2011d359b7c79f73d36b55b05a9d1fd59d61adffbbe",
+      "description": "Forced RLS on agent_model_choice_revisions, and revoke update and delete from direx_app"
+    },
+    "0095_proposal_offers.sql": {
+      "sha256": "64883922725836d2cc9af6e3e5b642f84ceea64e6d6be5f86bf7795bd6a8f0e9",
+      "description": "agent_proposals keeps a draft that lost to a person's save: body, target (strategy, plan or step), offer state (open, used, dismissed, replaced) with who and when, and one open offer per target"
+    },
+    "0096_plan_changes.sql": {
+      "sha256": "7bb840fc42661b9d08fe588f93054fcd312ed7111f838fc73d6eb206bc753509",
+      "description": "campaign_plan_changes: one row per Campaign step a plan version held (text, channel or removed), the suggested text, the choice Item, and the decision (keep, use the new text, cancel); forced RLS, no deletes"
+    },
+    "0097_reply_optout_undo.sql": {
+      "sha256": "26b9a06fa294d2e5f1785cb4651765ffd03ad290c3c3c6ffb056ff5e907691ac",
+      "description": "suppression_reversals: an Owner's undo of a reply opt-out (email, when suppressed, who, why, quote), forced RLS, written only by system.undo_reply_suppressions, which moves reason 'reply' rows in the caller's Workspace"
+    },
+    "0098_workspaces_keyed_by_other_root.sql": {
+      "sha256": "9557816cc5bce95ef5efbdc7ce7ea3b1a3448c08089359a795fb5b4fa1b6a6ad",
+      "description": "Adds system.workspaces_keyed_by_other_root, so the doctor can name Workspaces whose data key another root key wrapped"
+    },
+    "0099_plan_settlements.sql": {
+      "sha256": "db1e179b3f8479781ad755730b838496cda0f3590ad3eec32f2ad02919f94b7f",
+      "description": "Create campaign_settlements for plan change work owed after an approval, with forced row level security, no deletes, and system.unsettled_campaigns for the sweep"
+    },
+    "0100_mailbox_daily_limit.sql": {
+      "sha256": "35d9d57f9c2867b3f157b2feda82beba4dc1af918bb4aff66d99971704178c83",
+      "description": "Give each Mailbox a daily send limit and sending hours on credentials, add the Workspace time zone, and create mailbox_reservations and mailbox_setting_changes with forced row level security"
+    },
+    "0101_lead_generator_failures.sql": {
+      "sha256": "09626ea84c5aa09f4290040cf4c3f6491ccb4282945e0b47ebd3a295f09e5131",
+      "description": "Let a hand-over end as failed with its reason, keep the basis and evidence each address went over with, and keep the error that broke an agent run's last attempt"
+    },
+    "0103_connect_links.sql": {
+      "sha256": "90b797fbec76e71654bddc29779681e6df0c2f90f0c05bf38cfe8d2489ec224a",
+      "description": "Create connect_links for connecting an account from another device (token and state kept only as SHA-256, forced RLS, no deletes), and add run_by and angle to social_accounts"
+    },
+    "0102_ask_messages.sql": {
+      "sha256": "f40a119f4281f559006b002956cf70c2050544c0bac1ee853a33eddcdc403f5b",
+      "description": "Create ask_messages, one person's Ask Direx messages and each run's reply, with forced row-level security and no deletes"
+    },
+    "0104_post_link_preview.sql": {
+      "sha256": "88cce311fefae21676e6ad2f961324ac50ef11be1e6d9e81ffb63b145d290c78",
+      "description": "Adds social_posts.link_preview: the first link in a post's text and the card its page gave (title, description, site), or null when it couldn't be read, kept so each link is read once."
+    },
+    "0105_post_link_image.sql": {
+      "sha256": "79f23adf9b4600c570dff0cefd5730c26eea89f7bbc4012f3062cb66cd6e7cf1",
+      "description": "Adds social_posts.link_image and link_image_type: the picture of a post's link card, fetched once by Direx (PNG, JPEG, GIF or WebP by its first bytes, at most 1 MB) and served from Direx so the browser never loads the linked site."
+    },
+    "0106_review_at_volume.sql": {
+      "sha256": "a59cbc86f17e50b789b5aa798e7003627162baf2f890b64828fb615cd46e543f",
+      "description": "Adds review_decisions (one row per approve, edit-and-approve or reject, with open and decide times, the Campaign step of a per-Person draft, and how much was edited; forced RLS, no update or delete), campaign_steps.writer_notes and writer_notes_revision, and campaign_actions.proposed_text, the writer's words before any edit, which the app may update and nothing else on that table."
+    },
+    "0108_placement_grants.sql": {
+      "sha256": "bf37e237497e0f90d7fa54724dd4f7156baf297964080e352d6934852be819f9",
+      "description": "Adds placement_grants: one row per yes or no a person gave to Placement checks for one Mailbox, with the wording version they saw, who answered and when, and who stopped it, when and why; the newest row for a Mailbox counts. Forced RLS, no delete, and only the stop columns can be updated."
+    },
+    "0107_media_images.sql": {
+      "sha256": "bfa8df5ff59e9475c5385ae95b7302b67e0b9d7390604d4a247a70beedbf4657",
+      "description": "Lets media hold PNG, JPEG, GIF and WebP images as well as video, for posts that carry images. Uploads are still typed by their first bytes; SVG stays out."
+    },
+    "0109_placement_content_tests.sql": {
+      "sha256": "a0d8f94d983075c5949d9a9053c8cf217220ce2b4e2dec95a59efbf8bcc4ddc0",
+      "description": "Adds placement_content_tests: one row per yes a person gave to sending one Campaign template step, filled with placeholder values, as Placement checks to the receiving addresses they were shown, with the wording version, who said it and when; the newest row for a step counts. Forced RLS, no update or delete."
+    },
+    "0110_placement_member_keys.sql": {
+      "sha256": "3b17076b04a9222986da2a0def89ed1ea4b5909244602ae3a800f67a0df17f72",
+      "description": "Adds placement_member_keys: one Ed25519 key pair per Placement Mailbox, its private half sealed with the Workspace's data key and its public half in the clear for the member list. Forced RLS, no update or delete."
+    },
+    "0111_placement_list_state.sql": {
+      "sha256": "499b8e96b38994a5560c429ed082482df424ab52d52518624a0d36a0c192726e",
+      "description": "Adds placement_list_state: per Workspace, the Placement circle member list it last trusted, with its version, content hash, and the length and hash of the root chain it chained through, so an older list, a different list at the same version, or an older or different root chain is refused. Forced RLS, no delete."
+    },
+    "0112_placement_pinned_root.sql": {
+      "sha256": "040c48204e72317643a6fbc72db35e3d28af6a7531c2ed4008e7343f4ccd70a9",
+      "description": "Keeps the root a release pinned when a placement list was trusted, so a re-pinned release starts trust over"
+    },
+    "0113_placement_probes.sql": {
+      "sha256": "ce4ce89c5e29d9f26fe2032bb032c765ba2db7abe87fdd54f4ea1479b91704a6",
+      "description": "Adds placement_probes: one row per Placement check a Mailbox sends or expects, per day, other Circle member and kind (plain or content), with the list version, expected time, the placement.send Action or why it was skipped or not sent, and the receiving side's verdict, report and archive Action written later. Forced RLS, no delete. Also lets a stop of placement_grants name no person, for a stop Direx makes when the provider refuses a placement email as over its sending limit or as abuse."
+    },
+    "0114_placement_probe_subject.sql": {
+      "sha256": "6269a59361bfc85cc98a2eeac620fe0da0625997f489c90736fa15dc0b6d776b",
+      "description": "Adds placement_probes.subject: for a Placement check a Mailbox expects, the subject text it searches for (a plain check's library subject or a content check's tag), derived from the trusted list and the day, so the read, the reply poller and inbound routing look for the same thing."
+    },
+    "0115_placement_reports.sql": {
+      "sha256": "cb68ee62664241d6e9b84462f8dc4ae260fe2a20060f8c443f93dc99ab2cf585",
+      "description": "Adds placement_probes.report_action_id: on a Placement check a Mailbox expects, the placement.report Action that reported its verdict to its sender, so the receiver can show every report it sent. Also a unique index on a sent check's Message-ID, written when a report about it is first counted, so no report counts it twice."
+    },
+    "0116_brand_voice.sql": {
+      "sha256": "37bc17c060d9cf38d9facea90a843830b0e2ccc3fab64123f365bf25a0e9815d",
+      "description": "Setup samples and Voice (ADR 0022): brand_samples with immutable revisions, never Items; voice_entries and voice_versions for example passages and word swaps, kept apart from facts. Forced RLS on all four; voice versions change only to be erased."
+    },
+    "0117_competitors.sql": {
+      "sha256": "629d0ff457348bf36b11a4d8ae448eef749f0509958881ab941b33c8d3347a5a",
+      "description": "Create the competitors table: up to 5 watched competitors per Workspace with pricing, changelog and landing URLs, under forced RLS"
+    },
+    "0118_review_reasons.sql": {
+      "sha256": "af6d72dbe7f9e20a54806fd7a6acb69aec75ec5d0541d527d89eae00ea0c314d",
+      "description": "Adds review_decisions.reason and reason_note: why a person turned a draft down (salesy, long, facts, voice or audience) or great for praise on approve, with their optional sentence of at most 300 characters; and lets decision be rewrite, for a rewrite asked with a reason. Counted per Campaign step to offer a writer note."
+    },
+    "0119_competitor_snapshots.sql": {
+      "sha256": "62d0ebc842ece4cbf8d3a8bc0421026f7b538e2451e04d1313c93b26fb161d29",
+      "description": "Create competitor_snapshots and competitor_changes (weekly kept parts of each competitor page and the Changes between reads, cascading from competitors, under forced RLS) and system.competitor_workspaces() for the weekly read"
+    },
+    "0120_competitor_change_labels.sql": {
+      "sha256": "f95eb3aead4f0231e85ee55cd40d8137ea416aed8d4d5ecdc7c0b3fe22bb7282",
+      "description": "Adds the change classifier's label to competitor_changes: label (answer or noise), kind (fact_update, comparison_page, post or ranking_brief, only on an answer), same_as_change_id (an earlier sighting of the same event from the same competitor, cascading), reason of at most 200 characters, labelled_at and run_id. All null until a run labels the Change."
+    },
+    "0121_calendar_posts.sql": {
+      "sha256": "07374833be0b70e56400f2636508118b87fccd1e9b69ec005550288062abcd1d",
+      "description": "Lets social_posts.campaign_id be null, for a post a person writes on the Calendar outside any campaign; its step_key is calendar:<item id>, so each such post stays its own under the one-per-account unique."
+    },
+    "0122_plan_creator_campaigns.sql": {
+      "sha256": "11b1b4e032d5dcaef3349fb6fded3e840956338b4f82f048a07aa5468b33cd68",
+      "description": "Add marketing_plans.created_by and backfill a Campaign for every plan that has none (ADR 0023)"
+    },
+    "0123_delete_draft_campaign.sql": {
+      "sha256": "79253857cc57d87897f52b81ca0782326b3567225a6b2dfbbcf9f67c901fdb42",
+      "description": "Adds system.delete_draft_campaign(workspace, plan), SECURITY DEFINER and granted to direx_app only: deletes a never-approved plan, its versions and its Campaign in the caller's Workspace under the plan row lock approval takes, refusing with DX404, DXAPR, DXRUN or DXREF (ADR 0023 rule 005)"
+    },
+    "0124_counter_moves.sql": {
+      "sha256": "ff5c00da0bb64d823796ac4f85b4fd3e67e8a235ca6e27072a682b00860ce1b2",
+      "description": "Adds counter-moves: \"competitor\" as a Fact field (a fact about a watched competitor, quoted from its page), competitors.comparison_url (our own comparison page, optional), and competitor_changes.item_id (the counter-move Item an answer belongs to, only on an answer; deleting the Item nulls only item_id)"
+    },
+    "0125_proposal_item_index.sql": {
+      "sha256": "c42b760fd67840bcf958c96890c7ce9c09623f91cc3a8d99e7619039b5e7052c",
+      "description": "Indexes agent_proposals on (workspace_id, item_id), so an Item's detail finds the Run whose proposal became it"
+    },
+    "0126_server_admission.sql": {
+      "sha256": "6cfc826d0f7331ba41101249a77c1d724818e2c42438ecca16cfe8af76f23279",
+      "description": "Adds server admission for self-host (ADR 0024): system.server_settings (one row, Invite only), system.server_admins, system.bootstrap_invites (SHA-256 only, at most 72 hours) and system.server_admin_events, with no grants; SECURITY DEFINER functions is_server_admin, server_status, signup_admission, claim_bootstrap, set_signup_policy, set_server_admin and list_accounts for direx_app, and issue_bootstrap_invite and cli_grant_server_admin for the owner only. Upgraded servers get no Server admin"
+    },
+    "0127_review_feeds.sql": {
+      "sha256": "27f672211c71ead24314f742713e0c18c1b646b918c4cbe7d2437451dc7ff14f",
+      "description": "Add review_feeds: one calendar feed of review blocks per Workspace member, token stored as SHA-256 only, workspace RLS"
+    },
+    "0128_campaign_notes.sql": {
+      "sha256": "3fbbb0d956bfe5e656f57da8da574f811640b39e8d6addd1f589596680eb3a01",
+      "description": "A person's plain-text notes on a Campaign, with a revision so a stale save is refused, and who edited them last."
+    },
+    "0129_ideas.sql": {
+      "sha256": "d8817afea2e171642a8c753fd7e98167411757b94039adb2724f5821d0f350ac",
+      "description": "Ideas: a sentence saved to start a Campaign from later. Forced RLS, no DELETE; the plan link clears on Delete draft (ADR 0023 rule 005)."
+    },
+    "0130_doc_import.sql": {
+      "sha256": "7c4f052be4ad61e04ac54e66711d7b0361b6330770d834a2531326fc5b56718c",
+      "description": "Docs import: a docs tool's database mapped to posts (doc_sources) and each row with the post it became (doc_rows). Forced RLS, no DELETE."
+    },
+    "0131_doc_write_back.sql": {
+      "sha256": "060a0723fa454a4df95682f75f4c3591b0b94031b7cfa737422839906e25540e",
+      "description": "Status write-back: doc_write_grants, the source's credential and write-back mapping, and each row's last write and generation (ADR 0025)"
+    },
+    "0132_invites_one_pending.sql": {
+      "sha256": "2129cd23d48c67f86bbe5460e60142694a06526bfddc22c05a0a46126cc40f8b",
+      "description": "One pending invite per email per Workspace (workspace_invites_one_pending); older duplicate pending invites are withdrawn and audited"
+    },
+    "0133_ask_starts.sql": {
+      "sha256": "a46c07cdeb9794129cae6a52a181686547fdca1c401c98cc95876f5869272a84",
+      "description": "Create ask_starts, one row per accepted Ask start with the work it made or its refusal, keyed by the Item and tied to its message, with forced row-level security and no deletes (ADR 0008 rules 028, 029)"
+    },
+    "0134_ask_messages_order.sql": {
+      "sha256": "d6f8a8739485e648acfa492b1af2ccf8c70db24b86d8b9a309b6c71d83fd8305",
+      "description": "Add ask_messages.seq, an identity column giving the order messages were written in, so two sent in the same instant still have a newest (ADR 0008 rule 022)"
+    },
+    "0135_plugin_installs.sql": {
+      "sha256": "8c5ea42b9c9a3e919af6f03f3d35411dfafa19f694b75c36580f3ada03cab604",
+      "description": "Third-party plugin installs (ADR 0026): system.plugin_installs and its events behind Server-admin functions, and workspace_plugins, a Workspace owner's turn-on"
+    },
+    "0136_root_key_replace.sql": {
+      "sha256": "503d599259f1f86d6ceab2a46061042a6c383f54bd278ba24bd47a1e05823300",
+      "description": "Adds the webhook consumer to credential access events, and system.replace_deployment_root_key so the secrets command can move a deployment to a new root key"
+    },
+    "0137_migration_record_read.sql": {
+      "sha256": "5ea3e62f707b16d70fbb5c8a139d37b468ed3ee909eb27c8e6be80fd0fdef830",
+      "description": "Let the app role read the migration record, so start-up can refuse pending migrations"
+    },
+    "0138_plugin_webhooks.sql": {
+      "sha256": "7e88f38f79555233a705b6804447fd8f9dcf74430deffc46732acc053d34cb13",
+      "description": "plugin_webhooks (ADR 0031 rule 007): a webhook trigger's address per Workspace, naming its plugin, trigger and signing-secret credential, under forced RLS"
+    },
+    "0139_action_reason_plan.sql": {
+      "sha256": "7e84a53521c1144b3760ddbe4b33565c0557822b4fd33bca9b4cadc554716b1b",
+      "description": "Store the plan a provider refusal needs on the held Action, so it is read as a field, not from its detail"
+    },
+    "0140_external_tokens.sql": {
+      "sha256": "641522fd424ff04fc4342596865524f299e98576bfeec5ff17a3649a15158d4f",
+      "description": "external_tokens (ADR 0032 rule 005): External tokens stored as a SHA-256 with a hint, scope fixed at creation, always expiring within a year, under forced RLS; the app may update only revocation and last use. workspace_audit gains subject_token_id (rule 011)"
+    },
+    "0141_item_events_tx.sql": {
+      "sha256": "62594d82fe5b8c9c4dbf92eea72c95144354bc762b8b966eb1218c2f975c682a",
+      "description": "item_events.tx (door-reads spec): the writing transaction as xid8, 0 for existing rows without a rewrite, so the changes reader can wait for older transactions"
+    },
+    "0142_door_requests.sql": {
+      "sha256": "1570b00edaf8076b12c358cd38ef0e4781c31cc64076e434248e784ec5d09b78",
+      "description": "door_requests and door_counters (door-reads spec, ADR 0032 rules 006 and 011): one append-only row per door request with no content, keyed by token, and per-minute counters shared by every API process, both under forced RLS; door_requests joins the large list"
+    },
+    "0143_workspace_soft_delete.sql": {
+      "sha256": "0d1080cf69dfe626963c12582b23a0b2239e691a14d1cda63a643a5a2073b4b1",
+      "description": "Moves Workspace soft delete into system.soft_delete_workspace, which stamps now(), audits and cancels the Workspace's queued jobs, revokes the app's UPDATE on workspaces.deleted_at, and has the cross-Workspace sweeps skip deleted Workspaces."
+    },
+    "0144_retention_sweeps.sql": {
+      "sha256": "599ee057b38cab4095235f9bc07e42bc65ca49d748f29c653b86e72c22b92154",
+      "description": "Adds one system definer per operational table that deletes a batch of rows past its retention window and records it in system_audit."
+    },
+    "0145_workspace_exports.sql": {
+      "sha256": "137bfadab4e5b78146e93d5ed8e4f8ffb4f13843c03845e7ff5c19cbff7d6c11",
+      "description": "Adds workspace_exports, the record of each Workspace export whose ZIP is removed 24 hours after it is ready, with forced RLS, column-limited updates and the system.export_sweep_due definer."
+    },
+    "0146_model_calls_reservation_index.sql": {
+      "sha256": "aea228b2407014e7fcff2b92835f198693d2d8e5f02981d701c7012e90ded222",
+      "description": "Index model_calls by Workspace and budget reservation, concurrently, for the reservation sweep"
+    },
+    "0147_workspace_purge.sql": {
+      "sha256": "339d2e33c9dd889551a02a80936b180f0c0c564196ea9b1f552d10ff3a4041b2",
+      "description": "Adds the Workspace purge: the purging mark, receipts, suppression hashes, the owner-only purge definers, a live-insert trigger on workspaces, and revokes app DELETE on workspaces, organizations and person_eligibility."
+    },
+    "0148_workspace_purge_all.sql": {
+      "sha256": "abee032185e59b384637a66d7a8251b8a91036fe2d408ee35f9286a5837fc865",
+      "description": "Has the Workspace purge delete every row of the Workspace, the ledger and eligibility records included, then its workspaces row and, after its last Workspace, the Organization row; a purge receipt now answers purged before not_found."
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "name": "@trydirex/plugin-sdk",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Write plugins for Direx: the manifest, the handlers and the stdio worker.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trydirex/direx.git",
+    "directory": "packages/plugin-sdk"
+  },
+  "files": ["dist", "LICENSE", "README.md"],
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./host": {
+      "bun": "./src/host.ts",
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js"
+    }
+  },
+  "scripts": {
+    "build": "bun build.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "zod": "4.6.7"
+  }
+}

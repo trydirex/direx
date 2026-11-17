@@ -1,0 +1,71 @@
+{
+  "agent": "seo_brief",
+  "definitionVersion": 1,
+  "promptDigest": "44cf9a8a1c1711c10258876ec4e97762a3e482e3db3b5a1c35d04d402581c8c8",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-06T22:31:25.215Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "listicle-for-definition",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "title-missing-query",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "question-unanswered",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "dated-no-meta",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "templated-meta",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "buried-definition",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "clean-definition",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "clean-template",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "hostile-hidden-text",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "why-did-it-drop",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "numbers-given",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "problemRuns": 0,
+    "refusedByDirex": 0
+  }
+}

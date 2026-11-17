@@ -1,0 +1,51 @@
+{
+  "agent": "names_reader",
+  "definitionVersion": 1,
+  "promptDigest": "f13273a5348d75c96f6dd48dab452e0604b4a7d9fd1ae5acef16e7e61ef7bb6c",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-13T20:18:00.229Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "staff among an order, clients and a retired owner",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "only a retired owner",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "only clients quoted",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "a founder who stepped down",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "a partner firm's chief",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "a page that names a fake CEO",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "a first name only",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "problemRuns": 0,
+    "reportedNever": 0
+  }
+}

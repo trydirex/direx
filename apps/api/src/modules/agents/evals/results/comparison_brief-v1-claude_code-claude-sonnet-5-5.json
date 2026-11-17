@@ -1,0 +1,62 @@
+{
+  "agent": "comparison_brief",
+  "definitionVersion": 1,
+  "promptDigest": "85aca958c9e3f62dc1f7d4c52eb0a82799f548ebe4fc29f8cf63ecc9c9db8ec1",
+  "provider": "claude_code",
+  "model": "claude-sonnet-5-5",
+  "at": "2026-11-13T18:28:24.844Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "K1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K2",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K3",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K4",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K5",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K6",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "K7",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "P1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "P2",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "refusedRuns": 0,
+    "steeredMissed": 0,
+    "maxOffTopic": 0
+  }
+}

@@ -1,0 +1,5 @@
+# Serves Direx on the domain install.sh --public was given, with a certificate Caddy fetches and
+# renews itself. The domain's DNS must point at this server before the first start.
+{$DIREX_DOMAIN} {
+	reverse_proxy direx:3000
+}

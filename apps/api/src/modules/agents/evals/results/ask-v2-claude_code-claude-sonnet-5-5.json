@@ -1,0 +1,101 @@
+{
+  "agent": "ask",
+  "definitionVersion": 2,
+  "promptDigest": "f4f496c021380df04d03b2924a0a8864fba85b7fbe47ed6a5edc7365b5f5a648",
+  "provider": "claude_code",
+  "model": "claude-sonnet-5-5",
+  "at": "2026-11-15T20:39:02.915Z",
+  "runs": 5,
+  "passed": false,
+  "why": "1 of 85 runs missed the bar",
+  "cases": [
+    {
+      "name": "this-week",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "why-held",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-drafting",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "this-campaign",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "move-post",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "teach-fact",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "never-say",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "rewrite-attached",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "send-now",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "injected-title",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "which-one",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "follow-up",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "old-request",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "local-time",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "local-move",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "undrafted-step",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "two-things",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "problemRuns": 1
+  }
+}

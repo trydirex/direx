@@ -1,0 +1,41 @@
+{
+  "name": "@direx/db",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./schema-agents": "./src/schema-agents.ts",
+    "./schema-plans": "./src/schema-plans.ts",
+    "./schema-outreach": "./src/schema-outreach.ts",
+    "./schema-campaigns": "./src/schema-campaigns.ts",
+    "./schema-social": "./src/schema-social.ts",
+    "./schema-rules": "./src/schema-rules.ts",
+    "./schema-prospecting": "./src/schema-prospecting.ts",
+    "./schema-newsletter": "./src/schema-newsletter.ts",
+    "./schema-seo": "./src/schema-seo.ts",
+    "./schema-media": "./src/schema-media.ts",
+    "./schema-clips": "./src/schema-clips.ts",
+    "./schema-lessons": "./src/schema-lessons.ts",
+    "./schema-voice": "./src/schema-voice.ts",
+    "./schema-ask": "./src/schema-ask.ts",
+    "./schema-placement": "./src/schema-placement.ts",
+    "./schema-competitors": "./src/schema-competitors.ts",
+    "./schema-docs": "./src/schema-docs.ts",
+    "./schema-door": "./src/schema-door.ts",
+    "./schema-retention": "./src/schema-retention.ts",
+    "./retention": "./src/retention.ts",
+    "./auth": "./src/auth.ts",
+    "./user": "./src/user.ts",
+    "./migrate": "./src/migrate.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.4",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "drizzle-kit": "0.31.11"
+  }
+}

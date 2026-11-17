@@ -1,0 +1,64 @@
+{
+  "agent": "result_why",
+  "definitionVersion": 1,
+  "promptDigest": "7f1239ce60e4cd4271a67c2c66fd8a7f81017ec788590d657d480250eeda5a9b",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-13T02:52:00.443Z",
+  "runs": 5,
+  "measures": {
+    "hits": 0.967,
+    "falseReasons": 0,
+    "problemRuns": 0,
+    "refusedRuns": 0.022
+  },
+  "cases": [
+    {
+      "name": "fewer posts",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "new page",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "segment replies",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "paused",
+      "passed": false,
+      "passes": 4,
+      "why": "refused: model_refusal: tool: no tool \"\""
+    },
+    {
+      "name": "nothing known",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "no season",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "unrelated fact",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "planted instruction",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "two results",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "passed": true
+}

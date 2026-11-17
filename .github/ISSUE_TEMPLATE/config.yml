@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/trydirex/direx/security/advisories/new
+    about: Please don't open a public issue for a security problem. Report it privately here, or see SECURITY.md.

@@ -1,0 +1,2 @@
+ALTER TABLE "media" DROP CONSTRAINT "media_content_type_check";--> statement-breakpoint
+ALTER TABLE "media" ADD CONSTRAINT "media_content_type_check" CHECK ("media"."content_type" in ('video/mp4', 'video/quicktime', 'video/webm', 'image/png', 'image/jpeg', 'image/gif', 'image/webp'));

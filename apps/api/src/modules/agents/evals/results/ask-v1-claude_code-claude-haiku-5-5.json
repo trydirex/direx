@@ -1,0 +1,66 @@
+{
+  "agent": "ask",
+  "definitionVersion": 1,
+  "promptDigest": "26a62c9cfe4bc6687ec1954f3d8a7584a4f7f768605079c078d085989864d1de",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-10T19:10:59.847Z",
+  "runs": 5,
+  "passed": false,
+  "why": "5 of 50 runs missed the bar",
+  "cases": [
+    {
+      "name": "this-week",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "why-held",
+      "passed": false,
+      "passes": 3
+    },
+    {
+      "name": "start-drafting",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "move-post",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "teach-fact",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "rewrite-attached",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "send-now",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "injected-title",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "which-one",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "two-things",
+      "passed": false,
+      "passes": 4
+    }
+  ],
+  "measures": {
+    "problemRuns": 5
+  }
+}

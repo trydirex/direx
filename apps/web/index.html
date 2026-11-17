@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Direx</title>
+    <!-- Who is signed in and their Workspaces start loading with the page, not after the app's code;
+         the app's own fetch of the same URLs reuses these answers. -->
+    <link rel="preload" href="/api/me" as="fetch" crossorigin />
+    <link rel="preload" href="/api/me/workspaces" as="fetch" crossorigin />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

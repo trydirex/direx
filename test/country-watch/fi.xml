@@ -1,0 +1,238 @@
+<AknXmlList><Results><akomaNtoso xmlns="http://docs.oasis-open.org/legaldocml/ns/akn/3.0" xmlns:finlex="http://data.finlex.fi/schema/finlex" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <act contains="multipleVersions" name="main">
+        <meta>
+            <identification source="#organization_fi.finlex">
+                <FRBRWork>
+                    <FRBRthis value="/akn/fi/act/statute-consolidated/2014/917/!main"/>
+                    <FRBRuri value="/akn/fi/act/statute-consolidated/2014/917"/>
+                    <FRBRalias name="eli" value="http://data.finlex.fi/eli/sd/2014/917/ajantasa"/>
+                    <FRBRdate date="2014-11-07" name="dateIssued"/>
+                    <FRBRdate date="2014-11-12" name="datePublished"/>
+                    <FRBRauthor as="#role_author" href="#organization_fi.finlex"/>
+                    <FRBRcountry value="fi"/>
+                    <FRBRsubtype value="statute-consolidated"/>
+                    <FRBRnumber value="917"/>
+                    <FRBRprescriptive value="false"/>
+                    <FRBRauthoritative value="false"/>
+                </FRBRWork>
+                <FRBRExpression>
+                    <FRBRthis value="/akn/fi/act/statute-consolidated/2014/917/fin@20160277/!main"/>
+                    <FRBRuri value="/akn/fi/act/statute-consolidated/2014/917/fin@20160277"/>
+                    <FRBRalias name="eli" value="http://data.finlex.fi/eli/sd/2014/917/ajantasa/2016-04-22/fin"/>
+                    <FRBRdate date="2014-11-07" name="dateIssued"/>
+                    <FRBRdate date="2026-06-16" name="dateConsolidated"/>
+                    <FRBRauthor as="#role_author" href="#organization_fi.finlex"/>
+                    <FRBRversionNumber value="20160277"/>
+                    <FRBRlanguage language="fin"/>
+                </FRBRExpression>
+                <FRBRManifestation>
+                    <FRBRthis value="/akn/fi/act/statute-consolidated/2014/917/fin@20160277/!main.xml"/>
+                    <FRBRuri value="/akn/fi/act/statute-consolidated/2014/917/fin@20160277.akn"/>
+                    <FRBRalias name="eli" value="http://data.finlex.fi/eli/sd/2014/917/ajantasa/2016-04-22/fin/xml"/>
+                    <FRBRdate date="2026-10-17" name="dateProduced"/>
+                    <FRBRdate date="2014-11-12" name="datePublished"/>
+                    <FRBRauthor as="#role_editor" href="#organization_fi.finlex"/>
+                    <FRBRformat value="xml"/>
+                </FRBRManifestation>
+            </identification>
+            <classification source="#organization_fi.finlex">
+                <keyword dictionary="/akn/ontology/concept/statute-keyword" showAs="Sähköinen viestintä" value="/akn/ontology/concept/statute-keyword.3431"/>
+                <keyword dictionary="/akn/ontology/concept/statute-keyword" showAs="Tietoyhteiskunta" value="/akn/ontology/concept/statute-keyword.5259"/>
+            </classification>
+            <references source="#organization_fi.finlex">
+                <TLCOrganization eId="organization_fi.finlex" href="/akn/ontology/organization/fi.finlex" showAs="Finlex"/>
+                <TLCRole eId="role_author" href="/akn/ontology/role/author" showAs="Tekijä"/>
+                <TLCRole eId="role_editor" href="/akn/ontology/role/editor" showAs="Toimittaja"/>
+                <TLCOrganization eId="fi.ministry-of-transport-and-communications" href="/akn/ontology/organization/fi.ministry-of-transport-and-communications" showAs="Liikenne- ja viestintäministeriö"/>
+                <TLCConcept eId="act" href="/akn/ontology/concept/statute/type-statute.act" showAs="Laki"/>
+            </references>
+            <proprietary source="#organization_fi.finlex">
+                <finlex:documentYear>2014</finlex:documentYear>
+                <finlex:administrativeBranch refersTo="#fi.ministry-of-transport-and-communications"/>
+                <finlex:typeStatute refersTo="#act"/>
+                <finlex:isInForce value="true"/>
+                <finlex:inForce>
+                    <finlex:dateEntryIntoForce date="2015-01-01"/>
+                    <finlex:noteEditorial>osittain myöhemmin, ks. 351 §</finlex:noteEditorial>
+                </finlex:inForce>
+                <finlex:noteEditorial>nimike muutettu L:lla 68/2018</finlex:noteEditorial>
+                <finlex:commonName>Sähköisen viestinnän palvelulaki</finlex:commonName>
+                <finlex:commonName>Tietoyhteiskuntakaari</finlex:commonName>
+                <finlex:commonName>Viestintäpalvelulaki</finlex:commonName>
+                <finlex:repeals>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/2001/1117">1117/2001</finlex:ref>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/1998/744">744/1998</finlex:ref>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/2002/458">458/2002</finlex:ref>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/2003/228">228/2003</finlex:ref>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/2009/462">462/2009</finlex:ref>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/2001/1015">1015/2001</finlex:ref>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/2003/393">393/2003</finlex:ref>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute-consolidated/2004/516">516/2004</finlex:ref>
+                    </finlex:statuteReference>
+                </finlex:repeals>
+                <finlex:amendedBy>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2026/442">442/2026</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2026-06-01">1.6.2026</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 3, 164 ja 304 §:ää sekä 21 luvun otsikko; lis. 21 a luku</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2024/607">607/2024</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2025-01-01">1.1.2025</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 308 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2021/1356">1356/2021</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2022-01-01">1.1.2022</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 148 ja 153 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2018/118">118/2018</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2018-04-01">1.4.2018</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 322 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2017/1115">1115/2017</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2018-03-01">1.3.2018</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 217 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2025/1150">1150/2025</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2026-01-01">1.1.2026</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 304, 330 ja 342 §:ää sekä 334 a §</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2019/655">655/2019</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2019-06-01">1.6.2019</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 322 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2020/1207">1207/2020</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2021-01-01">1.1.2021</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2021/1245">1245/2021</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2021-12-31">31.12.2021</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 265 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2015/1235">1235/2015</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2016-01-01">1.1.2016</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 75 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2020/579">579/2020</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2020-07-15">15.7.2020</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>lis. 335 a §</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2018/1003">1003/2018</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2019-01-01">1.1.2019</finlex:dateEntryIntoForce>
+                            <finlex:noteEditorial/>
+                        </finlex:inForce>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2023/756">756/2023</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2025-01-01">1.1.2025</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 233 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2016/558">558/2016</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2016-08-15">15.8.2016</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 217 §</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2026/527">527/2026</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2026-10-01">1.10.2026</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 321 §</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2025/470">470/2025</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2026-01-01">1.1.2026</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 335 §</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2021/485">485/2021</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2021-07-01">1.7.2021</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 3 ja 351 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2026/276">276/2026</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2026-04-21">21.4.2026</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 3 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2018/281">281/2018</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2018-05-09">9.5.2018</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 275, 304, 308, 313 ja 318 §:ää, lis. 247 a §</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2021/1271">1271/2021</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2022-01-01">1.1.2022</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. 25, 28, 32, 36, 40, 226 c ja 339 §:ää</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2024/318">318/2024</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce date="2024-06-20">20.6.2024</finlex:dateEntryIntoForce>
+                        </finlex:inForce>
+                        <finlex:noteEditorial>muutt. L:n 456/2016 voimaantulosäännöstä</finlex:noteEditorial>
+                    </finlex:statuteReference>
+                    <finlex:statuteReference>
+                        <finlex:ref href="/akn/fi/act/statute/2025/947">947/2025</finlex:ref>
+                        <finlex:inForce>
+                            <finlex:dateEntryIntoForce d

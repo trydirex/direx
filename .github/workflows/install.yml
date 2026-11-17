@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The server install, end to end: build the image, run deploy/compose/install.sh as a person would,
+# check Direx is healthy and the first Server admin's link is printed, then run it again and check
+# nothing changed. Mail goes to a throwaway greenmail on the Compose network (ci.compose.yml).
+name: install
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - deploy/**
+      - .github/workflows/install.yml
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    env:
+      CI: "true"
+      COMPOSE_FILE: compose.yml:ci.compose.yml
+      DIREX_INSTALL_BASE_URL: http://localhost:3000
+      DIREX_INSTALL_MAIL_FROM: Direx <signin@example.com>
+      # Throwaway login for the CI greenmail only.
+      DIREX_INSTALL_SMTP_URL: smtp://alice%40example.com:secret@greenmail:3025
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck -s sh deploy/compose/install.sh
+      - name: build the image the install pulls
+        run: docker build -f deploy/docker/Dockerfile -t ghcr.io/trydirex/direx:ci .
+      - name: install
+        run: sh deploy/compose/install.sh --version ci | tee install.log
+      - name: Direx is healthy and the link was printed once
+        run: |
+          curl -fsS http://127.0.0.1:3000/health
+          test "$(grep -c '/claim/' install.log)" = 1
+          link=$(grep -o 'http://localhost:3000/claim/[0-9a-f]*' install.log)
+          curl -fsS -o /dev/null "${link/localhost/127.0.0.1}"
+      - name: a second run keeps .env and prints no secret
+        run: |
+          before=$(sha256sum deploy/compose/.env)
+          sh deploy/compose/install.sh | tee second.log
+          test "$before" = "$(sha256sum deploy/compose/.env)"
+          pw=$(sed -n 's/^POSTGRES_PASSWORD=//p' deploy/compose/.env)
+          ! grep -F -e "$pw" -e 'secret@greenmail' second.log install.log
+      - name: logs on failure
+        if: failure()
+        working-directory: deploy/compose
+        run: docker compose logs --no-color

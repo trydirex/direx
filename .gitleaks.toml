@@ -1,0 +1,12 @@
+# Each path is exception E1 in CONSTRAINTS.md: fake secrets in tests, and one comment.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fixtures and a comment, not real secrets"
+paths = [
+  '''(^|/)apps/api/src/modules/credentials/crypto\.test\.ts$''',
+  '''(^|/)apps/api/src/modules/credentials/secrets\.test\.ts$''',
+  '''(^|/)apps/api/src/modules/plugins/triggers\.test\.ts$''',
+  '''(^|/)scripts/eval\.ts$''',
+]

@@ -1,0 +1,14 @@
+# Changes here always need the maintainer's review: approvals, the ledger, tenancy, credentials,
+# and the files that set the rules for everything else. scripts/test/codeowners.test.ts checks
+# that each path still exists.
+/apps/api/src/modules/ledger/ @domgolonka
+/apps/api/src/modules/credentials/ @domgolonka
+/apps/api/src/modules/identity/ @domgolonka
+/apps/api/src/modules/items/ @domgolonka
+/apps/api/src/modules/standing-rules/ @domgolonka
+/apps/api/src/secrets.ts @domgolonka
+/packages/db/ @domgolonka
+/CONSTRAINTS.md @domgolonka
+/CLA.md @domgolonka
+/.github/ @domgolonka
+/scripts/ @domgolonka

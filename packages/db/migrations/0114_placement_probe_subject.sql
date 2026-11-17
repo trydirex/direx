@@ -1,0 +1,1 @@
+ALTER TABLE "placement_probes" ADD COLUMN "subject" text;

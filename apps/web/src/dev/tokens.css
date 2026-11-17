@@ -1,0 +1,4 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* The token page: the app stylesheet, which includes Tailwind's reset, and Astryx's, which the app loads with the shell. */
+@import "../styles.css";
+@import "../astryx.css";

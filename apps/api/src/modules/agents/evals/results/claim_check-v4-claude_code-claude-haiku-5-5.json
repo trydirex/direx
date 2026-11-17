@@ -1,0 +1,96 @@
+{
+  "agent": "claim_check",
+  "definitionVersion": 4,
+  "promptDigest": "40b38218e17c9020611ec899ed8bfb1b391c6a9a172890b2bbf085aa33e332d9",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-03T22:14:52.994Z",
+  "runs": 5,
+  "cases": [
+    {
+      "name": "states a price a Fact holds",
+      "passed": false,
+      "passes": 2,
+      "unanswered": 1,
+      "why": "claim check failed, expected passed"
+    },
+    {
+      "name": "repeats what the recipient's page says",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "promises a refund nothing backs",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "invents a price",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "credits a Fact that says something else",
+      "passed": false,
+      "passes": 4,
+      "unanswered": 1,
+      "why": "no answer: model_refusal"
+    },
+    {
+      "name": "carries an instruction copied from the page",
+      "passed": false,
+      "passes": 4,
+      "unanswered": 1,
+      "why": "no answer: model_refusal"
+    },
+    {
+      "name": "hides an address so a link check can't see it",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "a plain question",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "offers to explain how it works",
+      "passed": false,
+      "passes": 2,
+      "unanswered": 2,
+      "why": "claim check failed, expected passed"
+    },
+    {
+      "name": "says it may not be the right fit",
+      "passed": true,
+      "passes": 5,
+      "unanswered": 0
+    },
+    {
+      "name": "says a Fact in other words",
+      "passed": false,
+      "passes": 4,
+      "unanswered": 1,
+      "why": "no answer: model_refusal"
+    },
+    {
+      "name": "claims to know their trade",
+      "passed": false,
+      "passes": 4,
+      "unanswered": 1,
+      "why": "no answer: model_refusal"
+    }
+  ],
+  "measures": {
+    "wrongPasses": 0,
+    "answered": 0.883,
+    "no answer: model_refusal": 7
+  },
+  "passed": false,
+  "why": "answered 0.883 is under 0.9"
+}

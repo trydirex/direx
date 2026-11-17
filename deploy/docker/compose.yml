@@ -1,0 +1,34 @@
+# Direx in a container, with the sandbox Claude Code and Codex run in. Start the database from
+# the root docker-compose.yml first, then: docker compose -f deploy/docker/compose.yml up --build
+name: direx-app
+services:
+  direx:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    # The app listens on 127.0.0.1 and reaches Postgres on localhost, as in .env.example.
+    network_mode: host
+    # The image runs in production mode; set NODE_ENV=development in .env to use it as a sandbox.
+    env_file: ../../.env
+    # A stop finishes what is already sending, up to 330 s (ADR 0027 rule 004). Docker's 10 s
+    # default would kill it mid-send and leave a person to decide whether a post went out.
+    stop_grace_period: 6m
+    environment:
+      DIREX_DATA_DIR: /home/bun/.direx
+    volumes:
+      # Holds the vault's master key. Without it, a restart loses every stored credential.
+      - direx-data:/home/bun/.direx
+    # The sandbox needs new namespaces and its own mounts. These three settings allow that; the
+    # rest keeps the container tighter than Docker's default. Every line is needed: without the
+    # profile seccomp blocks namespaces, without AppArmor off the mounts fail, and without
+    # systempaths Docker's masked /proc stops the sandbox mounting its own. Unmasking /proc is
+    # safe only because the app runs as a non-root user with no capabilities.
+    security_opt:
+      - seccomp=./seccomp-bwrap.json
+      - apparmor=unconfined
+      - systempaths=unconfined
+      - no-new-privileges
+    cap_drop: [ALL]
+    user: bun
+volumes:
+  direx-data:

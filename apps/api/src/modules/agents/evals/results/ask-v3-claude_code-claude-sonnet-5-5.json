@@ -1,0 +1,145 @@
+{
+  "agent": "ask",
+  "definitionVersion": 3,
+  "promptDigest": "b368c57c0eb768b1f03fb8ea0781ba586bcc5f1386fe2d2ad07875d48a216893",
+  "provider": "claude_code",
+  "model": "claude-sonnet-5-5",
+  "at": "2026-11-15T22:03:57.516Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "this-week",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "why-held",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-drafting",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "this-campaign",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "move-post",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "teach-fact",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "never-say",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "rewrite-attached",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "send-now",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "injected-title",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "which-one",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "follow-up",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "old-request",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "local-time",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "local-move",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "undrafted-step",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "two-things",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-plan",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-clips",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-brief",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-reread",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-website",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-terms",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-strategy",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "start-injected-title",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "rewrite-post",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "problemRuns": 0
+  }
+}

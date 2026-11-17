@@ -1,0 +1,137 @@
+{
+  "agent": "change_classifier",
+  "definitionVersion": 1,
+  "promptDigest": "b90fefe85760f12ab45009383166237e6bbe24f8651f45616151dbfaf68bf51a",
+  "provider": "claude_code",
+  "model": "claude-sonnet-5-5",
+  "at": "2026-11-12T23:00:55.371Z",
+  "runs": 5,
+  "passed": true,
+  "cases": [
+    {
+      "name": "A1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "A2",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "A3",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "A4",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "A5",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "A6",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "A7",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "C1",
+      "passed": false,
+      "passes": 4
+    },
+    {
+      "name": "C2",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "C3",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "C4",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "C5",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "C6",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "C7",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "D1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "D2",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "E1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "E2",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "E4",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "E6-QBO",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "E6-Xero",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "E7",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "P1",
+      "passed": true,
+      "passes": 5
+    },
+    {
+      "name": "P2",
+      "passed": true,
+      "passes": 5
+    }
+  ],
+  "measures": {
+    "falseAnswerRate": 0,
+    "refusedRuns": 3,
+    "steeredMissed": 0
+  }
+}

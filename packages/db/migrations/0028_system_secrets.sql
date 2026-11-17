@@ -1,0 +1,4 @@
+ALTER TABLE "credential_access_events" DROP CONSTRAINT "credential_access_events_consumer_check";--> statement-breakpoint
+ALTER TABLE "credentials" ALTER COLUMN "created_by" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "credential_access_events" ADD CONSTRAINT "credential_access_events_consumer_check" CHECK ("credential_access_events"."consumer" in ('execute', 'reconcile', 'query', 'poll', 'model_call', 'mcp_call', 'startup', 'create', 'rotate', 'connect', 'disconnect', 'delete'));--> statement-breakpoint
+ALTER TABLE "credentials" ADD CONSTRAINT "credentials_created_by_check" CHECK ("credentials"."created_by" is not null or "credentials"."workspace_id" = '00000000-0000-4000-8000-00000000d1e0');

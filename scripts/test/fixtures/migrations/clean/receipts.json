@@ -1,0 +1,7 @@
+{
+  "large": ["posts"],
+  "files": {
+    "0000_create_posts.sql": { "sha256": "ab6297483ec34c862eca352f07ab6a0135ad7cc4ef728cf2bd6f47bb1b43bca2", "description": "Create the posts table" },
+    "0001_index_posts_status.sql": { "sha256": "92f665a55e44d1e16b435c199bcab7fb020fd872d59e1a6301ae1b90f7713fca", "description": "Index posts by status and backfill empty statuses" }
+  }
+}

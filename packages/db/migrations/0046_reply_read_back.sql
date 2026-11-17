@@ -1,0 +1,2 @@
+ALTER TABLE "reply_signals" DROP CONSTRAINT "reply_signals_kind_check";--> statement-breakpoint
+ALTER TABLE "reply_signals" ADD CONSTRAINT "reply_signals_kind_check" CHECK ("reply_signals"."kind" in ('reply', 'bounce', 'read_back'));

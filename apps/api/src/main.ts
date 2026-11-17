@@ -14,7 +14,7 @@ import { approverFromMember, authConfigFromEnv, can, createIdentity, isDevOrTest
 import { itemRoutes } from "./modules/items/index";
 import { scheduleRoutes, timeZoneOf } from "./modules/schedule/index";
 import { CHECK_CANDIDATES, deploymentFromEnv, modelRoutes, signInNeeds } from "./modules/models/index";
-import { connectedMailboxes, createHeaderCheck, createHoldHooks, createHolds, createOutreach, createOutsideTouches, isPublicHttps, outreachRoutes, PROBE_WORDING_VERSION } from "./modules/outreach/index";
+import { connectedMailboxes, createHeaderCheck, createHoldHooks, createHolds, createMailboxPauses, createOutreach, createOutsideTouches, isPublicHttps, outreachRoutes, PROBE_WORDING_VERSION } from "./modules/outreach/index";
 import { createExports, exportRoutes } from "./modules/retention/index";
 import { createReviewFeeds, reviewFeedRoutes } from "./modules/review-feed/index";
 import { createPlans, draftRuns, planAskStarts, planRoutes } from "./modules/plans/index";
@@ -231,7 +231,9 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore 
   // A hold stops the Person's campaigns the way a logged reply does; Release resumes through the worker's ledger.
   const holds = createHolds({ replies: () => outsideReplies, ledger });
   const holdHooks = createHoldHooks({ vault: getVault, replies: () => outsideReplies });
-  app.route("/", outreachRoutes({ outreach: () => outreach, outsideTouches: () => outsideTouches, holds: () => holds, holdHooks: () => holdHooks }));
+  // A resumed Mailbox lets go of what its pause held through the worker's ledger.
+  const pauses = createMailboxPauses({ ledger });
+  app.route("/", outreachRoutes({ outreach: () => outreach, outsideTouches: () => outsideTouches, holds: () => holds, holdHooks: () => holdHooks, pauses: () => pauses }));
   // Each approver's calendar feed of review time; it counts Needs you through the worker's items.
   const reviewFeeds = createReviewFeeds({
     waiting: (workspaceId) => items().waitingSummary(workspaceId),

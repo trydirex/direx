@@ -1,6 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test } from "vitest";
 import { eligibilityWarnings, notEligible } from "./domain/eligibility";
+import { shouldPause } from "./domain/sending";
+
+test("three bounces among a Mailbox's latest sends pause it; two don't, however many sends went well", () => {
+  const sends = (bounced: number, fine: number) => [...Array.from({ length: bounced }, () => ({ bounced: true })), ...Array.from({ length: fine }, () => ({ bounced: false }))];
+  expect(shouldPause(sends(3, 0))).toBe(true);
+  expect(shouldPause(sends(3, 47))).toBe(true);
+  expect(shouldPause(sends(2, 48))).toBe(false);
+  expect(shouldPause([])).toBe(false);
+});
 
 const now = new Date("2026-11-02T12:00:00Z");
 const us = { country: "US", basis: "published_address" };

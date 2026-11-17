@@ -611,6 +611,10 @@
     "0148_workspace_purge_all.sql": {
       "sha256": "abee032185e59b384637a66d7a8251b8a91036fe2d408ee35f9286a5837fc865",
       "description": "Has the Workspace purge delete every row of the Workspace, the ledger and eligibility records included, then its workspaces row and, after its last Workspace, the Organization row; a purge receipt now answers purged before not_found."
+    },
+    "0149_mailbox_pause.sql": {
+      "sha256": "ede909ae1e585a52a3996ce48f556344923995043831c168002e656ac03fdc8b",
+      "description": "Adds a Mailbox's pause to credentials: paused_at, pause_reason (bounces or person), paused_by and resumed_at, with a check that a pause always has its reason."
     }
   }
 }

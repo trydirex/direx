@@ -11,6 +11,7 @@ import { eligibilityOf, hashedOptOut, hashedOptOutsExist, hasOpenSignal, readSet
 import { notEligible } from "../domain/eligibility";
 import { mailboxHold } from "./header-check";
 import { holdOf, holdResult } from "./holds";
+import { MAILBOX_PAUSED, mailboxPaused } from "./mailboxes";
 import { subscriberHold } from "../domain/subscribers";
 
 /** Whether replies to this Action's mailbox are being read. Required, so wiring can't leave it out. */
@@ -45,7 +46,8 @@ export const outreachFloors = (repliesRead: RepliesRead, now: () => Date = () =>
   if (!touch) {
     if (!placementEffect(action.capability)) return { kind: "ok" };
     const to = recipientsOf(action.spec);
-    return (await suppressionReasons(tx, to)).length || (await optedOutBefore(tx, hasher, to)) ? { kind: "block", reason: "suppressed" } : { kind: "ok" };
+    if ((await suppressionReasons(tx, to)).length || (await optedOutBefore(tx, hasher, to))) return { kind: "block", reason: "suppressed" };
+    return (await mailboxPaused(tx, action.credentialId)) ? { kind: "hold", reason: MAILBOX_PAUSED } : { kind: "ok" };
   }
   const { personId, touchClass } = touch;
   // An opt-out from any address of this Person's group stops mail to all of them.
@@ -53,6 +55,8 @@ export const outreachFloors = (repliesRead: RepliesRead, now: () => Date = () =>
   const reasons = await suppressionReasons(tx, emails);
   if (reasons.length) return { kind: "block", reason: reasons.every((r) => r === "hard_bounce") ? "hard_bounced" : "suppressed" };
   if (await optedOutBefore(tx, hasher, emails)) return { kind: "block", reason: "suppressed" };
+  // A paused Mailbox sends nothing, whatever the email is, until a person resumes it.
+  if (await mailboxPaused(tx, action.credentialId)) return { kind: "hold", reason: MAILBOX_PAUSED };
   // Someone once on the Workspace's newsletter list gets no cold email unless a person said yes to this one.
   if (touchClass === "cold" && subscriberHold(touch, (await subscribedAmong(tx, emails)).length > 0)) return { kind: "hold", reason: "newsletter_subscriber" };
   // Someone the Workspace is already talking to gets no cold mail, wherever that conversation is recorded.

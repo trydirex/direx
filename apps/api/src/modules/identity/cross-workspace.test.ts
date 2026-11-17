@@ -220,6 +220,7 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "GET /api/w/:workspaceId/external-tokens": { path: `/api/w/${w2}/external-tokens` },
   "POST /api/w/:workspaceId/external-tokens": { path: `/api/w/${w2}/external-tokens`, body: { name: "Script", days: 7, readers: ["read_changes"], kinds: [] } },
   "DELETE /api/w/:workspaceId/external-tokens/:tokenId": { path: `/api/w/${w2}/external-tokens/${tokenId}` },
+  "GET /api/w/:workspaceId/external-tokens/:tokenId/requests": { path: `/api/w/${w2}/external-tokens/${tokenId}/requests` },
   "GET /api/w/:workspaceId/models/connections": { path: `/api/w/${w2}/models/connections` },
   "PUT /api/w/:workspaceId/models/connections/:provider": { path: `/api/w/${w2}/models/connections/anthropic`, body: { credentialId } },
   "DELETE /api/w/:workspaceId/models/connections/:provider": { path: `/api/w/${w2}/models/connections/anthropic` },

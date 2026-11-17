@@ -158,9 +158,18 @@ const createTokenRoute = createRoute({
 });
 const revokeTokenRoute = createRoute({ method: "delete", path: "/api/w/{workspaceId}/external-tokens/{tokenId}", request: { params: ws.extend({ tokenId: z.uuid() }) }, responses: { 200: json(z.object({ ok: z.literal(true) }), "Revoked, or already revoked"), ...tokenErrors } });
 
+// A token's last 20 door requests, for any member: which reader, how it ended and when, never content.
+const DoorRequest = z.object({ reader: z.string(), outcome: z.string(), at: z.iso.datetime() }).openapi("DoorRequest");
+const tokenRequestsRoute = createRoute({
+  method: "get",
+  path: "/api/w/{workspaceId}/external-tokens/{tokenId}/requests",
+  request: { params: ws.extend({ tokenId: z.uuid() }) },
+  responses: { 200: json(z.object({ requests: z.array(DoorRequest) }), "Newest first; none for a token this Workspace never made"), ...tokenErrors },
+});
+
 const iso = (d: Date | null) => d && d.toISOString();
 
-export function tokenRoutes({ tokens }: { tokens: () => Tokens }) {
+export function tokenRoutes({ tokens, requests }: { tokens: () => Tokens; requests: () => Pick<Requests, "recent"> }) {
   const app = new OpenAPIHono<MemberEnv>();
   return app
     .openapi(listTokensRoute, async (c) => {
@@ -178,5 +187,9 @@ export function tokenRoutes({ tokens }: { tokens: () => Tokens }) {
       const m = c.get("member");
       if (!(await tokens().revoke(m.workspaceId, c.req.valid("param").tokenId, m.userId))) return c.json({ error: "not_found" }, 404);
       return c.json({ ok: true as const }, 200);
+    })
+    .openapi(tokenRequestsRoute, async (c) => {
+      const rows = await requests().recent(c.get("member").workspaceId, c.req.valid("param").tokenId);
+      return c.json({ requests: rows.map((r) => ({ reader: r.reader, outcome: r.outcome, at: r.at.toISOString() })) }, 200);
     });
 }

@@ -133,7 +133,7 @@ test("a read that fails is 500 and recorded as error", async () => {
 
 // The web app's token routes, mounted behind identity's session check as main.ts mounts them.
 const site = testIdentity();
-site.routes.route("/", tokenRoutes({ tokens: () => tokens }));
+site.routes.route("/", tokenRoutes({ tokens: () => tokens, requests: () => requests }));
 afterEach(() => vi.useRealTimers());
 const ZAPIER = { name: "Zapier", days: 30, readers: ["read_changes"], kinds: ["draft"] };
 const tokensOf = (w: string) => `/api/w/${w}/external-tokens`;
@@ -221,4 +221,24 @@ test("a refused token answers 400 with its reason and makes nothing", async () =
     expect([res.status, await res.json()]).toEqual([400, { error: reason }]);
   }
   expect(((await (await site.call(tokensOf(w), owner)).json()) as Listed).tokens).toEqual([]);
+});
+
+test("any member sees a token's recent requests: reader, outcome and time, nothing else", async () => {
+  const { owner, w } = await workspace();
+  const viewer = await site.addMember(owner, w, "viewer");
+  const t = await make(w, owner);
+  const inW = w as typeof W;
+  expect((await post("read_changes", bearer(t.token), "", inW)).status).toBe(200);
+  expect((await post("read_campaign", bearer(t.token), "", inW)).status).toBe(403);
+
+  const res = await site.call(`${tokensOf(w)}/${t.id}/requests`, viewer.cookie);
+  expect(res.status).toBe(200);
+  const { requests: rows } = (await res.json()) as { requests: Record<string, unknown>[] };
+  expect(rows.map((r) => [r.reader, r.outcome])).toEqual([
+    ["read_campaign", "reader_not_allowed"],
+    ["read_changes", "ok"],
+  ]);
+  for (const r of rows) expect(Object.keys(r).sort()).toEqual(["at", "outcome", "reader"]);
+  // A token this Workspace never made has none.
+  expect(await (await site.call(`${tokensOf(w)}/${crypto.randomUUID()}/requests`, viewer.cookie)).json()).toEqual({ requests: [] });
 });

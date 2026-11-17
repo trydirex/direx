@@ -438,11 +438,13 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
 
   // External tokens (ADR 0032 rule 005): made and revoked here, accepted only by the door.
   const tokens = createTokens({ maxDays: maxTokenDays });
-  app.route("/", tokenRoutes({ tokens: () => tokens }));
+  // The door's request rows: its caps count them, and the tokens page shows each token's latest.
+  const doorRequests = createRequests();
+  app.route("/", tokenRoutes({ tokens: () => tokens, requests: () => doorRequests }));
   // The door (ADR 0032 rule 002): its own app and document under /api/door/v1, reading through the
   // same rows Ask reads. Wrapped in a plain Hono so its routes mount without joining the web app's
   // document; registerReaders stops the start on a catalogue name with nothing registered.
-  const door = doorApp({ tokens, requests: createRequests(), registrations: registerReaders(doorReads({ items, campaigns: () => campaigns })) });
+  const door = doorApp({ tokens, requests: doorRequests, registrations: registerReaders(doorReads({ items, campaigns: () => campaigns })) });
   app.route("/", new Hono().route("/", door));
 
   app.doc31("/openapi.json", openApiConfig);

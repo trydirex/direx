@@ -12,6 +12,10 @@ import { Tokens } from "./Tokens";
 const W = "00000000-0000-4000-8000-0000000000aa";
 const reply = (status: number, body: unknown) => Promise.resolve({ ...(status < 400 ? { data: body } : { error: body }), response: new Response(null, { status }) });
 const NEW = `dxt_${"x".repeat(43)}`;
+const SEEN = [
+  { reader: "mcp", outcome: "ok", at: "2026-11-17T10:05:00.000Z" },
+  { reader: "read_needs_you", outcome: "reader_not_allowed", at: "2026-11-17T10:04:00.000Z" },
+];
 const choices = {
   lifetimes: [7, 30, 90],
   readers: [
@@ -38,6 +42,7 @@ function serve(post: () => ReturnType<typeof reply> = () => reply(200, { id: "t9
   vi.spyOn(api, "GET").mockImplementation(((path: string) => {
     if (path === "/api/w/{workspaceId}/external-tokens") return reply(200, { tokens, choices });
     if (path === "/api/w/{workspaceId}/members") return reply(200, { members: [{ userId: "u2", email: "sam@example.com", name: "Sam", role: "admin", createdAt: "2026-10-01T10:00:00.000Z" }] });
+    if (path === "/api/w/{workspaceId}/external-tokens/{tokenId}/requests") return reply(200, { requests: SEEN });
     return reply(404, { error: "not_found" });
   }) as never);
   return { post: vi.spyOn(api, "POST").mockImplementation(post as never), del: vi.spyOn(api, "DELETE").mockImplementation((() => reply(200, { ok: true })) as never) };
@@ -174,4 +179,19 @@ test("a lost creation response refreshes the list without replaying creation and
   expect(await screen.findByText(NEW)).toBeTruthy();
   expect(post).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("any member opens a token's recent requests and sees which reader, how it ended and when, loaded only when opened", async () => {
+  serve();
+  render(withQueries(<Tokens workspaceId={W} role="viewer" me="u1" />));
+  const list = within(await screen.findByRole("region", { name: "Tokens" }));
+  await list.findByText("dxt_AbCd…");
+  const asked = () => (api.GET as unknown as { mock: { calls: unknown[][] } }).mock.calls.filter((c) => c[0] === "/api/w/{workspaceId}/external-tokens/{tokenId}/requests");
+  expect(asked()).toHaveLength(0);
+
+  const [first] = list.getAllByText("Recent requests");
+  await userEvent.click(first!);
+  expect(await list.findByText(/MCP: Answered/)).toBeTruthy();
+  expect(list.getByText(/Needs you: Refused: not something this token can read/)).toBeTruthy();
+  expect(asked()[0]?.[1]).toEqual({ params: { path: { workspaceId: W, tokenId: "t1" } } });
 });

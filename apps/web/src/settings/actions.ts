@@ -28,6 +28,13 @@ export async function makeToken(workspaceId: string, body: NewToken): Promise<{ 
 /** Any member revokes; a second revoke is fine. */
 export const revokeToken = (workspaceId: string, tokenId: string) => call(api.DELETE("/api/w/{workspaceId}/external-tokens/{tokenId}", { params: { path: { workspaceId, tokenId } } }));
 
+/** A token's last 20 door requests, newest first: reader, outcome and time. */
+export const tokenRequestsQuery = (workspaceId: string, tokenId: string) =>
+  queryOptions({
+    queryKey: inWorkspace(workspaceId, "external-tokens", tokenId, "requests"),
+    queryFn: async () => (await call(api.GET("/api/w/{workspaceId}/external-tokens/{tokenId}/requests", { params: { path: { workspaceId, tokenId } } }))).requests,
+  });
+
 export const reviewFeedQuery = (workspaceId: string) =>
   queryOptions({ queryKey: inWorkspace(workspaceId, "review-feed"), queryFn: (): Promise<ReviewFeedState> => call(api.GET("/api/w/{workspaceId}/review-feed", inW(workspaceId))) });
 

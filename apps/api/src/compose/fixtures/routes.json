@@ -1178,6 +1178,8 @@
   "POST /api/w/:workspaceId/external-tokens",
   "DELETE /api/w/:workspaceId/external-tokens/:tokenId",
   "DELETE /api/w/:workspaceId/external-tokens/:tokenId",
+  "GET /api/w/:workspaceId/external-tokens/:tokenId/requests",
+  "GET /api/w/:workspaceId/external-tokens/:tokenId/requests",
   "POST /api/door/v1/w/:workspaceId/read_changes",
   "POST /api/door/v1/w/:workspaceId/read_changes",
   "POST /api/door/v1/w/:workspaceId/read_changes",

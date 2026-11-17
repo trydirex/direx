@@ -12,22 +12,42 @@ export function problems(text: string): string[] {
   // The open fence's run, such as "````"; it closes only on the same character, at least as long.
   let fence = "";
   let h1s = 0;
-  let prev = "";
+  let paragraph: string[] = [];
+  const checkParagraph = () => {
+    // Code spans can cross soft line breaks, but cannot cross paragraph/block boundaries.
+    const prose = paragraph.join("\n").replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, "");
+    if (/<[A-Z][\w.]*[\s/>]/.test(prose)) found.push("a JSX component");
+    paragraph = [];
+  };
   for (const line of text.split("\n")) {
-    const run = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
-    if (run && (fence ? run[0] === fence[0] && run.length >= fence.length && /^ {0,3}[`~]+\s*$/.test(line) : true)) {
-      fence = fence ? "" : run;
-      prev = "";
+    const opener = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    const run = opener?.[1];
+    if (fence) {
+      if (run && run[0] === fence[0] && run.length >= fence.length && /^[ \t\r]*$/.test(opener![2]!)) fence = "";
       continue;
     }
-    if (fence) continue;
-    // An ATX "# Title", or a Setext title: a line of "=" under text.
-    if (/^ {0,3}#(\s|$)/.test(line) || (/^ {0,3}=+\s*$/.test(line) && prev.trim() !== "")) h1s++;
-    prev = line;
+    if (run && (run[0] === "~" || !opener![2]!.includes("`"))) {
+      checkParagraph();
+      fence = run;
+      continue;
+    }
+    if (!line.trim()) {
+      checkParagraph();
+      continue;
+    }
+    // Indented code cannot interrupt a paragraph; indented paragraph continuations are prose.
+    if (/^( {4}| {0,3}\t)/.test(line) && paragraph.length === 0) continue;
+    const atx = /^ {0,3}#{1,6}(\s|$)/.test(line);
+    const setext = paragraph.length > 0 && /^ {0,3}(=+|-+)[ \t\r]*$/.test(line);
+    if (/^ {0,3}#(\s|$)/.test(line) || (setext && line.trim().startsWith("="))) h1s++;
+    // Headings and other block starts cannot supply paragraph text for a Setext underline.
+    const block = atx || setext || /^ {0,3}(>|[-+*]\s|\d+[.)]\s|(?:\* *){3,}$|(?:- *){3,}$|(?:_ *){3,}$)/.test(line);
+    if (block) checkParagraph();
     if (/^(import|export)\s.*\bfrom\s+["']|^import\s+["']|^export\s+(const|let|var|function|class|default)\b|^export\s*[{*]/.test(line)) found.push(`an MDX ${line.split(/[\s{*]/)[0]} line`);
-    // Code spans close on a backtick run as long as the one that opened them.
-    if (/<[A-Z][\w.]*[\s/>]/.test(line.replace(/(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)/g, ""))) found.push("a JSX component");
+    paragraph.push(line);
+    if (block) checkParagraph();
   }
+  checkParagraph();
   if (h1s !== 1) found.push(`${h1s} H1 headings, not 1`);
   return found;
 }
@@ -55,4 +75,34 @@ test("the check catches what the website can't render", () => {
   expect(problems("# One\n\n # Two\n")).toEqual(["2 H1 headings, not 1"]);
   expect(problems("# Title\n\nexport {}\n")).toEqual(["an MDX export line"]);
   expect(problems("# Title\n\n<Tabs.Panel />\n")).toEqual(["a JSX component"]);
+});
+
+test("invalid backtick fence info does not hide headings", () => {
+  expect(problems("# Title\n\n```inline```\n\n# Second\n")).toEqual(["2 H1 headings, not 1"]);
+  expect(problems("# Title\n\n~~~ info `allowed`\n<Tabs />\n~~~\n")).toEqual([]);
+  expect(problems("# Title\n\n```js\n<Tabs />\n``` trailing\n<Tabs />\n```\n")).toEqual([]);
+});
+
+test("indented code is literal, while paragraph continuations remain prose", () => {
+  expect(problems("# Title\n\n    <Tabs />\n\n\t<Tabs />\n")).toEqual([]);
+  expect(problems("# Title\n\n    ```\n\n# Second\n")).toEqual(["2 H1 headings, not 1"]);
+  expect(problems("# Title\n\nParagraph\n    <Tabs />\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n    <Tabs />\n\n<Tabs />\n")).toEqual(["a JSX component"]);
+});
+
+test("Setext underlines require paragraph text", () => {
+  expect(problems("# Title\n===\n")).toEqual([]);
+  expect(problems("Title\n===\n")).toEqual([]);
+  expect(problems("# Title\n\n## Section\n===\n")).toEqual([]);
+  expect(problems("# Title\n\n---\n===\n")).toEqual([]);
+  expect(problems("# Title\n\nSection\n---\n===\n")).toEqual([]);
+});
+
+test("JSX checks exclude complete multiline code spans within a paragraph", () => {
+  expect(problems("# Title\n\n`example\n<Tabs>\n`\n")).toEqual([]);
+  expect(problems("# Title\n\n``example\n`<Tabs>`\n``\n")).toEqual([]);
+  expect(problems("# Title\n\n`example\n<Tabs>\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n`example\n\n<Tabs>\n`\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n`example\n<Tabs>\n` <Other />\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n`example\n\n```\n`\n```\n<Tabs />\n")).toEqual(["a JSX component"]);
 });

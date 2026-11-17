@@ -885,6 +885,61 @@ test("a template a run wrote carries a later warning into the drafts made from i
   expect(await said(edited)).not.toContain("Written with a lesson that was later withdrawn.");
 });
 
+test("concurrent mailbox saves keep the primary consistent with retained order", async () => {
+  const a = await newCredential(`${crypto.randomUUID()}@acme.test`, "google");
+  const b = await newCredential(`${crypto.randomUUID()}@acme.test`, "google");
+  const id = await ready();
+  const setup = { type: "email", touchClass: "cold", audience: "everyone" } as const;
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [] }));
+  const locker = await appClient();
+  await locker.query("begin");
+  await locker.query("select set_config('app.workspace_id', $1, true)", [W]);
+  await locker.query("select 1 from campaign_steps where campaign_id = $1 and step_key = 'first' for update", [id]);
+  const saves = [
+    campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [a, b] }),
+    campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [b, a] }),
+  ];
+  try {
+    // Hold both saves at the same row lock, then let them finish in database order.
+    let waiting = 0;
+    for (let i = 0; i < 100 && waiting < 2; i++) {
+      waiting = Number((await q("select count(*) as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%campaign_steps%'"))[0].n);
+      if (waiting < 2) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(waiting).toBe(2);
+  } finally {
+    await locker.query("rollback");
+    await locker.end();
+    for (const result of await Promise.all(saves)) ok(result);
+  }
+  const rows = await q("select s.mailbox_credential_id, m.credential_id from campaign_steps s join campaign_step_mailboxes m using (workspace_id, campaign_id, step_key) where s.campaign_id = $1 and s.step_key = 'first' order by m.added_at, m.credential_id", [id]);
+  expect(rows).toHaveLength(2);
+  expect(rows[0].mailbox_credential_id).toBe(rows[0].credential_id);
+});
+
+test("mailbox additions follow retained senders across saves and legacy settings preserve the set", async () => {
+  const boxes: string[] = [];
+  for (let i = 0; i < 3; i++) boxes.push(await newCredential(`${crypto.randomUUID()}@acme.test`, "google"));
+  boxes.sort();
+  const [added, primary, second] = boxes as [string, string, string];
+  const id = await ready(primary);
+  const setup = { type: "email", touchClass: "cold", audience: "everyone" } as const;
+  const assigned = async () => (await q("select credential_id from campaign_step_mailboxes where campaign_id = $1 and step_key = 'first' order by added_at, credential_id", [id])).map((r) => r.credential_id);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [primary, second] }));
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [added, second, primary] }));
+  expect(await assigned()).toEqual([primary, second, added]);
+  expect((await q("select mailbox_credential_id from campaign_steps where campaign_id = $1 and step_key = 'first'", [id]))[0].mailbox_credential_id).toBe(primary);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: primary, audience: "no_reply_yet" }));
+  expect(await assigned()).toEqual([primary, second, added]);
+  expect((await campaigns.campaign(W, id))?.steps.find((s) => s.key === "first")?.audience).toBe("no_reply_yet");
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [second] }));
+  expect(await assigned()).toEqual([second]);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: added }));
+  expect(await assigned()).toEqual([added]);
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: null }));
+  expect(await assigned()).toEqual([]);
+});
+
 test("a step shares its drafts across its Mailboxes, a Person's next step keeps their sender, and a save keeps each draft's", async () => {
   // Two fresh Mailboxes: the file's own is already busy that day, and the earliest free time wins.
   const [box, other] = [await newCredential(`${crypto.randomUUID()}@acme.test`, "google"), await newCredential(`${crypto.randomUUID()}@acme.test`, "google")];

@@ -4,7 +4,7 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activityRows, allPeople, campaignMailboxes, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { activityRows, allPeople, campaignMailboxes, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
 import { timeZoneOf } from "../../schedule";
@@ -339,10 +339,17 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
         if (linkRefusal) return { ok: false, reason: linkRefusal } as const;
         const at = now();
         if (setup.dependsOnStepKey) await ensureStep(tx, { workspaceId, campaignId, stepKey: setup.dependsOnStepKey, now: at });
+        // Serialize settings saves before reading the mailbox order, including a step's first setup.
+        await ensureStep(tx, { workspaceId, campaignId, stepKey, now: at });
+        await lockStep(tx, campaignId, stepKey);
         // A Mailbox already on the step keeps its place, so the first of those stays the step's first Mailbox.
-        const primary = (await stepMailboxes(tx, campaignId, stepKey)).find((m) => ids.includes(m)) ?? ids[0] ?? null;
+        const existing = await stepMailboxes(tx, campaignId, stepKey);
+        // The legacy settings form only knows the primary. Resubmitting it keeps the full set;
+        // an explicit list, a different primary, or clearing the mailbox still replaces it.
+        const savedIds = mailboxCredentialIds === undefined && mailboxCredentialId === existing[0] && setup.type === "email" ? existing : ids;
+        const primary = existing.find((m) => savedIds.includes(m)) ?? savedIds[0] ?? null;
         await saveStep(tx, { workspaceId, campaignId, stepKey, setup: { ...setup, mailboxCredentialId: primary }, now: at });
-        await saveStepMailboxes(tx, { workspaceId, campaignId, stepKey, ids, now: at });
+        await saveStepMailboxes(tx, { workspaceId, campaignId, stepKey, ids: savedIds, now: at });
         // A new email step gets a mode: the one its Campaign was answered with before modes moved to
         // steps, or the default for where it sits in the plan. A person changes it until it has a draft.
         const rows = await stepsOf(tx, campaignId);

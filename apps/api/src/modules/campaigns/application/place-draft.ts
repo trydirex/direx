@@ -30,7 +30,8 @@ const composeInput = (p: Placement, e: PlacedEmail): Compose => {
 export async function plannedSenders(workspaceId: string, campaignId: string, stepKey: string, personIds: readonly string[], a: { on: string; now: Date }): Promise<Map<string, Sender>> {
   const { mailboxes, earlier } = await inWorkspace(workspaceId, async (tx) => ({ mailboxes: await stepMailboxes(tx, campaignId, stepKey), earlier: await activeActions(tx, campaignId, null) }));
   const keep = new Map<string, string>();
-  for (const x of earlier) if (x.stepKey !== stepKey && x.credentialId && !keep.has(x.personId)) keep.set(x.personId, x.credentialId);
+  // A sender that has left the step can't be kept, so it mustn't hide a later one that is still on it.
+  for (const x of earlier) if (x.stepKey !== stepKey && x.credentialId && mailboxes.includes(x.credentialId) && !keep.has(x.personId)) keep.set(x.personId, x.credentialId);
   const free = new Map<string, Date[]>();
   for (const m of mailboxes) free.set(m, await planMailbox(workspaceId, m, { on: a.on, count: personIds.length, notBefore: a.now, now: a.now }));
   return assignSenders(personIds, free, keep);

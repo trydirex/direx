@@ -124,7 +124,7 @@ export function makeDrafting(d: Deps) {
             snapshot: [...templateEntries(campaignId, stepKey, read.step.templateRevision, read.template.citations), ...outputEntries(campaignId, `${read.template.subject}\n${read.template.text}`, read.used)],
             submit: true,
             // A working day before it goes.
-            decideBy: sender && decideBy({ firstSlot: sender.at, draftingDays: 0, timeZone: a.timeZone }),
+            decideBy: sender?.at && decideBy({ firstSlot: sender.at, draftingDays: 0, timeZone: a.timeZone }),
           },
         );
         if (!placed.ok) {

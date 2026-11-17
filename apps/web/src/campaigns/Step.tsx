@@ -80,8 +80,9 @@ export function TemplateStep(p: { workspaceId: string; id: string; step: Step; e
     void loadPreview();
   }, [workspaceId, id, step.key, step.templateRevision]);
   useEffect(() => {
-    if (step.mailboxCredentialId) void mailboxes(workspaceId).then((bs) => setFrom(bs.find((b) => b.id === step.mailboxCredentialId)?.name));
-  }, [workspaceId, step.mailboxCredentialId]);
+    const ids = step.mailboxCredentialIds;
+    if (ids.length) void mailboxes(workspaceId).then((bs) => setFrom(bs.filter((b) => ids.includes(b.id)).map((b) => b.name).join(", ") || undefined));
+  }, [workspaceId, step.mailboxCredentialIds.join()]);
 
   const decide = step.template?.needsDecision ?? [];
   const made = preview?.already ?? 0;

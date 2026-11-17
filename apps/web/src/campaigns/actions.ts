@@ -18,7 +18,8 @@ export type RowResult = S["CampaignRowResult"];
 export type StepSetup = {
   type: "email" | "manual" | "post" | "dm" | "clips" | "seo_brief";
   touchClass: "cold" | "consented_marketing" | null;
-  mailboxCredentialId: string | null;
+  /** The Mailboxes the step's emails are shared across, in the order picked. */
+  mailboxCredentialIds: string[];
   audience: "everyone" | "no_reply_yet";
   dmChannel?: "linkedin" | "x" | null;
   dependsOnStepKey?: string | null;

@@ -26,7 +26,7 @@ function held() {
   return { promise, send };
 }
 const busy = (name: string) => screen.getByRole("button", { name }).getAttribute("aria-busy");
-const base: Step = { key: "first", on: "2026-11-03", title: "First", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, draftingMode: null, cancelled: false, waived: false, waitingOn: null, output: null, planChange: null, templateRevision: 1, template: null, writerNotes: null, writerNotesRevision: 0 };
+const base: Step = { key: "first", on: "2026-11-03", title: "First", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, draftingMode: null, cancelled: false, waived: false, waitingOn: null, output: null, planChange: null, templateRevision: 1, template: null, writerNotes: null, writerNotesRevision: 0 };
 
 afterEach(() => {
   cleanup();
@@ -217,7 +217,7 @@ test("the email names its Mailbox once the list loads", async () => {
       return preview(path);
     },
   });
-  render(withQueries(<TemplateStep workspaceId={W} id={ID} step={{ ...emailStep, mailboxCredentialId: "m1" }} edit onChange={() => {}} />));
+  render(withQueries(<TemplateStep workspaceId={W} id={ID} step={{ ...emailStep, mailboxCredentialId: "m1", mailboxCredentialIds: ["m1"] }} edit onChange={() => {}} />));
   expect((await screen.findAllByText(/Sam at Northbeam/)).length).toBe(2);
 });
 
@@ -419,7 +419,7 @@ test("a clip posted by hand can be marked as posted", async () => {
 });
 
 test("a step's setup sits folded under its one-line summary; a reader sees only the line", () => {
-  const step = { key: "s1", on: "2026-11-04", title: "Intro email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, dependsOnStepKey: null, utm: null } as never;
+  const step = { key: "s1", on: "2026-11-04", title: "Intro email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, dependsOnStepKey: null, utm: null } as never;
   render(withQueries(<StepRow step={step} steps={[step]} boxes={[]} edit onSave={async () => {}} />));
   expect(screen.getByText("Wed 4 Nov Intro email")).toBeTruthy();
   const fold = screen.getByText("Change setup").closest("details")!;
@@ -432,9 +432,28 @@ test("a step's setup sits folded under its one-line summary; a reader sees only 
 });
 
 test("in the Step settings drawer the setup form shows at once, without the step's line", () => {
-  const step = { key: "s1", on: "2026-11-04", title: "Intro email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: null, dependsOnStepKey: null, utm: null } as never;
+  const step = { key: "s1", on: "2026-11-04", title: "Intro email", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, dependsOnStepKey: null, utm: null } as never;
   render(withQueries(<StepRow step={step} steps={[step]} boxes={[]} edit unfolded onSave={async () => {}} />));
   expect(screen.queryByText("Change setup")).toBeNull();
   expect(screen.queryByText("Wed 4 Nov Intro email")).toBeNull();
   expect(screen.getByRole("button", { name: "Save step" })).toBeTruthy();
+});
+
+test("an email step takes several Mailboxes, in the order picked, and says how it shares them", async () => {
+  const onSave = vi.fn(async () => {});
+  const boxes = [
+    { id: "a", name: "sam@acme.test" },
+    { id: "b", name: "kim@acme.test" },
+  ];
+  render(withQueries(<StepRow step={base} steps={[base]} boxes={boxes} edit unfolded onSave={onSave} />));
+  const group = screen.getByRole("group", { name: "Email accounts" });
+  await userEvent.click(within(group).getByRole("checkbox", { name: "kim@acme.test" }));
+  expect(within(group).queryByText(/earliest free time/)).toBeNull();
+  await userEvent.click(within(group).getByRole("checkbox", { name: "sam@acme.test" }));
+  expect(within(group).getByText(/Each email goes from whichever account has the earliest free time/)).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Save step" }));
+  await waitFor(() => expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ mailboxCredentialIds: ["b", "a"] }), undefined));
+  await userEvent.click(within(group).getByRole("checkbox", { name: "kim@acme.test" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save step" }));
+  await waitFor(() => expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ mailboxCredentialIds: ["a"] }), undefined));
 });

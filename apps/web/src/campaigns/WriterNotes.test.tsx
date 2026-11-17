@@ -11,7 +11,7 @@ import { WriterNotes } from "./WriterNotes";
 const W = "00000000-0000-4000-8000-0000000000aa";
 const ID = "00000000-0000-4000-8000-0000000000bb";
 const reply = (status: number, body: unknown) => Promise.resolve({ ...(status < 400 ? { data: body } : { error: body }), response: new Response(null, { status }) });
-const step: Step = { key: "first", on: "2026-11-03", title: "First", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: "m", audience: "everyone", dmChannel: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, draftingMode: "per_person", cancelled: false, waived: false, waitingOn: null, output: null, planChange: null, templateRevision: 1, template: null, writerNotes: null, writerNotesRevision: 0 };
+const step: Step = { key: "first", on: "2026-11-03", title: "First", inPlan: true, type: "email", touchClass: "cold", mailboxCredentialId: "m", mailboxCredentialIds: ["m"], audience: "everyone", dmChannel: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, draftingMode: "per_person", cancelled: false, waived: false, waitingOn: null, output: null, planChange: null, templateRevision: 1, template: null, writerNotes: null, writerNotesRevision: 0 };
 
 afterEach(() => {
   cleanup();

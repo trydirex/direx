@@ -107,7 +107,7 @@ export function PersonStep(p: { workspaceId: string; id: string; step: Step; edi
     setRunIds((ids) => [...ids.filter((x) => !done.has(x)), ...writers.filter((x) => !ids.includes(x))]);
     await load();
   };
-  useEffect(() => void load(), [workspaceId, id, step.key, step.mailboxCredentialId]);
+  useEffect(() => void load(), [workspaceId, id, step.key, step.mailboxCredentialIds.join()]);
   useEffect(() => {
     if (!waiting) return;
     const timer = setInterval(() => void follow(), POLL_MS);

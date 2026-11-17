@@ -11,7 +11,7 @@ import { PersonStep } from "./PersonStep";
 const W = "00000000-0000-4000-8000-0000000000aa";
 const ID = "00000000-0000-4000-8000-0000000000bb";
 const reply = (status: number, body: unknown) => Promise.resolve({ ...(status < 400 ? { data: body } : { error: body }), response: new Response(null, { status }) });
-const step = { key: "first", title: "First", type: "email", mailboxCredentialId: null } as unknown as Step;
+const step = { key: "first", title: "First", type: "email", mailboxCredentialId: null, mailboxCredentialIds: [] } as unknown as Step;
 const preview: PersonPreview = { willWrite: 2, generic: 1, already: 0, leftOut: [{ email: "nobody@acme.test", leftOut: { reason: "no_email" } }], worstCaseCents: 40, days: 1 };
 const draft = (o: Partial<PersonDraft> = {}): PersonDraft => ({ personId: "p1", itemId: "i1", email: "kim@acme.test", state: "needs_approval", editable: true, warnings: [], subject: "Hello", text: "Hi Kim", spans: null, ...o });
 

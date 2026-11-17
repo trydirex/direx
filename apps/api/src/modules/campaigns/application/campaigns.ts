@@ -4,7 +4,7 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activityRows, allPeople, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { activityRows, allPeople, campaignMailboxes, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
 import { timeZoneOf } from "../../schedule";
@@ -38,6 +38,8 @@ export type CampaignStep = Pick<StepRow, "type" | "touchClass" | "mailboxCredent
   draftingMode: StepMode | null;
   cancelled: boolean;
   waived: boolean;
+  /** The Mailboxes the step's emails are shared across. `mailboxCredentialId` is the first, until it goes. */
+  mailboxCredentialIds: string[];
 };
 /**
  * A step's setup as a person saves it. The Mailboxes come as a list; one Mailbox alone is still taken
@@ -69,7 +71,7 @@ const setupOf = (row: StepRow | undefined) => ({
  * version that held them (`pastTitles`). `outputs` holds each step's latest recorded output; a step waits
  * while the step it depends on has none.
  */
-export function stepsView(planSteps: PlanStep[], rows: StepRow[], outputs: ReadonlyMap<string, OutputRow> = new Map(), pastTitles: ReadonlyMap<string, string> = new Map()): CampaignStep[] {
+export function stepsView(planSteps: PlanStep[], rows: StepRow[], outputs: ReadonlyMap<string, OutputRow> = new Map(), pastTitles: ReadonlyMap<string, string> = new Map(), mailboxes: ReadonlyMap<string, string[]> = new Map()): CampaignStep[] {
   const byKey = new Map(rows.map((r) => [r.stepKey, r]));
   const keys = new Set(planSteps.map((s) => s.key));
   const links = (key: string, row: StepRow | undefined) => {
@@ -81,8 +83,8 @@ export function stepsView(planSteps: PlanStep[], rows: StepRow[], outputs: Reado
     };
   };
   return [
-    ...planSteps.map((s) => ({ key: s.key, on: s.on, title: s.title, inPlan: true, ...setupOf(byKey.get(s.key)), ...links(s.key, byKey.get(s.key)) })),
-    ...rows.filter((r) => !keys.has(r.stepKey)).map((r) => ({ key: r.stepKey, on: null, title: pastTitles.get(r.stepKey) ?? null, inPlan: false, ...setupOf(r), ...links(r.stepKey, r) })),
+    ...planSteps.map((s) => ({ key: s.key, on: s.on, title: s.title, inPlan: true, ...setupOf(byKey.get(s.key)), mailboxCredentialIds: mailboxes.get(s.key) ?? [], ...links(s.key, byKey.get(s.key)) })),
+    ...rows.filter((r) => !keys.has(r.stepKey)).map((r) => ({ key: r.stepKey, on: null, title: pastTitles.get(r.stepKey) ?? null, inPlan: false, ...setupOf(r), mailboxCredentialIds: mailboxes.get(r.stepKey) ?? [], ...links(r.stepKey, r) })),
   ];
 }
 
@@ -203,7 +205,7 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
         }
         const changes = (await planChangesOf(tx, id)).filter((c) => !c.decided);
         const slots = changes.length ? await movableItems(tx, id) : [];
-        return { row, steps, outputs, changes, slots, sent: counts.filter((c) => c.state === "sent").reduce((n, c) => n + c.n, 0), replied: people.filter((p) => p.status === "replied").length };
+        return { row, steps, outputs, mailboxes: await campaignMailboxes(tx, id), changes, slots, sent: counts.filter((c) => c.state === "sent").reduce((n, c) => n + c.n, 0), replied: people.filter((p) => p.status === "replied").length };
       });
       if (!read) return undefined;
       const plan = await plans.plan(workspaceId, read.row.planId);
@@ -213,7 +215,7 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
       if (read.steps.some((r) => !plan.current?.steps.some((s) => s.key === r.stepKey)))
         for (const v of await plans.planVersions(workspaceId, read.row.planId)) for (const s of (v.body as PlanBody).steps) pastTitles.set(s.key, s.title);
       // A step a plan version held carries what changed and the choice waiting on it.
-      const steps = stepsView(plan.current ? datedSteps(plan.current, read.row.anchorOn) : [], read.steps, read.outputs, pastTitles).map((s) => {
+      const steps = stepsView(plan.current ? datedSteps(plan.current, read.row.anchorOn) : [], read.steps, read.outputs, pastTitles, read.mailboxes).map((s) => {
         const c = read.changes.find((x) => x.stepKey === s.key);
         const text = c?.suggestedTemplate as { subject: string; text: string } | null | undefined;
         // Emails whose slot has passed while they waited move to the next free slot on "keep".

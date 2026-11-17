@@ -15,7 +15,7 @@ beforeAll(loadLaterFields);
 const W = "00000000-0000-4000-8000-0000000000aa";
 const ID = "00000000-0000-4000-8000-0000000000bb";
 const M = "00000000-0000-4000-8000-0000000000ee";
-const step = { key: "launch", on: "2026-11-03", title: "Launch", inPlan: true, type: "post", touchClass: null, mailboxCredentialId: null, audience: "everyone", dmChannel: null, templateRevision: 0, template: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, waitingOn: null, output: null } as unknown as Step;
+const step = { key: "launch", on: "2026-11-03", title: "Launch", inPlan: true, type: "post", touchClass: null, mailboxCredentialId: null, mailboxCredentialIds: [], audience: "everyone", dmChannel: null, templateRevision: 0, template: null, dependsOnStepKey: null, outputConnection: null, outputNetworkId: null, utm: false, waitingOn: null, output: null } as unknown as Step;
 const post: Post = { id: "p", itemId: "00000000-0000-4000-8000-000000000009", clipId: null, connection: "instagram", network: "Instagram", accountName: null, mode: "manual", text: "Launch day", video: { mediaId: M, fileName: "Demo <1>.mp4" }, images: [], url: null, followUps: [], state: "scheduled", reason: null, revision: 1, clean: true, warnings: [], at: null };
 const render = (over: Partial<Post> = {}, edit = false) =>
   renderToString(withQueries(createElement(PostStep, { workspaceId: W, id: ID, step, edit, approve: true, initial: { accounts: [], networks: [], posts: [{ ...post, ...over }] } })));

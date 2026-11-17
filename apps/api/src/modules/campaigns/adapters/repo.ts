@@ -537,6 +537,18 @@ export async function stepMailboxes(tx: CampaignsTx, campaignId: string, stepKey
   return rows.map((r) => r.id);
 }
 
+/** Every step's Mailboxes in a Campaign, each list in the order they were added. */
+export async function campaignMailboxes(tx: CampaignsTx, campaignId: string): Promise<Map<string, string[]>> {
+  const rows = await tx
+    .select({ stepKey: campaignStepMailboxes.stepKey, id: campaignStepMailboxes.credentialId })
+    .from(campaignStepMailboxes)
+    .where(eq(campaignStepMailboxes.campaignId, campaignId))
+    .orderBy(asc(campaignStepMailboxes.addedAt), asc(campaignStepMailboxes.credentialId));
+  const out = new Map<string, string[]>();
+  for (const r of rows) out.set(r.stepKey, [...(out.get(r.stepKey) ?? []), r.id]);
+  return out;
+}
+
 /** Sets a step's Mailboxes in the order given; one already on the step keeps its place. */
 export async function saveStepMailboxes(tx: CampaignsTx, a: { workspaceId: string; campaignId: string; stepKey: string; ids: readonly string[]; now: Date }) {
   const mine = and(eq(campaignStepMailboxes.campaignId, a.campaignId), eq(campaignStepMailboxes.stepKey, a.stepKey));

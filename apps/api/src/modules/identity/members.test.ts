@@ -196,3 +196,32 @@ test("deleting a Workspace cancels its queued jobs and leaves another Workspace'
     await boss.stop({ graceful: false, close: true });
   }
 });
+
+test("a role change or removal tells onMemberChange after it commits, and a failing or throwing one still answers 200", async () => {
+  const told = vi.fn((..._: unknown[]) => Promise.reject(new Error("mail is down")));
+  const site = testIdentity({ onMemberChange: told });
+  const owner = await site.signIn();
+  const { workspace } = await site.createOrg(owner);
+  const w = workspace.id;
+  const admin = await site.addMember(owner, w, "admin");
+  const at = `/api/w/${w}/members/${admin.userId}`;
+
+  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  expect((await site.call(at, owner, { method: "PATCH", body: { role: "marketer" } })).status).toBe(200);
+  expect(told).toHaveBeenLastCalledWith(w, admin.userId, "admin", "marketer");
+  const members = (await (await site.call(`/api/w/${w}/members`, owner)).json()) as { members: { userId: string; role: string }[] };
+  expect(members.members.find((m) => m.userId === admin.userId)?.role).toBe("marketer");
+
+  // No change, and a refused change, tell nothing.
+  expect((await site.call(at, owner, { method: "PATCH", body: { role: "marketer" } })).status).toBe(200);
+  expect((await site.call(at, admin.cookie, { method: "PATCH", body: { role: "owner" } })).status).toBe(403);
+  expect(told).toHaveBeenCalledTimes(1);
+
+  // A callback that throws before returning a promise is caught too.
+  told.mockImplementationOnce(() => {
+    throw new Error("mail is down");
+  });
+  expect((await site.call(at, owner, { method: "DELETE" })).status).toBe(200);
+  expect(told).toHaveBeenLastCalledWith(w, admin.userId, "marketer", null);
+  expect(console.error).toHaveBeenCalledWith("after a membership change", expect.any(Error));
+});

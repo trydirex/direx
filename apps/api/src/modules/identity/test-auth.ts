@@ -12,7 +12,8 @@ export function testIdentity({
   admission,
   trustedProxies,
   onDelete,
-}: { devMode?: boolean; admission?: Admission; trustedProxies?: string[]; onDelete?: Parameters<typeof createIdentity>[2] } = {}) {
+  onMemberChange,
+}: { devMode?: boolean; admission?: Admission; trustedProxies?: string[]; onDelete?: Parameters<typeof createIdentity>[2]; onMemberChange?: Parameters<typeof createIdentity>[3] } = {}) {
   const outbox: Mail[] = [];
   const { routes, auth, config } = createIdentity(
     () => ({
@@ -26,6 +27,7 @@ export function testIdentity({
     }),
     admission && (() => admission),
     onDelete,
+    onMemberChange,
   );
 
   /** Signs `email` in by magic link and returns the session cookie. A fresh client IP each time, as outside dev sign-in is rate-limited. */

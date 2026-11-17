@@ -10,7 +10,7 @@ import { credentialRoutes, dataDir, vaultFromEnv, type Vault } from "./modules/c
 import { createFacts, factRoutes, voiceCheck } from "./modules/facts/index";
 import { createMedia, diskStore, MEDIA_MAX_BYTES, mediaRoutes, parseS3Url, s3Store, type Store } from "./modules/media/index";
 import { clipAskStarts, clipRoutes } from "./modules/clips/index";
-import { approverFromMember, authConfigFromEnv, can, createIdentity, isDevOrTest, pickAdmission, refuseExternalTokens, type Admission, type AuthConfig, type Permission } from "./modules/identity/index";
+import { adminEmails, approverFromMember, authConfigFromEnv, can, createIdentity, isDevOrTest, pickAdmission, refuseExternalTokens, type Admission, type AuthConfig, type Permission } from "./modules/identity/index";
 import { itemRoutes } from "./modules/items/index";
 import { scheduleRoutes, timeZoneOf } from "./modules/schedule/index";
 import { CHECK_CANDIDATES, deploymentFromEnv, modelRoutes, signInNeeds } from "./modules/models/index";
@@ -22,7 +22,7 @@ import { createPluginWebhooks, docsProviders, HOST_VERSION, keyConnections, news
 import { createNewsletter, issueDesk, newsletterRoutes } from "./modules/newsletter/index";
 import { createBriefs, createPageReader, createSeo, pagesWorthABrief, seoAskStarts, seoRoutes } from "./modules/seo/index";
 import { createDocs, createWriteBackGrants, docsRoutes, docsWriteBackRoutes } from "./modules/docs/index";
-import { createTokens, DOOR_BASE, maxDaysFromEnv, tokenRoutes } from "./modules/door/index";
+import { createStops, createTokens, DOOR_BASE, maxDaysFromEnv, tokenRoutes } from "./modules/door/index";
 import { competitorRoutes, createCompetitors, createLabels, createSnapshots } from "./modules/competitors/index";
 import { createPosts, createSocial, socialRoutes } from "./modules/social/index";
 import { addressLabelsFor, createTerms, keptEligibility, prospectingAskStarts, prospectingRoutes, signalsFor } from "./modules/prospecting/index";
@@ -103,7 +103,10 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
     () => (admission ??= pickAdmission(deploymentFromEnv(), undefined, isDevOrTest(process.env))),
     // A deleted Workspace's open Actions are cancelled with it, so its purge isn't refused for work no one can reach.
     (tx) => ledger().cancelForDeletionIn(tx),
+    // A member's External tokens stop when they stop being an Owner or Admin: record it, and tell the Owners and Admins left (ADR 0032 Q9).
+    (workspaceId, userId, from, to) => tokenStops(workspaceId, userId, from, to),
   );
+  const tokenStops = createStops({ mailer: (mail) => identity.config().mailer(mail), adminEmails });
   app.route("/", identity.routes);
   const baseUrl = () => identity.config().baseURL;
 

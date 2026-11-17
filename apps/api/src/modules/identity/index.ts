@@ -4,7 +4,7 @@
 import { authConfigFromEnv, createAuth, type Auth, type AuthConfig } from "./adapters/auth";
 import { isDevOrTest } from "./adapters/mail";
 import { pickAdmission } from "./application/admission";
-import { listMembers, type OnDelete } from "./application/members";
+import { listMembers, type OnDelete, type OnMemberChange } from "./application/members";
 import type { Admission } from "./domain/admission";
 import { can } from "./domain/roles";
 import { memberRoutes } from "./members-routes";
@@ -41,19 +41,21 @@ export const memberOf = async (workspaceId: string, userId: string) => {
 /**
  * Builds auth from `config` (default: the environment) the first time a route needs it.
  * `admission` defaults to the self-host rules, and throws in cloud, which must supply its own.
- * `onDelete` runs in the transaction that deletes a Workspace.
+ * `onDelete` runs in the transaction that deletes a Workspace; `onMemberChange` after a role change
+ * or removal commits.
  */
 export function createIdentity(
   config: () => AuthConfig = () => authConfigFromEnv(),
   admission: () => Admission = () => pickAdmission("self_host", undefined, isDevOrTest(process.env)),
   onDelete?: OnDelete,
+  onMemberChange?: OnMemberChange,
 ) {
   let cfg: AuthConfig | undefined;
   let auth: Auth | undefined;
   const getConfig = () => (cfg ??= config());
   const get = () => (auth ??= createAuth(getConfig(), admission));
   const routes = identityRoutes(get, () => getConfig().baseURL, admission);
-  routes.route("/", memberRoutes(get, () => ({ mailer: getConfig().mailer, baseURL: getConfig().baseURL }), onDelete));
+  routes.route("/", memberRoutes(get, () => ({ mailer: getConfig().mailer, baseURL: getConfig().baseURL }), onDelete, onMemberChange));
   routes.route("/", serverRoutes(get, () => getConfig().mailer, admission));
   return { routes, auth: get, config: getConfig, admission };
 }

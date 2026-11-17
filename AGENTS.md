@@ -58,7 +58,8 @@ size in CI.
 
 - A person opens every pull request and answers for it. You can prepare the branch, the commits and
   the description. Push or open a PR only when that person asks, once or as a standing instruction
-  such as "open a PR when a task is done". Open it as a draft, and never push to `main`.
+  such as "open a PR when a task is done". Open it ready for review, not as a draft, and never push
+  to `main`.
 - From outside the project, work only on an issue labelled `accepted`, and start the description with
   `Closes #N`. Never invent an issue number.
 - Title: one imperative sentence of at most 72 characters, starting with a capital letter, with no

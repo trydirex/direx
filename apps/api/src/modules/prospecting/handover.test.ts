@@ -283,7 +283,10 @@ test("a Person live in another Campaign gets the existing conflict Item", async 
 
   const r = (await w.byEmail(id))["busy@busy.test"]!;
   expect(r).toMatchObject({ status: "conflict", conflictItemId: expect.any(String) });
-  expect((await items.view(w.W, r.conflictItemId!))!.kind).toBe(CONFLICT_KIND);
+  const conflict = (await items.view(w.W, r.conflictItemId!))!;
+  expect(conflict.kind).toBe(CONFLICT_KIND);
+  // It needs a choice, so approve-all leaves it out.
+  expect(conflict.clean).toBe(false);
   expect((await campaigns.people(w.W, campaignId)).people[0]).toMatchObject({ conflict: { itemId: r.conflictItemId } });
 });
 

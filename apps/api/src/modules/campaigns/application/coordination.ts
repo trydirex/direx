@@ -38,6 +38,8 @@ export function campaignKinds(deps: { now?: () => Date } = {}): Record<string, I
   return {
     [CONFLICT_KIND]: {
       permission: "item.edit",
+      // It needs a choice, so approve-all would only be refused.
+      bulk: false,
       async apply(tx: CampaignsTx, item, _actor, choice) {
         if (choice !== "skip" && choice !== "add_after") return { ok: false, reason: "choice_required" };
         await settleConflict(tx, item.payload as ConflictPayload, choice, now());
@@ -55,6 +57,8 @@ export function campaignKinds(deps: { now?: () => Date } = {}): Record<string, I
     ...planChangeKinds({ now }),
     [STALL_KIND]: {
       permission: "item.edit",
+      // Keep waiting, go ahead or cancel is a person's choice, not part of approve-all.
+      bulk: false,
       async apply(tx: CampaignsTx, item, _actor, choice) {
         if (choice !== undefined && choice !== "wait") return { ok: false, reason: "choose_on_campaign" };
         const p = item.payload as StallPayload;

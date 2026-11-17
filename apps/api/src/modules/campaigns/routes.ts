@@ -44,6 +44,7 @@ const Step = z
     type: z.string(),
     touchClass: z.string().nullable(),
     mailboxCredentialId: z.uuid().nullable(),
+    mailboxCredentialIds: z.array(z.uuid()),
     audience: z.string(),
     dmChannel: z.string().nullable(),
     dependsOnStepKey: z.string().nullable(),

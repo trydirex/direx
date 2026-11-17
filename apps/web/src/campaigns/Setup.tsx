@@ -56,7 +56,7 @@ export function StepRow(p: {
   const [setup, setSetup] = useState<StepSetup>({
     type: s.type as StepSetup["type"],
     touchClass: s.touchClass as StepSetup["touchClass"],
-    mailboxCredentialId: s.mailboxCredentialId,
+    mailboxCredentialIds: s.mailboxCredentialIds,
     audience: s.audience as StepSetup["audience"],
     dmChannel: s.dmChannel as StepSetup["dmChannel"],
     dependsOnStepKey: s.dependsOnStepKey,
@@ -113,7 +113,7 @@ export function StepRow(p: {
                     ...setup,
                     type,
                     touchClass: "cold",
-                    mailboxCredentialId: null,
+                    mailboxCredentialIds: [],
                     dmChannel: setup.dmChannel ?? "linkedin",
                   });
                 setSetup({
@@ -153,23 +153,31 @@ export function StepRow(p: {
           )}
           {setup.type === "email" && (
             <>
-              <div className={label}>
-                <Select label="Email account"
-                  value={setup.mailboxCredentialId ?? ""}
-                  onChange={(e) =>
-                    setSetup({
-                      ...setup,
-                      mailboxCredentialId: e.target.value || null,
-                    })
-                  }
-                >
-                  <option value="">Choose one</option>
+              {p.boxes.length > 0 && (
+                <fieldset className="flex flex-wrap gap-x-4 gap-y-2">
+                  <legend className="mb-2 text-sm font-medium">Email accounts</legend>
                   {p.boxes.map((b) => (
-                    <option key={b.id} value={b.id}>
+                    <label key={b.id} className="flex min-h-9 items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={setup.mailboxCredentialIds.includes(b.id)}
+                        onChange={(e) =>
+                          setSetup({
+                            ...setup,
+                            mailboxCredentialIds: e.target.checked ? [...setup.mailboxCredentialIds, b.id] : setup.mailboxCredentialIds.filter((x) => x !== b.id),
+                          })
+                        }
+                      />{" "}
                       {b.name}
-                    </option>
+                    </label>
                   ))}
-                </Select></div>
+                  {setup.mailboxCredentialIds.length > 1 && (
+                    <small className="w-full text-sm text-muted-foreground">
+                      Each email goes from whichever account has the earliest free time, and a person keeps the account their first email came from.
+                    </small>
+                  )}
+                </fieldset>
+              )}
               {p.boxes.length === 0 && (
                 <small className="text-sm text-muted-foreground">
                   No email account is connected yet. Connect one under Email and keys.

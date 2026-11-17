@@ -12,7 +12,7 @@ import { BriefStep } from "./BriefStep";
 const W = "00000000-0000-4000-8000-0000000000aa";
 const ID = "00000000-0000-4000-8000-0000000000bb";
 const ITEM = "00000000-0000-4000-8000-0000000000cc";
-const step = (over: Partial<Step> = {}) => ({ key: "rank", on: "2026-11-09", title: "Rank", inPlan: true, type: "seo_brief", dependsOnStepKey: null, ...over }) as unknown as Step;
+const step = (over: Partial<Step> = {}) => ({ key: "rank", on: "2026-11-09", title: "Rank", inPlan: true, type: "seo_brief", mailboxCredentialIds: [], dependsOnStepKey: null, ...over }) as unknown as Step;
 const view = (over: Partial<BriefStepView> = {}): BriefStepView => ({ setup: null, brief: null, available: true, ...over });
 const render = (v: BriefStepView, s: Step = step(), edit = true) => renderToString(withQueries(createElement(BriefStep, { workspaceId: W, id: ID, step: s, edit, initial: v }, createElement("p", null, "LINK FIELD"))));
 

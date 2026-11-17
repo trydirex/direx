@@ -18,6 +18,19 @@ export type Member = {
 export type MemberEnv = { Variables: { member: Member } };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// The scheme is case-insensitive in HTTP, so "bearer dxt_" is a token too.
+const EXTERNAL_TOKEN = /^bearer\s+dxt_/i;
+
+/**
+ * An External token opens the door and nothing else (ADR 0032 rule 002). Every route outside
+ * `doorBase` refuses one; any other Authorization value, such as a provider's on a webhook, passes.
+ */
+export function refuseExternalTokens(doorBase: string) {
+  return createMiddleware(async (c, next) => {
+    if (EXTERNAL_TOKEN.test(c.req.header("authorization") ?? "") && !c.req.path.startsWith(`${doorBase}/`)) return c.json({ error: "token_not_accepted" }, 401);
+    await next();
+  });
+}
 
 /** `deleted: true` lets a deleted Workspace through until its purge; only its export routes ask for that. */
 export function requireMember(auth: () => Auth, o: { deleted?: boolean } = {}) {

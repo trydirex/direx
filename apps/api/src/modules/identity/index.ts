@@ -17,7 +17,7 @@ export { pickAdmission, selfHostAdmission } from "./application/admission";
 export { approverFromMember, approverMayApprove, mayGrantRules, workspaceLive } from "./application/approver-check";
 export type { Admission, AdmitInput, AdmitResult, ServerStatus, SignupPolicy } from "./domain/admission";
 export { can, ROLES, type Permission, type Role } from "./domain/roles";
-export { requireMember, requirePermission, requireStepUp, steppedUp, type Member, type MemberEnv } from "./middleware";
+export { refuseExternalTokens, requireMember, requirePermission, requireStepUp, steppedUp, type Member, type MemberEnv } from "./middleware";
 export { adminSteppedUp, requireServerAdmin, type ServerAdminEnv } from "./server-routes";
 
 /** Who to tell about the Workspace's settings: its Owners and Admins. */

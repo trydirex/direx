@@ -1,5 +1,6 @@
 [
   "ALL /*",
+  "ALL /*",
   "GET /health",
   "GET /api/source",
   "GET /api/auth/*",

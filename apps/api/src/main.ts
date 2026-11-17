@@ -10,7 +10,7 @@ import { credentialRoutes, dataDir, vaultFromEnv, type Vault } from "./modules/c
 import { createFacts, factRoutes, voiceCheck } from "./modules/facts/index";
 import { createMedia, diskStore, MEDIA_MAX_BYTES, mediaRoutes, parseS3Url, s3Store, type Store } from "./modules/media/index";
 import { clipAskStarts, clipRoutes } from "./modules/clips/index";
-import { approverFromMember, authConfigFromEnv, can, createIdentity, isDevOrTest, pickAdmission, type Admission, type AuthConfig, type Permission } from "./modules/identity/index";
+import { approverFromMember, authConfigFromEnv, can, createIdentity, isDevOrTest, pickAdmission, refuseExternalTokens, type Admission, type AuthConfig, type Permission } from "./modules/identity/index";
 import { itemRoutes } from "./modules/items/index";
 import { scheduleRoutes, timeZoneOf } from "./modules/schedule/index";
 import { CHECK_CANDIDATES, deploymentFromEnv, modelRoutes, signInNeeds } from "./modules/models/index";
@@ -22,7 +22,7 @@ import { createPluginWebhooks, docsProviders, HOST_VERSION, keyConnections, news
 import { createNewsletter, issueDesk, newsletterRoutes } from "./modules/newsletter/index";
 import { createBriefs, createPageReader, createSeo, pagesWorthABrief, seoAskStarts, seoRoutes } from "./modules/seo/index";
 import { createDocs, createWriteBackGrants, docsRoutes, docsWriteBackRoutes } from "./modules/docs/index";
-import { createTokens, maxDaysFromEnv, tokenRoutes } from "./modules/door/index";
+import { createTokens, DOOR_BASE, maxDaysFromEnv, tokenRoutes } from "./modules/door/index";
 import { competitorRoutes, createCompetitors, createLabels, createSnapshots } from "./modules/competitors/index";
 import { createPosts, createSocial, socialRoutes } from "./modules/social/index";
 import { addressLabelsFor, createTerms, keptEligibility, prospectingAskStarts, prospectingRoutes, signalsFor } from "./modules/prospecting/index";
@@ -79,6 +79,8 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
     },
   });
   app.use("*", (c, next) => (isUpload(c.req.method, c.req.path) ? next() : limitBody(c, next)));
+  // Ahead of every route, so a new one can't forget it; the door's own tree is the only way in for a token.
+  app.use("*", refuseExternalTokens(DOOR_BASE));
   app.get("/health", (c) => c.json({ ok: true }));
   // AGPL section 13: everyone who uses a Direx server can get the source it runs (ADR 0002 rule 005).
   // A changed Direx sets DIREX_SOURCE_URL to where its own source is published. Otherwise it is the

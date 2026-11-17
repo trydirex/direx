@@ -7,6 +7,7 @@ import type { PgBoss } from "pg-boss";
 import {
   activeRuleGranter,
   heldFor,
+  heldForMailboxPause,
   heldIdsFor,
   idsInStates,
   lateCounts,
@@ -430,6 +431,14 @@ export function lifecycle({ boss, signingKeys, now, resolvers, onLateChanged }: 
 
     /** The Actions held for this reason, each with the spec it was approved with. */
     heldBy: (workspaceId: string, reason: string) => inWorkspace(workspaceId, (tx) => heldFor(tx, reason)),
+
+    /** Release this Mailbox's pause, including effects that have no Touch. */
+    async resumeMailboxPaused(workspaceId: string, credentialId: string, actor: Actor): Promise<number> {
+      const held = await inWorkspace(workspaceId, (tx) => heldForMailboxPause(tx, credentialId));
+      let moved = 0;
+      for (const { id } of held) if ((await api.resume(workspaceId, id, actor, { heldFor: "mailbox_paused" })).ok) moved++;
+      return moved;
+    },
 
     /** Held Actions a condition no longer stops go back to scheduled, where every check runs again. */
     async resumeHeldBy(workspaceId: string, reason: string, actor: Actor, reaches: (tx: LedgerTx, held: { personId: string; credentialId: string | null }) => Promise<boolean>): Promise<number> {

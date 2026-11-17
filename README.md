@@ -87,12 +87,23 @@ There are two ways to reach it:
 The installer is safe to run again: it keeps `.env` and every password, and skips what is already
 done. Back up the `direx-data` volume, which holds the vault's root key, apart from the database.
 
-No release image is published yet. Until one is, build it on the server and install that:
+To run code newer than the latest release, build the image on the server and install that:
 
 ```
 docker build -f deploy/docker/Dockerfile -t ghcr.io/trydirex/direx:local .
 sh deploy/compose/install.sh --version local
 ```
+
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:327613b291aceb9eb5f0f4d953c894ce4c545b7077cd02e495529bf6fe4c11a3 -->
+
+On a server where Direx is already installed, set `DIREX_VERSION=local` in `deploy/compose/.env` and
+stop Direx with `docker compose -f deploy/compose/compose.yml stop direx` before running the installer.
+Wait for the stop to finish before migrations begin. The installer stops rather than change the
+version `.env` names.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 ## Using a coding agent
 
@@ -142,7 +153,7 @@ Contributors also need Node 22.13 or 24, for ESLint and dependency-cruiser.
 
 ```
 bun run check:task                  the bar for finishing a task
-bun run ci                          everything CI runs on each change
+bun run check:full                  everything CI's ci job runs on each change
 bun scripts/check-first-run.ts      setup to sign-in, in a temporary copy
 ```
 

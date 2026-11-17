@@ -50,6 +50,7 @@ const FIX: Record<string, string> = {
   account_budget_reached: "Move it to tomorrow",
   campaign_paused: "Resume the Campaign",
   mailbox_unchecked: "Check the Mailbox",
+  mailbox_paused: "See why it's paused",
   workspace_paused: "See why it's held",
   snapshot_changed: "Send back for approval",
   rule_needs_review: "Send back for approval",
@@ -131,6 +132,14 @@ export function useWaitingByWorkspace(workspaceIds: string[]): Record<string, nu
 
 /** A local day as launch dates are written, such as "2026-11-10". */
 export const isoDay = (d: Date) => d.toLocaleDateString("en-CA");
+
+/** When something put on `day` goes: 9:00, or the next whole hour once 9:00 has passed. */
+export function firstSlot(day: Date, now = new Date()): Date {
+  const soon = new Date(now);
+  soon.setHours(soon.getHours() + 1, 0, 0, 0);
+  const nine = new Date(day.getFullYear(), day.getMonth(), day.getDate(), 9);
+  return nine < soon ? soon : nine;
+}
 
 export type MailboxDay = S["MailboxDays"]["days"][number];
 

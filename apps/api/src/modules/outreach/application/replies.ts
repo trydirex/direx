@@ -13,6 +13,7 @@ import { inWorkspace, insertSignal, lockSignal, overdueReadBacks, readSignal, se
 import { isHardBounce, isPermanentFailure, statusOf } from "../domain/dsn";
 import { readOptOut } from "../domain/optout";
 import { autoSubject, autoSubmitted, settleByRules } from "../domain/reply-rules";
+import { pauseOnBounces } from "./mailboxes";
 import { askOptOut, type Generate } from "./optout-model";
 
 export const REPLY_QUEUE = "outreach.reply";
@@ -87,12 +88,17 @@ export function createReplies(deps: RepliesDeps) {
 
   /** One delivery notice row per failed address we really sent to, so a forged notice stops nobody. */
   async function bounces(tx: OutreachTx, e: InboundEvent, recipients: { email: string; status: string }[], at: Date) {
+    let recorded = false;
     for (const { email, status } of recipients) {
-      const sent = await sentTo(tx, email);
+      // The notice flow exposes recipients, but no original-send Message-ID. Keep recipient
+      // matching within the receiving Mailbox; the notice's own Message-ID is not the send's.
+      const sent = await sentTo(tx, email, e.credentialId);
       if (!sent) continue;
-      await record(tx, { workspaceId: e.workspaceId, credentialId: e.credentialId, eventId: `${e.eventId}:${email}`, senderEmail: email, personId: sent.personId, actionId: sent.actionId, kind: "bounce", status: "recorded", bounceStatus: status, receivedAt: at });
+      if (await record(tx, { workspaceId: e.workspaceId, credentialId: e.credentialId, eventId: `${e.eventId}:${email}`, senderEmail: email, personId: sent.personId, actionId: sent.actionId, kind: "bounce", status: "recorded", bounceStatus: status, receivedAt: at })) recorded = true;
       if (isHardBounce(status)) await suppress(tx, e.workspaceId, email, "hard_bounce", at);
     }
+    // A notice comes back to the Mailbox that sent the email.
+    if (recorded && e.credentialId) await pauseOnBounces(tx, e.credentialId, at);
   }
 
   // Mail from a stranger is dropped unread, so an opt-out sent before someone became a Person is only

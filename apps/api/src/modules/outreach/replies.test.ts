@@ -14,9 +14,11 @@ import { approverIdFromSession } from "../ledger/index";
 import { addKey } from "../people/index";
 import { CallFailed, EMAIL_RECEIVED, loadPlugins, receivedMail } from "../plugins/index";
 import { touchCheck } from "../schedule/index";
+import { setPause, clearPause, pauseOf } from "./adapters/pauses";
+import { inWorkspace } from "./adapters/repo";
 import { resultLines } from "./application/results";
 import { passMailboxCheck, TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
-import { clearOldReplyText, connectedMailboxes, createOutreach, createReplies, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, sendingPaused } from "./index";
+import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, sendingPaused } from "./index";
 
 process.env.DIREX_AUTH_SECRET = TEST_SECRET;
 
@@ -83,7 +85,7 @@ const outreach = createOutreach({
 const { routes, signIn, createOrg, call, addMember } = testIdentity();
 const routed = routes as unknown as OpenAPIHono;
 routed.route("/", itemRoutes({ items: () => items }));
-routed.route("/", outreachRoutes({ outreach: () => outreach }));
+routed.route("/", outreachRoutes({ outreach: () => outreach, pauses: () => createMailboxPauses({ ledger: () => ledger, now: () => clock.at }) }));
 
 const cookie = await signIn();
 const W = (await createOrg(cookie, "Acme")).workspace.id;
@@ -270,6 +272,50 @@ test("a bounce with only X-Failed-Recipients counts, and the code in its text de
     expect(await suppressed(p.to)).toBeUndefined();
     expect((await signals(p.to))[0]).toMatchObject({ kind: "bounce", status: "recorded", bounce_status: "5.0.0" });
   }
+});
+
+// The two tests above bounced five emails from this Mailbox: the third paused it.
+test("bounces pause their Mailbox until someone who approves resumes it; what it held then goes, and older bounces stop counting", async () => {
+  const pauses = async () => (await post<{ pauses: { credentialId: string; reason: string }[] }>("/outreach/mailbox-pauses", undefined, "GET")).body.pauses;
+  expect(await pauses()).toEqual([expect.objectContaining({ credentialId, reason: "bounces" })]);
+  clock.at = new Date(clock.at.getTime() + 4 * 24 * 60 * 60 * 1000);
+  const { personId } = await addPerson();
+  const held = await approved(personId);
+  await ledger.run(W, held);
+  expect(await stateOf(held)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
+
+  // A placement effect has no Touch, but the same Mailbox pause holds and releases it.
+  const { action: placement } = await ledger.createAction(W, { idempotencyKey: crypto.randomUUID(), capability: "com.trydirex.gmail/placement.send", credentialId, dedupe: "queryable", spec: { to: [newEmail()] }, actor: { userId: owner } });
+  expect(await inWorkspace(W, (tx) => outreachFloors(async () => true)(tx, placement, { approverId: owner, standingRuleId: null, producerDigest: null }))).toMatchObject({ kind: "hold", reason: "mailbox_paused" });
+  await q("update actions set state = 'held', hold_reason = 'mailbox_paused' where id = $1", [placement.id]);
+
+  const contributor = (await addMember(cookie, W, "contributor")).cookie;
+  const resumeAs = (who: string) => call(`/api/w/${W}/outreach/mailboxes/${credentialId}/pause`, who, { method: "PUT", body: { paused: false } });
+  expect((await resumeAs(contributor)).status).toBe(403);
+  expect(await pauses()).toHaveLength(1);
+  expect((await resumeAs(cookie)).status).toBe(200);
+  expect(await pauses()).toEqual([]);
+  expect(await stateOf(held)).toMatchObject({ state: "scheduled" });
+  expect(await stateOf(placement.id)).toMatchObject({ state: "scheduled" });
+  await ledger.run(W, held);
+  expect(await stateOf(held)).toMatchObject({ state: "sent" });
+
+  // One new bounce after the resume, with the five before it no longer counted, doesn't pause it again.
+  const { to } = await stateOf(held).then((a) => ({ to: (a.spec as { to: string[] }).to[0]! }));
+  fake.deliver(notice(to, "5.1.1"));
+  await poll();
+  expect(await pauses()).toEqual([]);
+
+  // A contributor may pause by hand; it records them, and the next email waits.
+  expect((await call(`/api/w/${W}/outreach/mailboxes/${credentialId}/pause`, contributor, { method: "PUT", body: { paused: true } })).status).toBe(200);
+  expect(await pauses()).toEqual([expect.objectContaining({ reason: "person" })]);
+  const next = await approved((await addPerson()).personId);
+  await ledger.run(W, next);
+  expect(await stateOf(next)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
+  expect((await call(`/api/w/${W}/outreach/mailboxes/${crypto.randomUUID()}/pause`, cookie, { method: "PUT", body: { paused: true } })).status).toBe(404);
+  expect((await resumeAs(cookie)).status).toBe(200);
+  await ledger.run(W, next);
+  expect(await stateOf(next)).toMatchObject({ state: "sent" });
 });
 
 test("a pending reply holds a sales follow-up too", async () => {
@@ -701,4 +747,27 @@ test("Home's results compare the last 7 days with the 7 before, keep a sentence 
   // The next day asks again; a refusal leaves the numbers without a sentence.
   clock.at = new Date(clock.at.getTime() + 86_400_000);
   expect((await results()).every((l) => l.why === null)).toBe(true);
+});
+
+
+test("a stale bounce pause cannot undo a resume; person pauses still work", async () => {
+  await inWorkspace(W, async (tx) => {
+    const before = (await pauseOf(tx, credentialId))!;
+    await clearPause(tx, credentialId, new Date(clock.at.getTime() + 1000));
+    await setPause(tx, credentialId, { reason: "bounces", by: null, at: clock.at, resumedAt: before.resumedAt });
+    expect((await pauseOf(tx, credentialId))!.pausedAt).toBeNull();
+    await setPause(tx, credentialId, { reason: "bounces", by: null, at: clock.at, resumedAt: null });
+    expect((await pauseOf(tx, credentialId))!.pausedAt).toBeNull();
+    await setPause(tx, credentialId, { reason: "person", by: owner, at: clock.at });
+    expect((await pauseOf(tx, credentialId))!.pauseReason).toBe("person");
+    await clearPause(tx, credentialId, clock.at);
+  });
+});
+
+test("a bounce received by another Mailbox cannot match this Mailbox's send", async () => {
+  const { personId, to } = await addPerson();
+  await ledger.run(W, await approved(personId));
+  await inWorkspace(W, (tx) => replies.intake(tx, { workspaceId: W, credentialId: crypto.randomUUID(), eventId: crypto.randomUUID(), data: { headers: { from: "mailer-daemon@example.com", date: clock.at.toISOString(), to: "", subject: "Delivery failure", inReplyTo: "", references: "" }, text: "failed", dsn: { recipients: [{ email: to, status: "5.1.1" }] } } }));
+  expect(await signals(to)).toEqual([]);
+  expect(await suppressed(to)).toBeUndefined();
 });

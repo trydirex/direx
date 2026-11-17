@@ -3,11 +3,12 @@
 // the items routes. The unsubscribe link takes no sign-in: its token is the only proof.
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
-import { requirePermission, requireStepUp, type MemberEnv } from "../identity/index";
+import { can, requirePermission, requireStepUp, type MemberEnv } from "../identity/index";
 import type { Outreach } from "./application/outreach";
 import { mailboxChecks } from "./application/header-check";
 import { HOOK_MAX_BYTES, type HoldHooks } from "./application/hold-hooks";
 import type { Holds } from "./application/holds";
+import type { MailboxPauses } from "./application/mailboxes";
 import { CHANNELS, type OutsideTouches } from "./application/outside-touches";
 import { BASES, CONFIDENCES, ENTITY_TYPES, WARNINGS } from "./domain/eligibility";
 
@@ -282,14 +283,44 @@ const hookRotateRoute = createRoute({
   request: { params: ws.extend({ hookId: z.uuid() }) },
   responses: { 200: json(HookMade, "A new secret, shown this once; the old one stops working"), ...errors },
 });
+const MailboxPause = z.object({ credentialId: z.uuid(), pausedAt: z.iso.datetime(), reason: z.enum(["bounces", "person"]) }).openapi("MailboxPause");
+const pausesRoute = createRoute({
+  method: "get",
+  path: "/api/w/{workspaceId}/outreach/mailbox-pauses",
+  middleware: [requirePermission("workspace.read")],
+  request: { params: ws },
+  responses: { 200: json(z.object({ pauses: z.array(MailboxPause) }), "Each paused Mailbox; a Mailbox not listed is sending"), ...errors },
+});
+const mailboxPauseRoute = createRoute({
+  method: "put",
+  path: "/api/w/{workspaceId}/outreach/mailboxes/{credentialId}/pause",
+  middleware: [requirePermission("item.edit")],
+  request: { params: ws.extend({ credentialId: z.uuid() }), ...body(z.strictObject({ paused: z.boolean() })) },
+  responses: { 200: json(Ok, "Saved"), ...errors },
+});
+
 const hookPath = (workspaceId: string, id: string) => `/api/hooks/holds/${workspaceId}/${id}`;
 const validHook = z.object({ workspaceId: z.uuid(), hookId: z.uuid() });
 
 const validLink = z.object({ workspaceId: z.uuid(), token: z.string().regex(/^[0-9a-f]{64}$/) });
 const PAGE = `<!doctype html><meta charset="utf-8"><title>Unsubscribe</title><form method="post"><p>Stop these emails?</p><button>Unsubscribe</button></form>`;
 
-export function outreachRoutes(deps: { outreach: () => Outreach; outsideTouches?: () => OutsideTouches; holds?: () => Holds; holdHooks?: () => HoldHooks }) {
+export function outreachRoutes(deps: { outreach: () => Outreach; outsideTouches?: () => OutsideTouches; holds?: () => Holds; holdHooks?: () => HoldHooks; pauses?: () => MailboxPauses }) {
   const app = new OpenAPIHono<MemberEnv>();
+
+  const pauses = deps.pauses;
+  if (pauses) {
+    app.openapi(pausesRoute, async (c) => {
+      const list = await pauses().paused(c.req.valid("param").workspaceId);
+      return c.json({ pauses: list.map((p) => ({ ...p, pausedAt: p.pausedAt.toISOString() })) }, 200);
+    });
+    app.openapi(mailboxPauseRoute, async (c) => {
+      const { workspaceId, credentialId } = c.req.valid("param");
+      const m = c.get("member");
+      const r = await pauses().set(workspaceId, credentialId, c.req.valid("json").paused, { userId: m.userId, mayResume: can(m.role, "item.approve") });
+      return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, r.reason === "forbidden" ? 403 : 404);
+    });
+  }
 
   const hooks = deps.holdHooks;
   if (hooks) {

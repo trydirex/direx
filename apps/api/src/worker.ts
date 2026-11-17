@@ -162,9 +162,7 @@ export async function compose(opts: WorkerOptions) {
           // Only a test hands in its own plugins, such as Gmail pointed at a fake.
           sources: (opts.pluginSources ?? firstPartyPlugins()).map((plugin) => ({ mode: "in_process" as const, plugin })),
           credentials: opts.vault.credentials,
-          onCredentialRejected: async (workspaceId, credentialId) => {
-            await opts.vault?.markNeedsReauth(workspaceId, credentialId);
-          },
+          onCredentialRejected: opts.vault.markNeedsReauth,
           confinement: installs ? "external" : "none",
           ...(installs && { spawn: confinedSpawn((line) => console.log(line)), installed: { list: listInstalled, storeDir: installs, gate: installGate } }),
           mediaLinks: (workspaceId: string, ref: MediaRef) => opts.media().link(workspaceId, ref),

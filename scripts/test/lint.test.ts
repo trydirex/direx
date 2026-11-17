@@ -96,10 +96,11 @@ export const j = (row.payload as { text?: string }).text;
 
 test("the entry points and the composition root hold no module-level let and call no port optionally (ADR 0027 rules 001 and 003)", async () => {
   const code = `// SPDX-License-Identifier: AGPL-3.0-only
-declare const opts: { media?: () => void };
+declare const opts: { media?: () => void; mail?: { send(): void } };
 let items: unknown;
 export let ledger: unknown;
 export const a = () => opts.media?.();
+export const d = () => opts.mail?.send();
 export const b = (e: Error) => e.message.match(/x/);
 export function c() {
   let local = items;
@@ -112,11 +113,12 @@ export function c() {
       [3, 2, "module-slot"],
       [4, 2, "module-slot"],
       [5, 2, "optional-po"],
-      [6, 2, "read a fail"],
+      [6, 2, "optional-po"],
+      [7, 2, "read a fail"],
     ]);
   }
   // Elsewhere in core only the failure-message rule applies, and a test is held to neither.
-  expect((await lintText(code, "apps/api/src/modules/x/application/y.ts")).messages.map((m) => m.line)).toEqual([6]);
+  expect((await lintText(code, "apps/api/src/modules/x/application/y.ts")).messages.map((m) => m.line)).toEqual([7]);
   expect((await lintText(code, "apps/api/src/compose/x.test.ts")).errorCount).toBe(0);
 });
 

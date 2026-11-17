@@ -106,7 +106,9 @@ export default [
           message: "module-slot: build it inside compose or createApp, and pass it on; a module-level let is filled after start (ADR 0027 rule 001).",
         })),
         {
-          selector: "CallExpression[optional=true][callee.type='MemberExpression'][callee.object.name='opts']",
+          // opts.media?.(), and opts.media?.send()
+          selector:
+            ":matches(CallExpression[optional=true][callee.type='MemberExpression'][callee.object.name='opts'], CallExpression[callee.optional=true][callee.object.type='MemberExpression'][callee.object.object.name='opts'])",
           message: "optional-port: make the port required, so composition fails when it is missing instead of the handler skipping its work (ADR 0027 rule 003).",
         },
       ],

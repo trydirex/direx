@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { agentRoutes, brandAskStarts, voiceCheckOpen, type Agents } from "./modules/agents/index";
 import { campaignDefinitions, campaignOnPlanCreated, campaignOutsideReplies, campaignRoutes, createCampaigns } from "./modules/campaigns/index";
@@ -22,7 +23,8 @@ import { createPluginWebhooks, docsProviders, HOST_VERSION, keyConnections, news
 import { createNewsletter, issueDesk, newsletterRoutes } from "./modules/newsletter/index";
 import { createBriefs, createPageReader, createSeo, pagesWorthABrief, seoAskStarts, seoRoutes } from "./modules/seo/index";
 import { createDocs, createWriteBackGrants, docsRoutes, docsWriteBackRoutes } from "./modules/docs/index";
-import { createTokens, DOOR_BASE, maxDaysFromEnv, tokenRoutes } from "./modules/door/index";
+import { createRequests, createTokens, DOOR_BASE, doorApp, maxDaysFromEnv, registerReaders, tokenRoutes } from "./modules/door/index";
+import { doorReads } from "./modules/core-reads/index";
 import { competitorRoutes, createCompetitors, createLabels, createSnapshots } from "./modules/competitors/index";
 import { createPosts, createSocial, socialRoutes } from "./modules/social/index";
 import { addressLabelsFor, createTerms, keptEligibility, prospectingAskStarts, prospectingRoutes, signalsFor } from "./modules/prospecting/index";
@@ -437,6 +439,11 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
   // External tokens (ADR 0032 rule 005): made and revoked here, accepted only by the door.
   const tokens = createTokens({ maxDays: maxTokenDays });
   app.route("/", tokenRoutes({ tokens: () => tokens }));
+  // The door (ADR 0032 rule 002): its own app and document under /api/door/v1, reading through the
+  // same rows Ask reads. Wrapped in a plain Hono so its routes mount without joining the web app's
+  // document; registerReaders stops the start on a catalogue name with nothing registered.
+  const door = doorApp({ tokens, requests: createRequests(), registrations: registerReaders(doorReads({ items, campaigns: () => campaigns })) });
+  app.route("/", new Hono().route("/", door));
 
   app.doc31("/openapi.json", openApiConfig);
   // The built web app, last, so every API route matches first. Unset in development, where Vite serves it.

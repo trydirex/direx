@@ -66,6 +66,17 @@ const OUTSIDE = [
   "POST /api/hooks/plugins/:workspaceId/:hookId",
   // A calendar fetching a review feed: the token is the proof, checked with the owner's membership on every read.
   "GET /api/feeds/review/:workspaceId/:file",
+  // The door (ADR 0032): an External token for the Workspace in the URL is the proof, never a session,
+  // and a token for another Workspace finds nothing. token-refusal.test.ts walks these routes.
+  "POST /api/door/v1/w/:workspaceId/read_changes",
+  "POST /api/door/v1/w/:workspaceId/read_needs_you",
+  "POST /api/door/v1/w/:workspaceId/read_schedule",
+  "POST /api/door/v1/w/:workspaceId/read_campaign",
+  "POST /api/door/v1/w/:workspaceId/mcp",
+  "GET /api/door/v1/w/:workspaceId/mcp",
+  "DELETE /api/door/v1/w/:workspaceId/mcp",
+  // The door's own OpenAPI document: its readers' shapes, no Workspace data.
+  "GET /api/door/v1/openapi.json",
 ];
 
 const a = await signIn();

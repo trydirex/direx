@@ -216,14 +216,17 @@ export function Home(p: { workspaceId: string; role: Role; initial?: { items: It
                             </ul>
                           </section>
                         ))}
-                        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
-                          {approver && ticked.length > 0 ? <Button onClick={() => setConfirming(true)}>{`Approve ${ticked.length} ticked`}</Button> : <span />}
-                          {count > listed.length + stuck.length && (
-                            <Link to="/w/$workspaceId/review" params={w} className="text-sm underline underline-offset-4">
-                              {`${count - listed.length - stuck.length} more in Review`}
-                            </Link>
-                          )}
-                        </div>
+                        {/* Only with something in it: an empty footer reads as a blank row in the card. */}
+                        {((approver && ticked.length > 0) || count > listed.length + stuck.length) && (
+                          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3">
+                            {approver && ticked.length > 0 ? <Button onClick={() => setConfirming(true)}>{`Approve ${ticked.length} ticked`}</Button> : <span />}
+                            {count > listed.length + stuck.length && (
+                              <Link to="/w/$workspaceId/review" params={w} className="text-sm underline underline-offset-4">
+                                {`${count - listed.length - stuck.length} more in Review`}
+                              </Link>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </>

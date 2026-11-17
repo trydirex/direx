@@ -82,6 +82,10 @@ test("Home shows what needs the person, and only an approver gets Approve all cl
   expect(page).toContain("a claim has no source");
   expect(home([item({ clean: false, warnings: [{ code: "unspecified", text: "x" }, { code: "unspecified", text: "y" }] })])).toContain("2 warnings");
   expect(home([item()], "contributor")).not.toContain("Approve 1 ticked");
+  // With nothing to approve together and nothing more in Review, the card has no footer row at all.
+  const footer = "border-t border-border px-4 py-3";
+  expect(home([item()], "contributor")).not.toContain(footer);
+  expect(home([item()])).toContain(footer);
   expect([greeting(8, "Sam Lee"), greeting(14, ""), greeting(20)]).toEqual(["Good morning, Sam", "Good afternoon", "Good evening"]);
 });
 

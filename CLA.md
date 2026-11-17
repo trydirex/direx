@@ -1,6 +1,6 @@
 # Direx Contributor License Agreement
 
-DRAFT, version 0.4, 2026-11-16. Not in force.
+Version 0.4, 2026-11-16.
 
 This agreement is between you and KD Partners Ltd., a company incorporated in British Columbia,
 Canada (incorporation number BC1176099), together with its successors and assigns ("we"). It

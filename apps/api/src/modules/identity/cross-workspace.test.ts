@@ -122,6 +122,19 @@ const cohort = await app.request(`/api/w/${w2}/prospecting/cohorts`, {
 });
 const cohortId = ((await cohort.json()) as { id: string }).id;
 const search = { terms: ["accountants"], limit: 1, signals: [] };
+const tokenReply = await app.request(`/api/w/${w2}/external-tokens`, {
+  method: "POST",
+  headers: { cookie: b, "content-type": "application/json" },
+  body: JSON.stringify({ name: "Isolation control", days: 7, readers: ["read_changes"], kinds: [] }),
+});
+expect(tokenReply.status).toBe(200);
+const tokenId = ((await tokenReply.json()) as { id: string }).id;
+const tokenState = async () => {
+  const reply = await app.request(`/api/w/${w2}/external-tokens`, { headers: { cookie: b } });
+  expect(reply.status).toBe(200);
+  const { tokens } = (await reply.json()) as { tokens: { id: string; state: string }[] };
+  return tokens.find((token) => token.id === tokenId)?.state;
+};
 
 // One request per Workspace route, against W2. Workspace deletion goes last.
 const CASES: Record<string, { path: string; body?: unknown }> = {
@@ -194,7 +207,7 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "POST /api/w/:workspaceId/standing-rules/:id/revoke": { path: `/api/w/${w2}/standing-rules/${anyItem}/revoke`, body: { reason: "Wrong list" } },
   "GET /api/w/:workspaceId/external-tokens": { path: `/api/w/${w2}/external-tokens` },
   "POST /api/w/:workspaceId/external-tokens": { path: `/api/w/${w2}/external-tokens`, body: { name: "Script", days: 7, readers: ["read_changes"], kinds: [] } },
-  "DELETE /api/w/:workspaceId/external-tokens/:tokenId": { path: `/api/w/${w2}/external-tokens/${anyItem}` },
+  "DELETE /api/w/:workspaceId/external-tokens/:tokenId": { path: `/api/w/${w2}/external-tokens/${tokenId}` },
   "GET /api/w/:workspaceId/models/connections": { path: `/api/w/${w2}/models/connections` },
   "PUT /api/w/:workspaceId/models/connections/:provider": { path: `/api/w/${w2}/models/connections/anthropic`, body: { credentialId } },
   "DELETE /api/w/:workspaceId/models/connections/:provider": { path: `/api/w/${w2}/models/connections/anthropic` },
@@ -445,6 +458,7 @@ test("W2's invite token does nothing for a session with another email, or for W1
 
 test("a member of W1 gets 404 on every W2 route; W2's Owner does not", async () => {
   for (const key of Object.keys(CASES)) expect((await send(key, a)).status, key).toBe(404);
+  expect(await tokenState()).toBe("live");
   // Proves each case reaches its route: W2's Owner gets past the Workspace check.
   for (const key of Object.keys(CASES)) {
     // A Person the route doesn't know is its own 404, inside the Workspace, so give the Owner a real refusal.
@@ -459,9 +473,12 @@ test("a member of W1 gets 404 on every W2 route; W2's Owner does not", async () 
     if (key === "POST /api/w/:workspaceId/plugin-webhooks" || key.includes("/plugin-webhooks/:hookId")) continue;
     // An export W2 never made is its own 404; starting one needs the worker's queue, which this test doesn't start.
     if (key.startsWith("POST /api/exports/") || key === "GET /api/exports/:workspaceId/:id") continue;
-    // A token W2 never made is its own 404 inside the Workspace (ADR 0032).
-    if (key === "DELETE /api/w/:workspaceId/external-tokens/:tokenId") continue;
-    expect([401, 404], key).not.toContain((await send(key, b)).status);
+    const reply = await send(key, b);
+    expect([401, 404], key).not.toContain(reply.status);
+    if (key === "DELETE /api/w/:workspaceId/external-tokens/:tokenId") {
+      expect([reply.status, await reply.json()]).toEqual([200, { ok: true }]);
+      expect(await tokenState()).toBe("revoked");
+    }
   }
   expect((await app.request(`/api/w/${w1}`, { headers: { cookie: a } })).status).toBe(200);
 });

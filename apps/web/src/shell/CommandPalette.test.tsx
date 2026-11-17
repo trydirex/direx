@@ -128,6 +128,7 @@ test("the button opens it with every screen listed; Escape closes it and gives f
     "AI models",
     "Auto-approve",
     "Review time",
+    "External tokens",
   ]);
   expect(await violations()).toEqual([]);
   await user.keyboard("{Escape}");

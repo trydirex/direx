@@ -49,6 +49,7 @@ const Social = lazyRouteComponent(() => import("./social/Social"), "Social");
 const SettingsOverview = lazyRouteComponent(() => import("./settings/Overview"), "Overview");
 const Sending = lazyRouteComponent(() => import("./settings/Sending"), "Sending");
 const ReviewTime = lazyRouteComponent(() => import("./settings/ReviewTime"), "ReviewTime");
+const Tokens = lazyRouteComponent(() => import("./settings/Tokens"), "Tokens");
 // The Item dialog loads on first open, not with Home or the Calendar. React.lazy, not
 // lazyRouteComponent: it renders before anything preloads it.
 const ItemDialog = lazy(() => import("./items/ItemPanel").then((m) => ({ default: m.ItemDialog })));
@@ -613,6 +614,9 @@ function SettingsNav() {
       <Link to="/w/$workspaceId/settings/members" params={params} className={sectionLink}>
         Members
       </Link>
+      <Link to="/w/$workspaceId/settings/tokens" params={params} className={sectionLink}>
+        External tokens
+      </Link>
     </SectionNav>
   );
 }
@@ -653,6 +657,15 @@ const membersRoute = page("settings/members", function MembersRoute() {
     </>
   );
 }, Members);
+const tokensRoute = page("settings/tokens", function TokensRoute() {
+  const w = useWorkspace();
+  return (
+    <>
+      <SettingsNav />
+      <Tokens workspaceId={w.workspaceId} role={w.role} me={w.me.id} />
+    </>
+  );
+}, Tokens);
 const credentialsRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   loader: preloading(Credentials),
@@ -746,6 +759,7 @@ export const routeTree = rootRoute.addChildren([
       settingsRoute,
       sendingRoute,
       membersRoute,
+      tokensRoute,
       credentialsRoute,
       socialRoute,
       modelsRoute,

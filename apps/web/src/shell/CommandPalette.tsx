@@ -28,6 +28,7 @@ const destinations = [
   ["AI models", "/w/$workspaceId/settings/models"],
   ["Auto-approve", "/w/$workspaceId/settings/rules"],
   ["Review time", "/w/$workspaceId/settings/review-time"],
+  ["External tokens", "/w/$workspaceId/settings/tokens"],
 ] as const;
 
 export const kbd = "rounded-sm border border-current px-1 font-sans text-xs opacity-80";

@@ -6,7 +6,7 @@
 import { sql } from "drizzle-orm";
 import { bigint, check, foreignKey, integer, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
-import { workspaces } from "./schema";
+import { items, workspaces } from "./schema";
 
 const tz = (name: string) => timestamp(name, { withTimezone: true });
 
@@ -43,11 +43,28 @@ export const externalTokens = pgTable(
 );
 
 /** Every way a door request ends; one row each, with no input or output (ADR 0032 rule 011). */
-export const DOOR_OUTCOMES = ["ok", "invalid_input", "reader_not_allowed", "rate_limited", "too_large", "bad_cursor", "error"] as const;
+export const DOOR_OUTCOMES = [
+  "ok",
+  "invalid_input",
+  "reader_not_allowed",
+  "rate_limited",
+  "too_large",
+  "bad_cursor",
+  "error",
+  // A proposal's refusals (ADR 0032 rules 004 and 006).
+  "kind_not_allowed",
+  "already_waiting",
+  "idempotency_conflict",
+  "proposal_cap",
+  "refused",
+] as const;
 
-// One row per door request made with a live token: which reader, how it ended and when, never what
-// was asked or answered. Append-only for the app. It grows with use, so it is on the large list; the
-// primary key leads with the token, which is the index the tokens page reads its latest rows by.
+// One row per door request made with a live token: which reader or proposal kind, how it ended and
+// when, never what was asked or answered. Append-only for the app. It grows with use, so it is on the
+// large list; the primary key leads with the token, which is the index the tokens page reads its
+// latest rows by. `operation` replaces `reader`, which only fits reads (DX-R-0029-005, migration 0151):
+// every new row gets both; a later release fills `operation` on older rows in batches, makes it NOT NULL
+// and drops `reader`, and reads move to `operation` then.
 export const doorRequests = pgTable(
   "door_requests",
   {
@@ -55,6 +72,7 @@ export const doorRequests = pgTable(
     workspaceId: uuid("workspace_id").notNull(),
     tokenId: uuid("token_id").notNull(),
     reader: text("reader").notNull(),
+    operation: text("operation"),
     outcome: text("outcome").notNull(),
     at: tz("at").notNull(),
   },
@@ -80,5 +98,29 @@ export const doorCounters = pgTable(
     primaryKey({ name: "door_counters_pkey", columns: [t.workspaceId, t.scope, t.minute] }),
     foreignKey({ name: "door_counters_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
     check("door_counters_count_check", sql`${t.count} > 0`),
+  ],
+);
+
+// One row per proposal a token made, keyed by the token's idempotency key so a retry with the same key
+// and body gets the same Item back, and a reused key with another body is refused (ADR 0032 rule 004).
+// The body itself is never kept, only its SHA-256. Append-only for the app, and on the large list.
+export const doorProposals = pgTable(
+  "door_proposals",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    tokenId: uuid("token_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    bodyDigest: text("body_digest").notNull(),
+    kind: text("kind").notNull(),
+    itemId: uuid("item_id").notNull(),
+    createdAt: tz("created_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "door_proposals_pkey", columns: [t.workspaceId, t.tokenId, t.idempotencyKey] }),
+    foreignKey({ name: "door_proposals_token_fk", columns: [t.workspaceId, t.tokenId], foreignColumns: [externalTokens.workspaceId, externalTokens.id] }),
+    foreignKey({ name: "door_proposals_item_fk", columns: [t.workspaceId, t.itemId], foreignColumns: [items.workspaceId, items.id] }),
+    check("door_proposals_key_check", sql`char_length(${t.idempotencyKey}) between 1 and 200`),
+    check("door_proposals_body_digest_check", sql`${t.bodyDigest} ~ '^[0-9a-f]{64}$'`),
+    check("door_proposals_kind_check", sql`${t.kind} in ('fact_proposal', 'draft')`),
   ],
 );

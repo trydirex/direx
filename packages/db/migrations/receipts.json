@@ -12,7 +12,8 @@
     "trigger_events",
     "ask_messages",
     "campaign_people",
-    "door_requests"
+    "door_requests",
+    "door_proposals"
   ],
   "checkFrom": 137,
   "files": {
@@ -619,6 +620,10 @@
     "0150_step_mailboxes.sql": {
       "sha256": "bc923d5c60872454543e2b16b9adcc5ba665f638b236d8a7bee239ce1b49e5d8",
       "description": "Adds campaign_step_mailboxes, the Mailboxes an email step's emails are shared across, with forced RLS, and copies each step's one Mailbox into it."
+    },
+    "0151_door_proposals.sql": {
+      "sha256": "52a2bab944d09ddb9d2d3df87ad37eb5cc78f47e591bd34cda3e6a37627d8111",
+      "description": "Add door_proposals, a token's proposals keyed by its idempotency key, and a nullable door_requests.operation beside reader, which a later release fills, makes NOT NULL and drops; door outcomes gain the proposal refusals"
     }
   }
 }

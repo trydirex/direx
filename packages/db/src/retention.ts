@@ -166,6 +166,9 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "public.doc_rows": audit,
   "public.doc_sources": audit,
   "public.doc_write_grants": audit,
+  // A proposal's idempotency record: no content, only the body's SHA-256, kept as long as the requests are,
+  // so a retry is always answered with the Item it made.
+  "public.door_proposals": audit,
   "public.door_requests": audit,
   "public.external_tokens": audit,
   "public.fact_versions": audit,

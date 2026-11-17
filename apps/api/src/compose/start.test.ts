@@ -40,3 +40,12 @@ test("the server registers the same queues, schedules and consumers as before th
   expect(list).toEqual(recorded);
   expect(list.length).toBeGreaterThan(30);
 });
+
+test("a token lifetime the server can't allow stops the start, naming the variable", async () => {
+  process.env.DIREX_EXTERNAL_TOKEN_MAX_DAYS = "12";
+  try {
+    await expect(runServer()).rejects.toThrow(/DIREX_EXTERNAL_TOKEN_MAX_DAYS must be a whole number of days from 91 to 365, not 12/);
+  } finally {
+    delete process.env.DIREX_EXTERNAL_TOKEN_MAX_DAYS;
+  }
+});

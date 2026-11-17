@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The door's app on its own, with real tokens, caps and request rows and fake reads: the registry
 // matches the catalogue, the document lists the readers and nothing else, and each refusal answers
-// as the door-reads spec says and leaves the row it should.
-import { beforeAll, expect, test } from "vitest";
+// as the door-reads spec says and leaves the row it should. Then the web app's token routes, with
+// real sessions: who may make, list and revoke a token.
+import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { DoorRead } from "../core-reads/index";
+import { testIdentity } from "../identity/test-auth";
 import { seedWorkspace } from "./fixtures/members";
-import { createRequests, createTokens, DOOR_BASE, doorApp, registerReaders } from "./index";
+import { createRequests, createTokens, DOOR_BASE, doorApp, registerReaders, tokenRoutes } from "./index";
 
 const W = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
@@ -127,4 +129,96 @@ test("a read that fails is 500 and recorded as error", async () => {
   const t = await token();
   expect((await post("read_campaign", bearer(t.token))).status).toBe(500);
   expect(await outcomes(t.id)).toEqual(["error"]);
+});
+
+// The web app's token routes, mounted behind identity's session check as main.ts mounts them.
+const site = testIdentity();
+site.routes.route("/", tokenRoutes({ tokens: () => tokens }));
+afterEach(() => vi.useRealTimers());
+const ZAPIER = { name: "Zapier", days: 30, readers: ["read_changes"], kinds: ["draft"] };
+const tokensOf = (w: string) => `/api/w/${w}/external-tokens`;
+type Listed = { tokens: { id: string; hint: string; state: string; revokedBy: string | null }[]; choices: unknown };
+async function workspace() {
+  const owner = await site.signIn();
+  const { workspace } = await site.createOrg(owner);
+  return { owner, w: workspace.id };
+}
+async function make(w: string, cookie: string) {
+  const res = await site.call(tokensOf(w), cookie, { method: "POST", body: ZAPIER });
+  expect(res.status).toBe(200);
+  return (await res.json()) as { id: string; token: string; expiresAt: string };
+}
+
+test("an Owner and an Admin make a token after a fresh sign-in; it shows once and the list holds only its hint", async () => {
+  const { owner, w } = await workspace();
+  const admin = await site.addMember(owner, w, "admin");
+  const made = [await make(w, owner), await make(w, admin.cookie)];
+  for (const m of made) {
+    expect(m.token).toMatch(/^dxt_[A-Za-z0-9_-]{43}$/);
+    expect(new Date(m.expiresAt).getTime() - Date.now()).toBeGreaterThan(29 * 86_400_000);
+  }
+  const res = await site.call(tokensOf(w), owner);
+  const text = await res.text();
+  for (const m of made) expect(text).not.toContain(m.token);
+  const listed = JSON.parse(text) as Listed;
+  expect(listed.tokens.map((t) => [t.id, t.hint, t.state])).toEqual(made.reverse().map((m) => [m.id, m.token.slice(4, 8), "live"]));
+  expect(listed.choices).toEqual({
+    lifetimes: [7, 30, 90],
+    readers: [
+      { name: "read_changes", personal: false },
+      { name: "read_needs_you", personal: true },
+      { name: "read_schedule", personal: true },
+      { name: "read_campaign", personal: false },
+    ],
+    kinds: ["fact_proposal", "draft"],
+  });
+});
+
+test("a Marketer, Contributor or Viewer can't make one, and an Owner signed in 11 minutes ago must sign in again", async () => {
+  const { owner, w } = await workspace();
+  for (const role of ["marketer", "contributor", "viewer"]) {
+    const { cookie } = await site.addMember(owner, w, role);
+    const res = await site.call(tokensOf(w), cookie, { method: "POST", body: ZAPIER });
+    expect([res.status, await res.json()]).toEqual([403, { error: "forbidden" }]);
+  }
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 11 * 60_000);
+  const stale = await site.call(tokensOf(w), owner, { method: "POST", body: ZAPIER });
+  expect([stale.status, await stale.json()]).toEqual([403, { error: "step_up_required" }]);
+});
+
+test("every role lists and revokes; a second revoke is fine and an unknown token is 404", async () => {
+  const { owner, w } = await workspace();
+  const { id } = await make(w, owner);
+  const members = [];
+  for (const role of ["admin", "marketer", "contributor", "viewer"]) members.push(await site.addMember(owner, w, role));
+  for (const m of members) {
+    const res = await site.call(tokensOf(w), m.cookie);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Listed).tokens.map((t) => t.id)).toEqual([id]);
+  }
+  const viewer = members[3]!;
+  for (const m of [viewer, members[1]!]) {
+    const res = await site.call(`${tokensOf(w)}/${id}`, m.cookie, { method: "DELETE" });
+    expect([res.status, await res.json()]).toEqual([200, { ok: true }]);
+  }
+  const [revoked] = ((await (await site.call(tokensOf(w), owner)).json()) as Listed).tokens;
+  expect(revoked).toMatchObject({ state: "revoked", revokedBy: viewer.userId });
+  expect((await site.call(`${tokensOf(w)}/${crypto.randomUUID()}`, owner, { method: "DELETE" })).status).toBe(404);
+});
+
+test("a refused token answers 400 with its reason and makes nothing", async () => {
+  const { owner, w } = await workspace();
+  const refusals: [Record<string, unknown>, string][] = [
+    [{ days: 45 }, "bad_lifetime"],
+    [{ days: 365 }, "bad_lifetime"],
+    [{ name: "  " }, "bad_name"],
+    [{ readers: ["read_vault"] }, "unknown_reader"],
+    [{ kinds: ["email"] }, "unknown_kind"],
+  ];
+  for (const [change, reason] of refusals) {
+    const res = await site.call(tokensOf(w), owner, { method: "POST", body: { ...ZAPIER, ...change } });
+    expect([res.status, await res.json()]).toEqual([400, { error: reason }]);
+  }
+  expect(((await (await site.call(tokensOf(w), owner)).json()) as Listed).tokens).toEqual([]);
 });

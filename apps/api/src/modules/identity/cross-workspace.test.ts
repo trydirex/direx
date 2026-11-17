@@ -192,6 +192,9 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "POST /api/w/:workspaceId/standing-rules": { path: `/api/w/${w2}/standing-rules`, body: { campaignId: anyItem, stepKey: "s", dailyCap: 5 } },
   "POST /api/w/:workspaceId/standing-rules/:id/reconfirm": { path: `/api/w/${w2}/standing-rules/${anyItem}/reconfirm` },
   "POST /api/w/:workspaceId/standing-rules/:id/revoke": { path: `/api/w/${w2}/standing-rules/${anyItem}/revoke`, body: { reason: "Wrong list" } },
+  "GET /api/w/:workspaceId/external-tokens": { path: `/api/w/${w2}/external-tokens` },
+  "POST /api/w/:workspaceId/external-tokens": { path: `/api/w/${w2}/external-tokens`, body: { name: "Script", days: 7, readers: ["read_changes"], kinds: [] } },
+  "DELETE /api/w/:workspaceId/external-tokens/:tokenId": { path: `/api/w/${w2}/external-tokens/${anyItem}` },
   "GET /api/w/:workspaceId/models/connections": { path: `/api/w/${w2}/models/connections` },
   "PUT /api/w/:workspaceId/models/connections/:provider": { path: `/api/w/${w2}/models/connections/anthropic`, body: { credentialId } },
   "DELETE /api/w/:workspaceId/models/connections/:provider": { path: `/api/w/${w2}/models/connections/anthropic` },
@@ -456,6 +459,8 @@ test("a member of W1 gets 404 on every W2 route; W2's Owner does not", async () 
     if (key === "POST /api/w/:workspaceId/plugin-webhooks" || key.includes("/plugin-webhooks/:hookId")) continue;
     // An export W2 never made is its own 404; starting one needs the worker's queue, which this test doesn't start.
     if (key.startsWith("POST /api/exports/") || key === "GET /api/exports/:workspaceId/:id") continue;
+    // A token W2 never made is its own 404 inside the Workspace (ADR 0032).
+    if (key === "DELETE /api/w/:workspaceId/external-tokens/:tokenId") continue;
     expect([401, 404], key).not.toContain((await send(key, b)).status);
   }
   expect((await app.request(`/api/w/${w1}`, { headers: { cookie: a } })).status).toBe(200);

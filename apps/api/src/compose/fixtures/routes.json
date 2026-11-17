@@ -1158,5 +1158,15 @@
   "GET /api/w/:workspaceId/prospecting/companies",
   "GET /api/w/:workspaceId/prospecting/companies",
   "GET /api/w/:workspaceId/prospecting/companies",
+  "GET /api/w/:workspaceId/external-tokens",
+  "GET /api/w/:workspaceId/external-tokens",
+  "POST /api/w/:workspaceId/external-tokens",
+  "POST /api/w/:workspaceId/external-tokens",
+  "POST /api/w/:workspaceId/external-tokens",
+  "POST /api/w/:workspaceId/external-tokens",
+  "POST /api/w/:workspaceId/external-tokens",
+  "POST /api/w/:workspaceId/external-tokens",
+  "DELETE /api/w/:workspaceId/external-tokens/:tokenId",
+  "DELETE /api/w/:workspaceId/external-tokens/:tokenId",
   "GET /openapi.json"
 ]

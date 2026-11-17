@@ -125,6 +125,7 @@ const PURPOSE_NAMES: Record<string, string> = {
   plan_draft: "Drafting plans",
   recipient_read: "Reading company websites",
   recipient_write: "Writing each person's email",
+  reply_label: "Sorting replies",
   result_why: "Explaining your results",
   seo_brief: "Writing SEO Briefs",
 };

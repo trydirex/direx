@@ -42,6 +42,7 @@ const KIND_LABEL: Record<string, string> = {
   standing_rule_offer: "Standing rule",
   newsletter_skipped: "Newsletter",
   opt_out_review: "Opt-out",
+  reply: "Reply",
   manual_post: "Post",
 };
 const ACTION_LABEL: Record<string, string> = { outreach: "Email", newsletter: "Newsletter", social: "Post" };

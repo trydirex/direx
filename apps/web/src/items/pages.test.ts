@@ -14,6 +14,7 @@ import { greeting, Home } from "./Home";
 import { BasisNotes, Content, ItemPanel, ItemDialog } from "./ItemPanel";
 import { ago } from "@/lib/ago";
 import { StateChip } from "./StateChip";
+import { ownerLine, ReplyItem } from "./ReplyReview";
 
 // The date, time, number and file fields load on first use; a page rendered to a string shows them only once loaded.
 beforeAll(loadLaterFields);
@@ -368,4 +369,37 @@ test("something put on a day goes at 9:00, or the next whole hour once today is 
   expect(firstSlot(monday, new Date(2026, 10, 16, 7, 30))).toEqual(new Date(2026, 10, 16, 9));
   expect(firstSlot(monday, new Date(2026, 10, 16, 20, 45))).toEqual(new Date(2026, 10, 16, 21));
   expect(firstSlot(new Date(2026, 10, 18), new Date(2026, 10, 16, 20, 45))).toEqual(new Date(2026, 10, 18, 9));
+});
+
+const replyContent = { signalId: "s1", label: "interested", quote: "can we talk <b>Friday</b>", owner: { userIds: ["u1", "u2"], rule: "approver" as const } };
+const kimSays = { senderEmail: "kim@example.com", text: "<script>x</script> Sounds good, can we talk Friday?", status: "not_opt_out" };
+
+test("a reply Item shows its label with the words behind it, who owns it, and the reply folded away as plain text", () => {
+  const members = [{ userId: "u1", name: "Sam", email: "sam@acme.test" }, { userId: "u2", name: "", email: "jo@acme.test" }];
+  const page = html(createElement(ReplyItem, { workspaceId: W, content: replyContent, members, meId: undefined, initial: kimSays }));
+  expect(page).toContain("Wants to talk");
+  expect(page).toContain("can we talk &lt;b&gt;Friday&lt;/b&gt;");
+  expect(page).toContain("Sam, jo@acme.test approved the email they replied to.");
+  expect(page).toContain("<details>");
+  expect(page).toContain("&lt;script&gt;");
+  expect(page).not.toContain("<script>");
+  // A member who left is skipped; nobody left means no owner line.
+  expect(html(createElement(ReplyItem, { workspaceId: W, content: { ...replyContent, label: "unlabelled", quote: null }, members: [], meId: undefined, initial: kimSays }))).toContain("Direx didn&#x27;t sort this one");
+});
+
+test("the owner sentence says why, and you or several names take the plural", () => {
+  expect(ownerLine(["You"], "approver")).toBe("You approved the email they replied to.");
+  expect(ownerLine(["Sam"], "mailbox")).toBe("Sam owns the Mailbox it came to. Nobody approved that email.");
+  expect(ownerLine(["You"], "mailbox")).toContain("You own the Mailbox");
+  expect(ownerLine(["Sam"], "workspace_owners")).toBe("Sam is an Owner here. Nobody approved that email and the Mailbox is shared.");
+  expect(ownerLine(["Sam", "Jo"], "workspace_owners")).toContain("Sam, Jo are Owners here.");
+});
+
+test("a reply Item in the panel offers its two settle choices and nothing that sends or dismisses", () => {
+  const page = html(createElement(ItemPanel, { workspaceId: W, id: "r1", role: "marketer", onChange: () => {}, onClose: () => {}, initial: { item: item({ kind: "reply", clean: false, movable: false }), content: replyContent, timeline: [], ruleGrantedBy: null, reply: kimSays } }));
+  expect(page).toContain("No answer needed");
+  expect(page).toContain("Answered elsewhere");
+  expect(page).not.toContain("Dismiss");
+  expect(page).not.toContain("Don&#x27;t send");
+  expect(page).not.toContain(">Accept<");
 });

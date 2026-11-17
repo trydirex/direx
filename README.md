@@ -140,7 +140,7 @@ Contributors also need Node 22.13 or 24, for ESLint and dependency-cruiser.
 
 ```
 bun run check:task                  the bar for finishing a task
-bun run ci                          everything CI runs on each change
+bun run check:full                  everything CI's ci job runs on each change
 bun scripts/check-first-run.ts      setup to sign-in, in a temporary copy
 ```
 

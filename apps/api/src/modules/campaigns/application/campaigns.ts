@@ -108,6 +108,8 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
       const plan = await plans.plan(workspaceId, read.row.planId);
       const step = plan?.current?.steps.find((s) => s.key === stepKey);
       if (!step) return { ok: false, reason: "step_not_in_plan" } as const;
+      // A time already gone can't be approved, so it isn't drafted either, as on the Calendar.
+      if (a.plannedAt <= now()) return { ok: false, reason: "slot_in_past" } as const;
       return { ok: true, results: await posts().draft(workspaceId, { campaignId, stepKey, title: step.title, plannedAt: a.plannedAt }, a.targets, userId) } as const;
     },
 

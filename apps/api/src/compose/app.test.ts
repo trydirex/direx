@@ -45,6 +45,18 @@ test("the ports read the server's own modules, and the worker's once it has star
   expect(worker.prospectingRuns.companies).toHaveBeenCalledWith(ws);
 });
 
+test("Gmail is offered as a Mailbox only once the Google client is set up", async () => {
+  const offered = async () => {
+    const res = await createApp({ worker: () => undefined }).app.request(`/api/w/${ws}/mailbox-providers`, { headers: { cookie } });
+    return ((await res.json()) as { providers: { connection: string }[] }).providers.map((p) => p.connection);
+  };
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "");
+  expect(await offered()).toEqual(["imap_smtp"]);
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "google-client");
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_SECRET", "g");
+  expect(await offered()).toEqual(["google", "imap_smtp"]);
+});
+
 test("Ask's starts include clipping only once the worker has clip runs, and never on cloud", async () => {
   let worker: Worker | undefined;
   const { ports } = createApp({ worker: () => worker });

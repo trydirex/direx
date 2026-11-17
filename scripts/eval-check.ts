@@ -5,7 +5,7 @@ import { agentWrittenGate, claimCheck, injectionCheck } from "../apps/api/src/mo
 import { campaignEvalSuites, checkCaseErrors, hostileCaseErrors } from "../apps/api/src/modules/campaigns/evals";
 import { CHECK_CANDIDATES, routesFor } from "../apps/api/src/modules/models/index";
 import { OPTOUT_PROMPT, optOutEval } from "../apps/api/src/modules/outreach/index";
-import { OPTOUT_SETS, replySetErrors } from "../apps/api/src/modules/outreach/evals";
+import { labelSetErrors, OPTOUT_SETS, REPLY_LABEL_SET, replyLabelEval, replySetErrors } from "../apps/api/src/modules/outreach/evals";
 import { planEvalSuites } from "../apps/api/src/modules/plans/evals";
 import { clipEvalSuites } from "../apps/api/src/modules/clips/evals";
 import { prospectingEvalSuites } from "../apps/api/src/modules/prospecting/evals";
@@ -24,6 +24,9 @@ const errors = [
   ...checkCaseErrors(),
   ...hostileCaseErrors(),
   ...replySetErrors(OPTOUT_SETS),
+  ...labelSetErrors(REPLY_LABEL_SET),
+  // No route yet: one is added only with a passing real-key result (reply desk, Gate G).
+  ...checkRouteResults(replyLabelEval, routes),
   ...checkRouteResults(claimCheck, routes),
   ...checkRouteResults(injectionCheck, routes),
   ...checkRouteResults({ id: optOutEval.id, version: optOutEval.version, prompt: OPTOUT_PROMPT, purposes: ["optout_detect"] }, routes),

@@ -4,7 +4,7 @@
 export { factContext, factSink } from "./adapters/fact-sink";
 export { createAgents, starterNotice, type Agents } from "./application/create";
 export { checkEvals, checkRouteResults, RESULTS_DIR, type EvalResult, type EvalSuite } from "./evals/check";
-export { BRIEF_BAR, CHANGE_BAR, COMPARISON_BAR, MIN_RUNS, missesBar, POST_BAR, WHY_BAR } from "./evals/bars";
+export { BRIEF_BAR, CHANGE_BAR, COMPARISON_BAR, MIN_RUNS, missesBar, POST_BAR, REPLY_LABEL_BAR, WHY_BAR } from "./evals/bars";
 export { resultFileOf, safetyGate, shippedEvals, voiceCheckOpen, type RequiredEval } from "./evals/gate";
 export type { ScriptedCase } from "./evals/brand_reader/cases";
 export { defineAgent, type AgentDefinition } from "./definitions/define";

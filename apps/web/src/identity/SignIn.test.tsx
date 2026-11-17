@@ -57,7 +57,7 @@ test("a wrong password says so and stays on the card", async () => {
 
 test("signing up asks to confirm the address when no session comes back", async () => {
   answer(200, { token: null });
-  render(<SignIn callbackURL="/" />);
+  render(<SignIn callbackURL="/" offerSignUp />);
   await userEvent.click(screen.getByRole("button", { name: "New here? Sign up" }));
   expect(screen.getByRole("heading", { name: "Sign up for Direx" })).toBeTruthy();
   await fill("new@example.com", "twelve chars ok");

@@ -46,7 +46,7 @@ test("every page renders, in Organization and Workspace terms", () => {
 });
 
 test("the sign-in page leads with Google and Microsoft, then a password, in each mode, and keeps the other ways in", () => {
-  const page = (initialMode: "sign_in" | "sign_up" | "forgot") => render(createElement(SignIn, { callbackURL: "/", initialMode }));
+  const page = (initialMode: "sign_in" | "sign_up" | "forgot") => render(createElement(SignIn, { callbackURL: "/", initialMode, offerSignUp: true }));
   const signIn = page("sign_in");
   expect(signIn.indexOf("Continue with Google")).toBeLessThan(signIn.indexOf('type="password"'));
   expect(signIn).toContain("Nothing goes out until you approve it.");
@@ -70,8 +70,11 @@ test("the sign-in page leads with Google and Microsoft, then a password, in each
     expect(html).toContain("Continue with Google");
     expect(html).not.toMatch(/\b(tenant|account|project)\b/i);
   }
+  // A step-up prompt is for someone already signed in, so it offers no new sign-up.
   const stepUp = render(createElement(SignIn, { title: "Confirm it's you", callbackURL: "/x" }));
   expect(stepUp).toContain('type="password"');
+  expect(stepUp).toContain("Forgot your password?");
+  expect(stepUp).not.toContain("New here?");
 });
 
 test("the reset page asks for a password, and says so when the link is bad", () => {

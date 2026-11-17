@@ -139,8 +139,11 @@ export const postsOf = async (workspaceId: string, campaignId: string, stepKey: 
 export const previewPost = async (workspaceId: string, target: PostTarget): Promise<Preview> =>
   (await api.POST("/api/w/{workspaceId}/social/posts/preview", { params: at(workspaceId), body: target })).data ?? { ok: false };
 
-export const draftPosts = async (workspaceId: string, id: string, key: string, plannedAt: string, targets: PostTarget[]): Promise<DraftResult[] | null> =>
-  (await api.PUT("/api/w/{workspaceId}/campaigns/{id}/steps/{key}/posts", { params: { path: { workspaceId, id, key } }, body: { plannedAt, targets } })).data?.results ?? null;
+/** One result per account, or why the whole step was refused, in words. */
+export async function draftPosts(workspaceId: string, id: string, key: string, plannedAt: string, targets: PostTarget[]): Promise<DraftResult[] | string> {
+  const { data, error } = await api.PUT("/api/w/{workspaceId}/campaigns/{id}/steps/{key}/posts", { params: { path: { workspaceId, id, key } }, body: { plannedAt, targets } });
+  return data?.results ?? sayPost({ reason: error?.error });
+}
 
 export const markPosted = async (workspaceId: string, itemId: string, url: string | null): Promise<boolean> =>
   !(await api.POST("/api/w/{workspaceId}/social/posts/{itemId}/posted", { params: { path: { workspaceId, itemId } }, body: { url } })).error;

@@ -92,6 +92,9 @@ docker build -f deploy/docker/Dockerfile -t ghcr.io/trydirex/direx:local .
 sh deploy/compose/install.sh --version local
 ```
 
+On a server where Direx is already installed, set `DIREX_VERSION=local` in `.env` first. The
+installer stops rather than change the version `.env` names.
+
 ## Using a coding agent
 
 Point your agent at this folder and ask it to set up Direx. The `direx-setup` skill tells it what

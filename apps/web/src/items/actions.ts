@@ -34,6 +34,11 @@ const KIND_LABEL: Record<string, string> = {
   plan_change: "Plan change",
   next_step: "Next step",
   campaign_conflict: "Campaign conflict",
+  // Notices and choices about a running Campaign, not drafts to approve.
+  campaign_waiting: "Campaign",
+  campaign_launch_moved: "Campaign",
+  campaign_stall: "Campaign",
+  campaign_plan_unfinished: "Campaign",
   standing_rule_offer: "Standing rule",
   newsletter_skipped: "Newsletter",
   opt_out_review: "Opt-out",

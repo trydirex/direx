@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A Mailbox's pause on its card: why it's paused, Resume only for someone who approves, and Pause by hand.
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { withQueries } from "../testing";
@@ -37,7 +37,7 @@ test("someone who can't approve sees the pause but no Resume, and a viewer sees 
   cleanup();
   vi.spyOn(api, "GET").mockImplementation((() => reply(200, { pauses: [] })) as never);
   const { container } = render(withQueries(<MailboxPause workspaceId={W} credentialId={M} name="me@acme.test" mayPause={false} mayResume={false} />));
-  await Promise.resolve();
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   expect(container.textContent).toBe("");
 });
 
@@ -47,4 +47,29 @@ test("a sending Mailbox offers Pause, which saves", async () => {
   render(withQueries(<MailboxPause workspaceId={W} credentialId={M} name="me@acme.test" mayPause mayResume={false} />));
   await userEvent.click(await screen.findByRole("button", { name: "Pause sending: me@acme.test" }));
   expect(put).toHaveBeenCalledWith("/api/w/{workspaceId}/outreach/mailboxes/{credentialId}/pause", { params: { path: { workspaceId: W, credentialId: M } }, body: { paused: true } });
+});
+
+
+test("loading and failed reads never offer Pause, and retry loads the pause", async () => {
+  let rejectRead!: (e: Error) => void;
+  vi.spyOn(api, "GET").mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectRead = reject; })).mockImplementationOnce((() => reply(200, paused("person"))) as never);
+  render(withQueries(<MailboxPause workspaceId={W} credentialId={M} name="me@acme.test" mayPause mayResume />));
+  expect(screen.getByRole("status").textContent).toContain("Loading");
+  expect(screen.queryByRole("button", { name: /Pause sending/ })).toBeNull();
+  rejectRead(new Error("offline"));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("Couldn't load"));
+  expect(screen.queryByRole("button", { name: /Pause sending/ })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+  expect(await screen.findByRole("button", { name: /Resume sending/ })).toBeTruthy();
+});
+
+test("a rejected pause request offers retry and resets saving", async () => {
+  vi.spyOn(api, "GET").mockImplementation((() => reply(200, { pauses: [] })) as never);
+  const put = vi.spyOn(api, "PUT").mockRejectedValueOnce(new Error("offline")).mockImplementationOnce((() => reply(200, { ok: true })) as never);
+  render(withQueries(<MailboxPause workspaceId={W} credentialId={M} name="me@acme.test" mayPause mayResume />));
+  await userEvent.click(await screen.findByRole("button", { name: /Pause sending/ }));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "That didn't save. Try again.");
+  await userEvent.click(screen.getByRole("button", { name: /Pause sending/ }));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(put).toHaveBeenCalledTimes(2);
 });

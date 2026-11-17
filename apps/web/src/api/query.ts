@@ -42,10 +42,14 @@ export function makeQueryClient() {
   return client;
 }
 
-/** A 401 anywhere means the session ended: drop everything cached and show sign-in. */
+/**
+ * A 401 anywhere means the session ended: drop everything cached and show sign-in. A query marked
+ * `meta: { sameForAnyone: true }` stays, so sign-in doesn't fetch it again.
+ */
 function signedOutOn401(client: QueryClient, e: unknown) {
   if (!(e instanceof ApiError && e.status === 401)) return;
-  client.clear();
+  client.getMutationCache().clear();
+  client.removeQueries({ predicate: (q) => q.meta?.sameForAnyone !== true });
   client.setQueryData(ME, null);
 }
 

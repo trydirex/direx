@@ -14,6 +14,8 @@ import { approverIdFromSession } from "../ledger/index";
 import { addKey } from "../people/index";
 import { CallFailed, EMAIL_RECEIVED, loadPlugins, receivedMail } from "../plugins/index";
 import { touchCheck } from "../schedule/index";
+import { setPause, clearPause, pauseOf } from "./adapters/pauses";
+import { inWorkspace } from "./adapters/repo";
 import { resultLines } from "./application/results";
 import { passMailboxCheck, TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
 import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, sendingPaused } from "./index";
@@ -282,6 +284,11 @@ test("bounces pause their Mailbox until someone who approves resumes it; what it
   await ledger.run(W, held);
   expect(await stateOf(held)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
 
+  // A placement effect has no Touch, but the same Mailbox pause holds and releases it.
+  const { action: placement } = await ledger.createAction(W, { idempotencyKey: crypto.randomUUID(), capability: "com.trydirex.gmail/placement.send", credentialId, dedupe: "queryable", spec: { to: [newEmail()] }, actor: { userId: owner } });
+  expect(await inWorkspace(W, (tx) => outreachFloors(async () => true)(tx, placement, { approverId: owner, standingRuleId: null, producerDigest: null }))).toMatchObject({ kind: "hold", reason: "mailbox_paused" });
+  await q("update actions set state = 'held', hold_reason = 'mailbox_paused' where id = $1", [placement.id]);
+
   const contributor = (await addMember(cookie, W, "contributor")).cookie;
   const resumeAs = (who: string) => call(`/api/w/${W}/outreach/mailboxes/${credentialId}/pause`, who, { method: "PUT", body: { paused: false } });
   expect((await resumeAs(contributor)).status).toBe(403);
@@ -289,6 +296,7 @@ test("bounces pause their Mailbox until someone who approves resumes it; what it
   expect((await resumeAs(cookie)).status).toBe(200);
   expect(await pauses()).toEqual([]);
   expect(await stateOf(held)).toMatchObject({ state: "scheduled" });
+  expect(await stateOf(placement.id)).toMatchObject({ state: "scheduled" });
   await ledger.run(W, held);
   expect(await stateOf(held)).toMatchObject({ state: "sent" });
 
@@ -739,4 +747,27 @@ test("Home's results compare the last 7 days with the 7 before, keep a sentence 
   // The next day asks again; a refusal leaves the numbers without a sentence.
   clock.at = new Date(clock.at.getTime() + 86_400_000);
   expect((await results()).every((l) => l.why === null)).toBe(true);
+});
+
+
+test("a stale bounce pause cannot undo a resume; person pauses still work", async () => {
+  await inWorkspace(W, async (tx) => {
+    const before = (await pauseOf(tx, credentialId))!;
+    await clearPause(tx, credentialId, new Date(clock.at.getTime() + 1000));
+    await setPause(tx, credentialId, { reason: "bounces", by: null, at: clock.at, resumedAt: before.resumedAt });
+    expect((await pauseOf(tx, credentialId))!.pausedAt).toBeNull();
+    await setPause(tx, credentialId, { reason: "bounces", by: null, at: clock.at, resumedAt: null });
+    expect((await pauseOf(tx, credentialId))!.pausedAt).toBeNull();
+    await setPause(tx, credentialId, { reason: "person", by: owner, at: clock.at });
+    expect((await pauseOf(tx, credentialId))!.pauseReason).toBe("person");
+    await clearPause(tx, credentialId, clock.at);
+  });
+});
+
+test("a bounce received by another Mailbox cannot match this Mailbox's send", async () => {
+  const { personId, to } = await addPerson();
+  await ledger.run(W, await approved(personId));
+  await inWorkspace(W, (tx) => replies.intake(tx, { workspaceId: W, credentialId: crypto.randomUUID(), eventId: crypto.randomUUID(), data: { headers: { from: "mailer-daemon@example.com", date: clock.at.toISOString(), to: "", subject: "Delivery failure", inReplyTo: "", references: "" }, text: "failed", dsn: { recipients: [{ email: to, status: "5.1.1" }] } } }));
+  expect(await signals(to)).toEqual([]);
+  expect(await suppressed(to)).toBeUndefined();
 });

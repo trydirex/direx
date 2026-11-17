@@ -253,12 +253,12 @@ export async function sentByCorrelation(tx: LedgerTx, messageIds: string[]): Pro
   return row ? { actionId: row.id, personId: touchOf(row.spec) } : null;
 }
 
-/** A sent Action addressed to this email, if any. */
-export async function sentTo(tx: LedgerTx, email: string): Promise<Touched | null> {
+/** A sent Action addressed to this email, optionally scoped to the receiving Mailbox. */
+export async function sentTo(tx: LedgerTx, email: string, credentialId?: string | null): Promise<Touched | null> {
   const [row] = await tx
     .select({ id: actions.id, spec: actions.spec })
     .from(actions)
-    .where(and(eq(actions.state, "sent"), sql`${actions.spec} -> 'to' @> ${JSON.stringify([email])}::jsonb`, notProbe))
+    .where(and(eq(actions.state, "sent"), credentialId === undefined ? undefined : credentialId === null ? isNull(actions.credentialId) : eq(actions.credentialId, credentialId), sql`${actions.spec} -> 'to' @> ${JSON.stringify([email])}::jsonb`, notProbe))
     .limit(1);
   return row ? { actionId: row.id, personId: touchOf(row.spec) } : null;
 }
@@ -317,4 +317,9 @@ export function idsInStates(tx: LedgerTx, states: readonly string[]): Promise<{ 
 
 export function listEvents(tx: LedgerTx, actionId: string): Promise<EventRow[]> {
   return tx.select().from(actionEvents).where(eq(actionEvents.actionId, actionId)).orderBy(asc(actionEvents.id));
+}
+
+/** All Actions this Mailbox pause held, including placement effects without a Touch. */
+export function heldForMailboxPause(tx: LedgerTx, credentialId: string) {
+  return tx.select({ id: actions.id }).from(actions).where(and(eq(actions.state, "held"), eq(actions.holdReason, "mailbox_paused"), eq(actions.credentialId, credentialId)));
 }

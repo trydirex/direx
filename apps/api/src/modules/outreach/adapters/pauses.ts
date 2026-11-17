@@ -27,11 +27,11 @@ export async function latestSends(tx: OutreachTx, credentialId: string, since: D
 }
 
 /** Pauses a Mailbox that isn't paused yet. */
-export async function setPause(tx: OutreachTx, credentialId: string, p: { reason: PauseReason; by: string | null; at: Date }): Promise<void> {
+export async function setPause(tx: OutreachTx, credentialId: string, p: { reason: PauseReason; by: string | null; at: Date; resumedAt?: Date | null }): Promise<void> {
   await tx
     .update(credentials)
     .set({ pausedAt: p.at, pauseReason: p.reason, pausedBy: p.by })
-    .where(and(live(credentialId), isNull(credentials.pausedAt)));
+    .where(and(live(credentialId), isNull(credentials.pausedAt), p.resumedAt === undefined ? undefined : p.resumedAt === null ? isNull(credentials.resumedAt) : eq(credentials.resumedAt, p.resumedAt)));
 }
 
 export async function clearPause(tx: OutreachTx, credentialId: string, at: Date): Promise<void> {

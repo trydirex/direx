@@ -10,6 +10,7 @@ import { createRootRouteWithContext, createRoute, createRouter, lazyRouteCompone
 import { Placeholder, QueryBoundary } from "@/components/QueryBoundary";
 import { buttonVariants } from "@/components/native";
 import { EmptyState } from "@/components/layout";
+import { signInOptionsQuery } from "@/identity/auth";
 import { AddPassword, ResetPassword, SignIn } from "@/identity/SignIn";
 import { legacyPath } from "@/shell/legacy";
 import { deletedWorkspacesQuery, meQuery, workspacesQuery, type Me, type MyWorkspace } from "@/shell/session";
@@ -89,15 +90,23 @@ const signedInRoute = createRoute({
   id: "signed-in",
   component: function SignedIn() {
     const me = useQuery(meQuery);
+    // Briefly wait for the buttons; a stalled request must still allow sign-in.
+    const options = useQuery(signInOptionsQuery);
+    const [optionsTimedOut, setOptionsTimedOut] = useState(false);
+    useEffect(() => {
+      if (!options.isPending) return;
+      const timer = setTimeout(() => setOptionsTimedOut(true), 3_000);
+      return () => clearTimeout(timer);
+    }, [options.isPending]);
     const invite = useRouterState({ select: (s) => s.location.pathname.startsWith("/invite/") });
     const claim = useRouterState({ select: (s) => s.location.pathname.startsWith("/claim/") });
     // A Workspace invite's or the bootstrap link's token, held for sign-up (ADR 0024).
     const inviteToken = useRouterState({ select: (s) => /^\/(?:invite\/[^/]+|claim)\/([0-9a-f]{64})$/.exec(s.location.pathname)?.[1] });
     // Outside the shell, so the loading and error states get their own margin.
-    if (me.data === undefined) {
+    if (me.data === undefined || (me.data === null && options.isPending && !optionsTimedOut)) {
       return (
         <div className="mx-auto max-w-content p-6">
-          <QueryBoundary query={me}>{() => null}</QueryBoundary>
+          {me.data === undefined ? <QueryBoundary query={me}>{() => null}</QueryBoundary> : <Loading />}
         </div>
       );
     }

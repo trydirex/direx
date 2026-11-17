@@ -36,6 +36,14 @@ const pluginCasts = [
   `${objectCast}[expression.type='MemberExpression'][expression.property.name='data'][expression.object.name=/^(e|ev|event)$/]`,
   `${objectCast}[expression.type='MemberExpression'][expression.property.name='data'][expression.object.property.name='event']`,
 ].map((selector) => ({ selector, message: pluginCastMessage }));
+// A plugin failure's reason, status, wait and plan are fields on CallFailed; its message is for logs
+// and display only, so core never runs a pattern over one (ADR 0028 rule 002).
+const failureMessage = "read a failure's typed fields (failureOf, CallFailed.reason) instead of matching its message.";
+const coreRules = [
+  { selector: "CallExpression[callee.property.name=/^(test|exec)$/][arguments.0.property.name='message']", message: failureMessage },
+  { selector: "CallExpression[callee.object.property.name='message'][callee.property.name=/^(match|matchAll|search)$/]", message: failureMessage },
+  ...pluginCasts,
+];
 
 const viMock = (arg) =>
   `CallExpression[callee.object.name='vi'][callee.property.name=/^(mock|doMock)$/][${arg}=/^\\.\\.?\\//]`;
@@ -81,18 +89,28 @@ export default [
     // cast what a plugin hands it (rule 001).
     files: ["apps/api/src/**/*.ts"],
     ignores: ["**/*.test.ts"],
+    rules: { "no-restricted-syntax": ["error", ...coreRules] },
+  },
+  {
+    // The entry points and the composition root build every module in one function: no module-level
+    // slot filled after start, and no port called optionally to skip work (ADR 0027 rules 001 and 003).
+    // A later no-restricted-syntax replaces the one above, so core's rules are repeated here.
+    files: ["apps/api/src/main.ts", "apps/api/src/worker.ts", "apps/api/src/compose/**/*.ts"],
+    ignores: ["**/*.test.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
+        ...coreRules,
+        ...["Program > VariableDeclaration[kind='let']", "Program > ExportNamedDeclaration > VariableDeclaration[kind='let']"].map((selector) => ({
+          selector,
+          message: "module-slot: build it inside compose or createApp, and pass it on; a module-level let is filled after start (ADR 0027 rule 001).",
+        })),
         {
-          selector: "CallExpression[callee.property.name=/^(test|exec)$/][arguments.0.property.name='message']",
-          message: "read a failure's typed fields (failureOf, CallFailed.reason) instead of matching its message.",
+          // opts.media?.(), and opts.media?.send()
+          selector:
+            ":matches(CallExpression[optional=true][callee.type='MemberExpression'][callee.object.name='opts'], CallExpression[callee.optional=true][callee.object.type='MemberExpression'][callee.object.object.name='opts'])",
+          message: "optional-port: make the port required, so composition fails when it is missing instead of the handler skipping its work (ADR 0027 rule 003).",
         },
-        {
-          selector: "CallExpression[callee.object.property.name='message'][callee.property.name=/^(match|matchAll|search)$/]",
-          message: "read a failure's typed fields (failureOf, CallFailed.reason) instead of matching its message.",
-        },
-        ...pluginCasts,
       ],
     },
   },

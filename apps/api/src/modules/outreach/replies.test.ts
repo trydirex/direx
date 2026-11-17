@@ -808,6 +808,7 @@ test("a reply that isn't an opt-out opens one reply Item, labelled and owned by 
   ]);
 
   labelSays = { label: "question", quote: "does it work with HubSpot" };
+  clock.at = new Date(clock.at.getTime() + 1);
   await inThread(to, messageId, "Also, does it work with HubSpot?");
   const second = (await signals(to)).find((x) => x.id !== first.id)!;
   await replies.decide(W, second.id);
@@ -878,4 +879,57 @@ test("an alert goes to each owner still a member, and to nobody when no mailer i
   expect(sent).toEqual([{ to: "a@acme.test", subject: "s", text: "t" }, { to: "b@acme.test", subject: "s", text: "t" }]);
   await mailMembers(undefined, emailOf)(W, ["a"], { subject: "s", text: "t" });
   expect(sent).toHaveLength(2);
+});
+
+test("settling an older reply preserves a later pending reply for its own decision and Item", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  await inThread(to, "", "First question?");
+  const [first] = await signals(to);
+  await replies.decide(W, first.id);
+  const [item] = await replyItems(personId);
+  clock.at = new Date(clock.at.getTime() + 1);
+  await inThread(to, "", "Another question?");
+  const second = (await signals(to)).find((s) => s.id !== first.id)!;
+  expect((await choose(item.id, "no_answer")).status).toBe(200);
+  expect((await signals(to)).find((s) => s.id === first.id)!.text).toBeNull();
+  expect((await signals(to)).find((s) => s.id === second.id)!.text).toBe("Another question?");
+  await replies.decide(W, second.id);
+  expect((await replyItems(personId)).find((i) => i.state === "needs_approval")!.payload).toMatchObject({ signalId: second.id });
+  modelSays = "refuse";
+});
+
+test("a delayed older decision and retries cannot replace the newer reply Item, even after settlement", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  await inThread(to, "", "First question?");
+  const [first] = await signals(to);
+  clock.at = new Date(clock.at.getTime() + 1);
+  await inThread(to, "", "Latest question?");
+  const second = (await signals(to)).find((s) => s.id !== first.id)!;
+  await replies.decide(W, second.id);
+  await replies.decide(W, first.id);
+  await Promise.all([replies.decide(W, first.id), replies.decide(W, second.id)]);
+  const all = await replyItems(personId);
+  expect(all).toHaveLength(1);
+  expect(all[0]).toMatchObject({ state: "needs_approval", payload: { signalId: second.id } });
+  expect((await choose(all[0].id, "answered_elsewhere")).status).toBe(200);
+  await replies.decide(W, first.id);
+  expect(await replyItems(personId)).toHaveLength(1);
+  modelSays = "refuse";
+});
+
+test("concurrent decisions use UUID order for equal timestamps and leave one newest Item", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  await inThread(to, "", "A question?");
+  await inThread(to, "", "Another question?");
+  const ordered = await q("select id from reply_signals where person_id = $1 order by received_at, id", [personId]);
+  await Promise.all(ordered.map((s) => replies.decide(W, s.id)));
+  const waiting = (await replyItems(personId)).filter((i) => i.state === "needs_approval");
+  expect(waiting).toHaveLength(1);
+  expect(waiting[0].payload).toMatchObject({ signalId: ordered.at(-1)!.id });
+  await replies.decide(W, ordered[0].id);
+  expect((await replyItems(personId)).filter((i) => i.state === "needs_approval")).toHaveLength(1);
+  modelSays = "refuse";
 });

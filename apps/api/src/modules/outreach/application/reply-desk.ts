@@ -4,7 +4,7 @@
 // drops the thread's reply text. Reply text is untrusted and is never logged.
 import { z } from "zod";
 import type { ItemKind, Items } from "../../items";
-import { clearThreadText, liveApprover, mailboxOwner, sentSubject, threadWasInterested, workspaceOwners } from "../adapters/desk-repo";
+import { clearThreadText, liveApprover, mailboxOwner, mayOpenReply, sentSubject, threadWasInterested, workspaceOwners } from "../adapters/desk-repo";
 import { inWorkspace, type Signal } from "../adapters/repo";
 import { REPLY_LABELS } from "../domain/reply-label";
 import type { Generate } from "./optout-model";
@@ -80,6 +80,8 @@ export function createReplyDesk(deps: { items: () => Pick<Items, "createItem">; 
         actor: { system: "outreach" },
         details: { title: `${s.senderEmail} ${LABEL_WORDS[reading.label]}`, workArea: "outreach", channel: "email", groupKey, warnings: [] },
       });
+      // An older reply whose thread already shows a newer one opens nothing and tells nobody.
+      if (!made.ok && made.reason === "superseded") return;
       if (!made.ok) throw new Error(`outreach: ${made.reason}: the reply kind isn't registered`);
       // After the Item exists, and never failing the job: a retry would find the thread already told and stay quiet.
       if (reading.label === "interested" && !told) {
@@ -95,12 +97,13 @@ export function replyDeskKind(): Record<string, ItemKind> {
   return {
     [REPLY_KIND]: {
       permission: "item.approve",
+      canCreate: (tx, payload) => mayOpenReply(tx, ReplyPayload.parse(payload).signalId),
       bulk: false,
       dismiss: false,
       async apply(tx, item, _actor, choice) {
         if (!SETTLE_CHOICES.includes(choice as (typeof SETTLE_CHOICES)[number])) return { ok: false, reason: "choice_required" };
         const p = ReplyPayload.parse(item.payload);
-        await clearThreadText(tx, p.personId, p.actionId);
+        await clearThreadText(tx, p.personId, p.actionId, p.signalId);
         return { ok: true };
       },
     },

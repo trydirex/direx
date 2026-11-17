@@ -9,8 +9,11 @@ export type MemberRefusal = MembershipRefusal | "not_member";
 
 export const listMembers = (workspaceId: string) => repo.inWorkspace(workspaceId, repo.listMembers);
 
-async function change(m: Member, userId: string, to: Role | null, now: Date): Promise<MemberRefusal | null> {
-  return repo.inWorkspace(m.workspaceId, async (tx) => {
+/** After a role change or removal commits: whose, from which role, and to which (null when removed). */
+export type OnMemberChange = (workspaceId: string, userId: string, from: Role, to: Role | null) => Promise<unknown>;
+
+async function change(m: Member, userId: string, to: Role | null, now: Date, onChange?: OnMemberChange): Promise<MemberRefusal | null> {
+  const r = await repo.inWorkspace(m.workspaceId, async (tx): Promise<MemberRefusal | { from: Role } | null> => {
     await repo.lockWorkspace(tx);
     const actor = await repo.findMember(tx, m.userId);
     const target = await repo.findMember(tx, userId);
@@ -22,12 +25,20 @@ async function change(m: Member, userId: string, to: Role | null, now: Date): Pr
     const e = { subjectUserId: userId, fromRole: target.role, stepUp: true, actorUserId: m.userId };
     if (to) await repo.setRole(tx, m.workspaceId, userId, to, { ...e, event: "member.role_changed", toRole: to }, now);
     else await repo.removeMember(tx, m.workspaceId, userId, { ...e, event: "member.removed" }, now);
-    return null;
+    return { from: target.role };
   });
+  if (r === null || typeof r === "string") return r;
+  // The change has committed, so a follow-up that fails is logged, never answered as a failed change.
+  try {
+    await onChange?.(m.workspaceId, userId, r.from, to);
+  } catch (e) {
+    console.error("after a membership change", e);
+  }
+  return null;
 }
 
-export const changeRole = (m: Member, userId: string, to: Role, now = new Date()) => change(m, userId, to, now);
-export const removeMember = (m: Member, userId: string, now = new Date()) => change(m, userId, null, now);
+export const changeRole = (m: Member, userId: string, to: Role, onChange?: OnMemberChange, now = new Date()) => change(m, userId, to, now, onChange);
+export const removeMember = (m: Member, userId: string, onChange?: OnMemberChange, now = new Date()) => change(m, userId, null, now, onChange);
 
 /** What else ends with the Workspace, in the deleting transaction: the ledger cancels its open Actions. */
 export type OnDelete = (tx: repo.WorkspaceTx) => Promise<unknown>;

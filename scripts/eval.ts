@@ -16,7 +16,7 @@
 import { parseArgs } from "node:util";
 import { evalSkill, type Provider, SKILLS } from "../test/skills/run";
 
-const USAGE = "usage: bun run eval --agent brand_reader [--provider claude_code] | --purpose claim_check|injection_check|hostile_pages|optout_detect|seo_brief|clip_pick|lesson_check|voice_check|plan_draft|ask|person_skeleton|competitor_change|competitor_brief|competitor_post|result_why|names_read|terms_draft|strategy_draft|campaign_draft|social_draft --provider anthropic|claude_code [--runs N] [--model M, claim_check, injection_check, competitor_change, competitor_brief, competitor_post, result_why, names_read, terms_draft, strategy_draft, campaign_draft and social_draft only] | --skill NAME --provider claude_code|codex [--runs N] [--model M] [--case ID]";
+const USAGE = "usage: bun run eval --agent brand_reader [--provider claude_code] | --purpose claim_check|injection_check|hostile_pages|optout_detect|reply_label|seo_brief|clip_pick|lesson_check|voice_check|plan_draft|ask|person_skeleton|competitor_change|competitor_brief|competitor_post|result_why|names_read|terms_draft|strategy_draft|campaign_draft|social_draft --provider anthropic|claude_code [--runs N] [--model M, reply_label, claim_check, injection_check, competitor_change, competitor_brief, competitor_post, result_why, names_read, terms_draft, strategy_draft, campaign_draft and social_draft only] | --skill NAME --provider claude_code|codex [--runs N] [--model M] [--case ID]";
 const { values } = parseArgs({ options: { agent: { type: "string" }, purpose: { type: "string" }, provider: { type: "string" }, runs: { type: "string" }, model: { type: "string" }, skill: { type: "string" }, case: { type: "string" } } });
 
 if (values.skill) {
@@ -34,15 +34,16 @@ if (values.agent === "brand_reader" && !values.purpose) {
   if (!process.env[needs]) throw new Error(`${needs} is not set`);
   vitest("apps/api/src/modules/agents/evals/real.test.ts", { DIREX_EVAL_PURPOSE: "brand_extract", DIREX_EVAL_PROVIDER: values.provider ?? "anthropic" });
 }
-const purposes = ["claim_check", "injection_check", "hostile_pages", "optout_detect", "seo_brief", "clip_pick", "lesson_check", "voice_check", "plan_draft", "ask", "person_skeleton", "competitor_change", "competitor_brief", "competitor_post", "result_why", "names_read", "terms_draft", "strategy_draft", "campaign_draft", "social_draft"];
+const purposes = ["claim_check", "injection_check", "hostile_pages", "optout_detect", "reply_label", "seo_brief", "clip_pick", "lesson_check", "voice_check", "plan_draft", "ask", "person_skeleton", "competitor_change", "competitor_brief", "competitor_post", "result_why", "names_read", "terms_draft", "strategy_draft", "campaign_draft", "social_draft"];
 const providers = { anthropic: "DIREX_EVAL_ANTHROPIC_KEY", claude_code: "DIREX_EVAL_CLAUDE_CODE_TOKEN" } as const;
 if (values.agent || !values.purpose || !purposes.includes(values.purpose) || !values.provider || !(values.provider in providers)) throw new Error(USAGE);
 const needs = providers[values.provider as keyof typeof providers];
 if (!process.env[needs]) throw new Error(`${needs} is not set`);
-if (values.model && values.purpose !== "claim_check" && values.purpose !== "injection_check" && values.purpose !== "competitor_change" && values.purpose !== "competitor_brief" && values.purpose !== "competitor_post" && values.purpose !== "result_why" && values.purpose !== "names_read" && values.purpose !== "terms_draft" && values.purpose !== "strategy_draft" && values.purpose !== "campaign_draft" && values.purpose !== "social_draft") throw new Error(USAGE);
+if (values.model && values.purpose !== "reply_label" && values.purpose !== "claim_check" && values.purpose !== "injection_check" && values.purpose !== "competitor_change" && values.purpose !== "competitor_brief" && values.purpose !== "competitor_post" && values.purpose !== "result_why" && values.purpose !== "names_read" && values.purpose !== "terms_draft" && values.purpose !== "strategy_draft" && values.purpose !== "campaign_draft" && values.purpose !== "social_draft") throw new Error(USAGE);
 const FILES: Record<string, string> = {
   hostile_pages: "apps/api/src/modules/agents/hostile.real.test.ts",
   optout_detect: "apps/api/src/modules/outreach/optout.real.test.ts",
+  reply_label: "apps/api/src/modules/outreach/reply-label.real.test.ts",
   seo_brief: "apps/api/src/modules/agents/page-brief.real.test.ts",
   clip_pick: "apps/api/src/modules/agents/clip-picker.real.test.ts",
   lesson_check: "apps/api/src/modules/lessons/check.real.test.ts",

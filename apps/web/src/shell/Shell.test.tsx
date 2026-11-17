@@ -5,7 +5,8 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { withQueries, openDialog } from "../testing";
-import { Shell } from "./Shell";
+import { Page } from "../components/layout";
+import { SetupFrame, Shell } from "./Shell";
 import type { MyWorkspace } from "./session";
 
 const W = "00000000-0000-4000-8000-0000000000aa";
@@ -130,4 +131,13 @@ test("the menu links the deleted Workspaces only while one this person deleted a
     cleanup();
     vi.restoreAllMocks();
   }
+});
+
+test("setup's frame leaves the one main landmark to the page inside it", () => {
+  render(
+    <SetupFrame>
+      <Page title="Set up Acme">Steps</Page>
+    </SetupFrame>,
+  );
+  expect(screen.getAllByRole("main")).toHaveLength(1);
 });

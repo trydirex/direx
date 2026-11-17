@@ -60,9 +60,10 @@ const PINNED: Dest[] = [
 export function SetupFrame(p: { children: ReactNode }) {
   return (
     <AstryxProvider>
-      <main id="content" className="mx-auto min-h-screen w-full max-w-form p-4 md:py-10">
+      {/* A div, as in the shell: the page inside brings its own main landmark. */}
+      <div id="content" className="mx-auto min-h-screen w-full max-w-form p-4 md:py-10">
         {p.children}
-      </main>
+      </div>
       <Toaster />
     </AstryxProvider>
   );

@@ -2,7 +2,7 @@
 import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
 import { actionEvents, actions, credentials, items, personKeys } from "@direx/db/schema";
 import { agentRuns } from "@direx/db/schema-agents";
-import { campaignActions, campaignDms, campaignPeople, campaignPlanChanges, campaigns, campaignSettlements, campaignStepOutputs, campaignSteps, clipStepRuns } from "@direx/db/schema-campaigns";
+import { campaignActions, campaignDms, campaignPeople, campaignPlanChanges, campaigns, campaignSettlements, campaignStepMailboxes, campaignStepOutputs, campaignSteps, clipStepRuns } from "@direx/db/schema-campaigns";
 import { replySignals } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
 import { socialPosts } from "@direx/db/schema-social";
@@ -168,7 +168,7 @@ export function allPeople(tx: CampaignsTx, campaignId: string) {
 /** A step's Actions and their Items. A step key of null means every step of the campaign. */
 export function activeActions(tx: CampaignsTx, campaignId: string, stepKey: string | null, personId?: string) {
   return tx
-    .select({ personId: campaignActions.personId, stepKey: campaignActions.stepKey, actionId: campaignActions.actionId, itemId: items.id, plannedAt: items.plannedAt, spec: actions.spec })
+    .select({ personId: campaignActions.personId, stepKey: campaignActions.stepKey, actionId: campaignActions.actionId, itemId: items.id, plannedAt: items.plannedAt, spec: actions.spec, credentialId: actions.credentialId })
     .from(campaignActions)
     .innerJoin(items, eq(items.actionId, campaignActions.actionId))
     .innerJoin(actions, eq(actions.id, campaignActions.actionId))
@@ -525,6 +525,23 @@ export async function saveStep(tx: CampaignsTx, a: { workspaceId: string; campai
     .insert(campaignSteps)
     .values({ workspaceId: a.workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, ...set })
     .onConflictDoUpdate({ target: [campaignSteps.workspaceId, campaignSteps.campaignId, campaignSteps.stepKey], set });
+}
+
+/** The Mailboxes a step's emails are shared across, in the order they were added. */
+export async function stepMailboxes(tx: CampaignsTx, campaignId: string, stepKey: string): Promise<string[]> {
+  const rows = await tx
+    .select({ id: campaignStepMailboxes.credentialId })
+    .from(campaignStepMailboxes)
+    .where(and(eq(campaignStepMailboxes.campaignId, campaignId), eq(campaignStepMailboxes.stepKey, stepKey)))
+    .orderBy(asc(campaignStepMailboxes.addedAt), asc(campaignStepMailboxes.credentialId));
+  return rows.map((r) => r.id);
+}
+
+/** Sets a step's Mailboxes in the order given; one already on the step keeps its place. */
+export async function saveStepMailboxes(tx: CampaignsTx, a: { workspaceId: string; campaignId: string; stepKey: string; ids: readonly string[]; now: Date }) {
+  const mine = and(eq(campaignStepMailboxes.campaignId, a.campaignId), eq(campaignStepMailboxes.stepKey, a.stepKey));
+  await tx.delete(campaignStepMailboxes).where(a.ids.length ? and(mine, notInArray(campaignStepMailboxes.credentialId, [...a.ids])) : mine);
+  if (a.ids.length) await tx.insert(campaignStepMailboxes).values(a.ids.map((credentialId, i) => ({ workspaceId: a.workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, credentialId, addedAt: new Date(a.now.getTime() + i) }))).onConflictDoNothing();
 }
 
 /** An SEO brief step's page and search, and the Brief run Make brief just started. */

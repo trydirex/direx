@@ -615,6 +615,10 @@
     "0149_mailbox_pause.sql": {
       "sha256": "ede909ae1e585a52a3996ce48f556344923995043831c168002e656ac03fdc8b",
       "description": "Adds a Mailbox's pause to credentials: paused_at, pause_reason (bounces or person), paused_by and resumed_at, with a check that a pause always has its reason."
+    },
+    "0150_step_mailboxes.sql": {
+      "sha256": "bc923d5c60872454543e2b16b9adcc5ba665f638b236d8a7bee239ce1b49e5d8",
+      "description": "Adds campaign_step_mailboxes, the Mailboxes an email step's emails are shared across, with forced RLS, and copies each step's one Mailbox into it."
     }
   }
 }

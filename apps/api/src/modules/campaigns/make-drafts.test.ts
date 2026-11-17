@@ -884,3 +884,32 @@ test("a template a run wrote carries a later warning into the drafts made from i
   expect(await said(kept)).toContain("Written with a lesson that was later withdrawn.");
   expect(await said(edited)).not.toContain("Written with a lesson that was later withdrawn.");
 });
+
+test("a step shares its drafts across its Mailboxes, a Person's next step keeps their sender, and a save keeps each draft's", async () => {
+  // Two fresh Mailboxes: the file's own is already busy that day, and the earliest free time wins.
+  const [box, other] = [await newCredential(`${crypto.randomUUID()}@acme.test`, "google"), await newCredential(`${crypto.randomUUID()}@acme.test`, "google")];
+  const id = await ready(box);
+  const setup = { type: "email", touchClass: "cold", audience: "everyone" } as const;
+  expect(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialId: box, mailboxCredentialIds: [other] })).toEqual({ ok: false, reason: "mailbox_twice" });
+  expect(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [other, other] })).toEqual({ ok: false, reason: "duplicate_mailbox" });
+  ok(await campaigns.setupStep(W, id, "first", { ...setup, mailboxCredentialIds: [box, other] }));
+  const { revision } = await write(id);
+  const people = await addPeople(id, [person(), person(), person(), person()]);
+  const senderOf = async (itemId: string) => (await q("select a.credential_id from actions a join items i on i.action_id = a.id where i.id = $1", [itemId]))[0].credential_id as string;
+  const first = new Map<string, string>();
+  for (const r of await made(id)) first.set(r.personId, await senderOf(r.itemId!));
+  // Two each, taking turns.
+  expect([...first.values()].filter((m) => m === box)).toHaveLength(2);
+  expect([...first.values()].filter((m) => m === other)).toHaveLength(2);
+
+  // A new text revises every draft under the Mailbox it was written with.
+  expect(ok(await campaigns.saveTemplate(W, id, "first", { revision, subject: "Hey {{firstName}}", text: "Hi {{firstName}}, from {{senderName}}.", userId: owner })).revised).toBe(4);
+  for (const r of await made(id)) expect(await senderOf(r.itemId!)).toBe(first.get(r.personId));
+
+  // The follow-up lists the Mailboxes the other way round, and each Person still hears from the same one.
+  ok(await campaigns.setupStep(W, id, "second", { ...setup, mailboxCredentialIds: [other, box] }));
+  ok(await campaigns.saveTemplate(W, id, "second", { revision: 0, ...TEMPLATE, userId: owner }));
+  const second = ok(await campaigns.makeDrafts(W, id, "second", { timeZone: "UTC", userId: owner })).results;
+  expect(second.map((r) => r.personId).sort()).toEqual([...people].sort());
+  for (const r of second) expect(await senderOf(r.itemId!)).toBe(first.get(r.personId));
+});

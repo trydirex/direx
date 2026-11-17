@@ -151,6 +151,7 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "public.campaign_people": audit,
   "public.campaign_plan_changes": audit,
   "public.campaign_settlements": audit,
+  "public.campaign_step_mailboxes": auditDeletable,
   "public.campaign_step_outputs": audit,
   "public.campaign_steps": audit,
   "public.campaigns": audit,

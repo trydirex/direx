@@ -121,6 +121,24 @@ export const campaignSteps = pgTable(
   ],
 );
 
+// The Mailboxes an email step's emails are shared across. Each email keeps the Mailbox it was written
+// with; taking one off the step leaves its drafts on it. Replaces campaign_steps.mailbox_credential_id.
+export const campaignStepMailboxes = pgTable(
+  "campaign_step_mailboxes",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    campaignId: uuid("campaign_id").notNull(),
+    stepKey: text("step_key").notNull(),
+    credentialId: uuid("credential_id").notNull(),
+    addedAt: tz("added_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "campaign_step_mailboxes_pkey", columns: [t.workspaceId, t.campaignId, t.stepKey, t.credentialId] }),
+    foreignKey({ name: "campaign_step_mailboxes_step_fk", columns: [t.workspaceId, t.campaignId, t.stepKey], foreignColumns: [campaignSteps.workspaceId, campaignSteps.campaignId, campaignSteps.stepKey] }),
+    foreignKey({ name: "campaign_step_mailboxes_credential_fk", columns: [t.workspaceId, t.credentialId], foreignColumns: [credentials.workspaceId, credentials.id] }),
+  ],
+);
+
 // A clips step's recordings, one row per press of "Make clips": the recording, the accounts and the
 // first post time, and the clip run making its clips. Kept when the step changes type; never deleted.
 export const clipStepRuns = pgTable(

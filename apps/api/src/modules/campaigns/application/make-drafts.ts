@@ -7,12 +7,11 @@ import type { Items } from "../../items";
 import type { Outreach } from "../../outreach";
 import type { Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activeActions, allPeople, fillTemplate, inWorkspace, lockStep, readCampaign, stepsOf, stillWaiting, type CampaignsTx, type StepRow } from "../adapters/repo";
+import { activeActions, allPeople, fillTemplate, inWorkspace, lockStep, readCampaign, stepMailboxes, stepsOf, stillWaiting, type CampaignsTx } from "../adapters/repo";
 import { leftOut, type AudienceStep, type LeftOut, type PersonStatus } from "../domain/audience";
 import { merge, missingFields, stepFields, unknownFields } from "../domain/merge";
-import { planMailbox } from "../../schedule";
 import { reviewTemplate, type OnTemplateSaved } from "./drafting";
-import { placeDraft, reviseDraft } from "./place-draft";
+import { placeDraft, plannedSenders, reviseDraft } from "./place-draft";
 import { stepOutputEntries, templateEntries } from "./snapshot";
 import { stepUrls } from "./step-links";
 
@@ -32,9 +31,10 @@ async function readyStep(tx: CampaignsTx, campaignId: string, stepKey: string) {
   const step = (await stepsOf(tx, campaignId)).find((s) => s.stepKey === stepKey);
   if (step?.type !== "email") return { ok: false, reason: "not_an_email_step" } as const;
   if (step.cancelledAt) return { ok: false, reason: "step_cancelled" } as const;
-  if (!step.mailboxCredentialId) return { ok: false, reason: "mailbox_required" } as const;
+  const mailboxes = await stepMailboxes(tx, campaignId, stepKey);
+  if (!mailboxes.length) return { ok: false, reason: "mailbox_required" } as const;
   if (!step.template) return { ok: false, reason: "no_template" } as const;
-  return { ok: true, campaign, step: step as StepRow & { mailboxCredentialId: string }, template: step.template as TemplateBody } as const;
+  return { ok: true, campaign, step, mailboxes, template: step.template as TemplateBody } as const;
 }
 
 export function makeDrafting(d: Deps) {
@@ -105,24 +105,26 @@ export function makeDrafting(d: Deps) {
       const decided = await decide(workspaceId, campaignId, stepKey);
       if (!decided.ok) return decided;
       const { read, on, title, results, going } = decided;
-      const times = await planMailbox(workspaceId, read.step.mailboxCredentialId, { on, count: going.length, notBefore: d.now(), now: d.now() });
-      for (const [i, { person, subject, text }] of going.entries()) {
+      const senders = await plannedSenders(workspaceId, campaignId, stepKey, going.map((g) => g.person.personId), { on, now: d.now() });
+      for (const { person, subject, text } of going) {
+        const sender = senders.get(person.personId);
         const base = { personId: person.personId, email: person.email };
         const placed = await placeDraft(
           d,
           { workspaceId, campaignId, stepKey, personId: person.personId, userId: a.userId },
           {
-            credentialId: read.step.mailboxCredentialId,
+            // With no time left in the horizon, the email still names a Mailbox and waits unplaced.
+            credentialId: sender?.credentialId ?? read.mailboxes[0]!,
             touchClass: touch(read.step.touchClass),
             subject,
             text,
-            plannedAt: times[i],
+            plannedAt: sender?.at,
             groupLabel: title,
             warnings: read.template.warnings,
             snapshot: [...templateEntries(campaignId, stepKey, read.step.templateRevision, read.template.citations), ...outputEntries(campaignId, `${read.template.subject}\n${read.template.text}`, read.used)],
             submit: true,
             // A working day before it goes.
-            decideBy: decideBy({ firstSlot: times[i]!, draftingDays: 0, timeZone: a.timeZone }),
+            decideBy: sender && decideBy({ firstSlot: sender.at, draftingDays: 0, timeZone: a.timeZone }),
           },
         );
         if (!placed.ok) {
@@ -159,11 +161,12 @@ export function makeDrafting(d: Deps) {
       });
       if (!saved) return { ok: false, reason: "target_changed" } as const;
 
-      const mailbox = saved.mailboxCredentialId;
       const senderName = before.links.length ? await d.outreach().senderName(workspaceId) : null;
       let revised = 0;
       const failed: { personId: string; reason: string }[] = [];
-      for (const link of mailbox ? before.links : []) {
+      // Each draft keeps the Mailbox it was written with; the step's list may have changed since.
+      for (const link of before.links) {
+        if (!link.credentialId) continue;
         const person = before.people.find((p) => p.personId === link.personId);
         const values = { firstName: person?.firstName ?? null, company: person?.company ?? null, senderName };
         const subject = merge(a.subject, values, before.urls);
@@ -175,7 +178,7 @@ export function makeDrafting(d: Deps) {
         const r = await reviseDraft(
           d,
           { workspaceId, campaignId, stepKey, personId: link.personId, userId: a.userId, itemId: link.itemId },
-          { credentialId: mailbox!, touchClass: touch(saved.touchClass), subject: subject.text, text: text.text, plannedAt: link.plannedAt ?? undefined, warnings: body.warnings, snapshot: [...templateEntries(campaignId, stepKey, a.revision + 1, body.citations), ...outputEntries(campaignId, `${a.subject}\n${a.text}`, before.used)], submit: false },
+          { credentialId: link.credentialId, touchClass: touch(saved.touchClass), subject: subject.text, text: text.text, plannedAt: link.plannedAt ?? undefined, warnings: body.warnings, snapshot: [...templateEntries(campaignId, stepKey, a.revision + 1, body.citations), ...outputEntries(campaignId, `${a.subject}\n${a.text}`, before.used)], submit: false },
         );
         if (r.ok) revised++;
         else failed.push({ personId: link.personId, reason: r.reason });

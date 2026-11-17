@@ -4,7 +4,7 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activityRows, allPeople, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { activityRows, allPeople, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
 import { timeZoneOf } from "../../schedule";
@@ -39,6 +39,11 @@ export type CampaignStep = Pick<StepRow, "type" | "touchClass" | "mailboxCredent
   cancelled: boolean;
   waived: boolean;
 };
+/**
+ * A step's setup as a person saves it. The Mailboxes come as a list; one Mailbox alone is still taken
+ * until the web picks several. The step's first-Mailbox column follows the list until it is dropped.
+ */
+export type StepSetupInput = Omit<StepSetup, "mailboxCredentialId"> & { mailboxCredentialId?: string | null; mailboxCredentialIds?: string[] };
 
 const setupOf = (row: StepRow | undefined) => ({
   type: row?.type ?? "manual",
@@ -300,7 +305,11 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
       );
     },
 
-    async setupStep(workspaceId: string, campaignId: string, stepKey: string, setup: StepSetup) {
+    async setupStep(workspaceId: string, campaignId: string, stepKey: string, input: StepSetupInput) {
+      const { mailboxCredentialIds, mailboxCredentialId, ...rest } = input;
+      if (mailboxCredentialIds && mailboxCredentialId) return { ok: false, reason: "mailbox_twice" } as const;
+      const ids = mailboxCredentialIds ?? (mailboxCredentialId ? [mailboxCredentialId] : []);
+      let setup: StepSetup = { ...rest, mailboxCredentialId: ids[0] ?? null };
       const approved = await inWorkspace(workspaceId, (tx) => requireApproved(tx, campaignId));
       if (!approved.ok) return approved;
       const row = approved.campaign;
@@ -310,10 +319,10 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
       if ((setup.type === "post" || setup.type === "clips" || setup.type === "seo_brief") !== (setup.touchClass === null)) return { ok: false, reason: "touch_class_mismatch" } as const;
       // A DM goes to one network and is sent by hand, cold, from no mailbox.
       const dmChannel = setup.type === "dm" ? (setup.dmChannel ?? null) : null;
-      if (setup.type === "dm" && (!dmChannel || setup.touchClass !== "cold" || setup.mailboxCredentialId)) return { ok: false, reason: "dm_setup" } as const;
+      if (setup.type === "dm" && (!dmChannel || setup.touchClass !== "cold" || ids.length)) return { ok: false, reason: "dm_setup" } as const;
       setup = { ...setup, dmChannel };
-      const mailbox = setup.mailboxCredentialId;
-      if (mailbox) {
+      if (new Set(ids).size !== ids.length) return { ok: false, reason: "duplicate_mailbox" } as const;
+      for (const mailbox of ids) {
         const refused = await inWorkspace(workspaceId, async (tx) => {
           if (!(await credentialLabel(tx, mailbox))) return "mailbox_not_found" as const;
           return (await isConnectedMailbox(tx, mailbox)) ? null : ("not_a_mailbox" as const);
@@ -329,6 +338,7 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
         const at = now();
         if (setup.dependsOnStepKey) await ensureStep(tx, { workspaceId, campaignId, stepKey: setup.dependsOnStepKey, now: at });
         await saveStep(tx, { workspaceId, campaignId, stepKey, setup, now: at });
+        await saveStepMailboxes(tx, { workspaceId, campaignId, stepKey, ids, now: at });
         // A new email step gets a mode: the one its Campaign was answered with before modes moved to
         // steps, or the default for where it sits in the plan. A person changes it until it has a draft.
         const rows = await stepsOf(tx, campaignId);

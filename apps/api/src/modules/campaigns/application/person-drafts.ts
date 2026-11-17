@@ -12,7 +12,7 @@ import type { Outreach } from "../../outreach";
 import { sharedMailDomain } from "../../people";
 import type { Plans } from "../../plans";
 import type { PersonOutput, ReaderOutput } from "../definitions/drafter";
-import { activeActions, allPeople, inWorkspace, linkOfItem, proposalOfItem, readCampaign, setWriterNotes as setWriterNotesRow, stepsOf, stillWaiting } from "../adapters/repo";
+import { activeActions, allPeople, inWorkspace, linkOfItem, proposalOfItem, readCampaign, setWriterNotes as setWriterNotesRow, stepMailboxes, stepsOf, stillWaiting } from "../adapters/repo";
 import { leftOut, type AudienceStep, type LeftOut, type PersonStatus } from "../domain/audience";
 import { foreignLinks } from "../domain/links";
 import { replyPrefix } from "../domain/subject";
@@ -21,11 +21,10 @@ import { cleanListValues } from "../domain/list-values";
 import { fieldsIn } from "../domain/merge";
 import { carriesAddress, keptDetails } from "../domain/quotes";
 import { editDistance, editPhrases, skeletonOf, spansAgainst } from "../domain/skeleton";
-import { planMailbox } from "../../schedule";
 import { websiteFor } from "../domain/website";
 import { checkRecord, checkWarnings, modelChecks, type Generate } from "./draft-checks";
 import { briefFor, reviewTemplate, type FactReads, type StartDraft, type StepDraftInput } from "./drafting";
-import { placeDraft, reviseDraft } from "./place-draft";
+import { placeDraft, plannedSenders, reviseDraft } from "./place-draft";
 import { factEntries, stepOutputEntries } from "./snapshot";
 import { stepUrls } from "./step-links";
 
@@ -79,14 +78,14 @@ async function decide(workspaceId: string, campaignId: string, stepKey: string, 
   const read = await inWorkspace(workspaceId, async (tx) => {
     const campaign = await readCampaign(tx, campaignId);
     if (!campaign) return null;
-    return { campaign, step: (await stepsOf(tx, campaignId)).find((s) => s.stepKey === stepKey), people: await allPeople(tx, campaignId), existing: await activeActions(tx, campaignId, stepKey), waiting: await stillWaiting(tx, campaignId) };
+    return { campaign, step: (await stepsOf(tx, campaignId)).find((s) => s.stepKey === stepKey), mailboxes: await stepMailboxes(tx, campaignId, stepKey), people: await allPeople(tx, campaignId), existing: await activeActions(tx, campaignId, stepKey), waiting: await stillWaiting(tx, campaignId) };
   });
   if (!read) return { ok: false, reason: "not_found" } as const;
   const step = read.step;
   if (step?.type === "email" && step.draftingMode !== "per_person") return { ok: false, reason: "wrong_mode" } as const;
   if (step?.type !== "email") return { ok: false, reason: "not_an_email_step" } as const;
   if (step.cancelledAt) return { ok: false, reason: "step_cancelled" } as const;
-  if (!step.mailboxCredentialId) return { ok: false, reason: "mailbox_required" } as const;
+  if (!read.mailboxes.length) return { ok: false, reason: "mailbox_required" } as const;
   // A step waiting on another's output starts no run until that output exists.
   const links = await inWorkspace(workspaceId, (tx) => stepUrls(tx, { workspaceId, campaignId, step, at: d.now() }));
   if (!links.ok) return links;
@@ -225,7 +224,8 @@ export function personDrafting(d: { plans: Plans; facts: FactReads; items: () =>
         // The page this step waits on is Direx's own line, not a link from nowhere.
         const urls = step ? await stepUrls(tx, { workspaceId, campaignId, step, at: d.now() }) : null;
         const own = urls?.ok ? Object.values(urls.urls) : [];
-        return step?.mailboxCredentialId && link ? { campaign, step, mailbox: step.mailboxCredentialId, link, own, used: urls?.ok ? urls.used : null } : null;
+        // An edit keeps the Mailbox the draft was written with.
+        return step && link?.credentialId ? { campaign, step, mailbox: link.credentialId, link, own, used: urls?.ok ? urls.used : null } : null;
       });
       if (!read) return { ok: false, reason: "not_found" } as const;
       if (fieldsIn(`${a.subject}\n${a.text}`).length) return { ok: false, reason: "unknown_merge_field" } as const;
@@ -422,15 +422,16 @@ export async function writerSink(workspaceId: string, proposal: Parameters<Sink>
     const step = (await stepsOf(tx, target.id!)).find((s) => s.stepKey === target.stepKey);
     const person = (await allPeople(tx, target.id!)).find((p) => p.personId === target.personId);
     const existing = await activeActions(tx, target.id!, target.stepKey, target.personId);
+    const mailboxes = await stepMailboxes(tx, target.id!, target.stepKey);
     const links = step ? await stepUrls(tx, { workspaceId, campaignId: target.id!, step, at: d.now() }) : null;
-    return { step, person, existing, links };
+    return { step, person, existing, mailboxes, links };
   });
   if (target.redraft) {
     // A rewrite lands only on the email it was asked for, as it stood: a person's edit since wins.
     const now = await d.items().view(workspaceId, target.redraft);
     if (read.existing[0]?.itemId !== target.redraft || now?.revision !== target.draftRevision) return { ok: false, code: "changed_since" };
   } else if (read.existing[0]) return { ok: true, itemId: read.existing[0].itemId };
-  if (!read.step?.mailboxCredentialId) return { ok: false, code: "mailbox_required" };
+  if (!read.step || !read.mailboxes.length) return { ok: false, code: "mailbox_required" };
   if (read.person?.status !== "active") return { ok: false, code: "person_left" };
   if (read.links && !read.links.ok) return { ok: false, code: "waiting_on_step" };
   // The page this step waits on goes on its own line, added here, after every check of the writer's words.
@@ -468,7 +469,8 @@ export async function writerSink(workspaceId: string, proposal: Parameters<Sink>
       { items: d.items, outreach: d.outreach },
       { workspaceId, campaignId: target.id!, stepKey: target.stepKey, personId: target.personId, userId: target.userId, itemId: target.redraft },
       {
-        credentialId: read.step.mailboxCredentialId,
+        // A rewrite keeps the Mailbox the draft was written with.
+        credentialId: read.existing[0]!.credentialId ?? read.mailboxes[0]!,
         touchClass: read.step.touchClass as "cold" | "consented_marketing",
         subject: output.subject,
         text,
@@ -481,12 +483,13 @@ export async function writerSink(workspaceId: string, proposal: Parameters<Sink>
     );
     return revised.ok ? { ok: true, itemId: target.redraft } : { ok: false, code: revised.reason };
   }
-  const [at] = read.step?.mailboxCredentialId ? await planMailbox(workspaceId, read.step.mailboxCredentialId, { on: target.on, count: 1, notBefore: d.now(), now: d.now() }) : [];
+  const sender = (await plannedSenders(workspaceId, target.id!, target.stepKey, [target.personId], { on: target.on, now: d.now() })).get(target.personId);
+  const at = sender?.at;
   const placed = await placeDraft(
     { items: d.items, outreach: d.outreach },
     { workspaceId, campaignId: target.id!, stepKey: target.stepKey, personId: target.personId, userId: target.userId },
     {
-      credentialId: read.step.mailboxCredentialId,
+      credentialId: sender?.credentialId ?? read.mailboxes[0]!,
       touchClass: read.step.touchClass as "cold" | "consented_marketing",
       subject: output.subject,
       text,

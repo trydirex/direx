@@ -817,12 +817,9 @@ export function Calendar(p: { workspaceId: string; role: Role;
         }}
       </QueryBoundary>
       <Dialog isOpen={!!adding} onOpenChange={(o) => !o && setAdding(undefined)} purpose="form" width={448}>
-        {adding && (
-          <>
-            <DialogHeader title={`New post for ${dayName(new Date(`${adding}T00:00`))}`} subtitle="It waits for approval like any draft." />
-            <AddPost workspaceId={p.workspaceId} day={new Date(`${adding}T00:00`)} onCancel={() => setAdding(undefined)} onDone={() => { setAdding(undefined); void reload(); }} />
-          </>
-        )}
+        {/* Always drawn: the dialog takes its name from a header that is there when it mounts. */}
+        <DialogHeader title={adding ? `New post for ${dayName(new Date(`${adding}T00:00`))}` : "New post"} subtitle="It waits for approval like any draft." />
+        {adding && <AddPost workspaceId={p.workspaceId} day={new Date(`${adding}T00:00`)} onCancel={() => setAdding(undefined)} onDone={() => { setAdding(undefined); void reload(); }} />}
       </Dialog>
       {opened && (
         <Suspense fallback={null}>

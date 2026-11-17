@@ -46,12 +46,17 @@ test("the ports read the server's own modules, and the worker's once it has star
 });
 
 test("Gmail is offered as a Mailbox only once the Google client is set up", async () => {
-  const offered = async () => {
-    const res = await createApp({ worker: () => undefined }).app.request(`/api/w/${ws}/mailbox-providers`, { headers: { cookie } });
+  const offered = async (purpose = "connect") => {
+    const res = await createApp({ worker: () => undefined }).app.request(`/api/w/${ws}/mailbox-providers?purpose=${purpose}`, { headers: { cookie } });
     return ((await res.json()) as { providers: { connection: string }[] }).providers.map((p) => p.connection);
   };
   vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "");
   expect(await offered()).toEqual(["imap_smtp"]);
+  expect(await offered("existing")).toEqual(["google", "imap_smtp"]);
+  vi.stubEnv("DIREX_DEPLOYMENT", "cloud");
+  expect(await offered()).toEqual([]);
+  expect(await offered("existing")).toEqual(["google"]);
+  vi.stubEnv("DIREX_DEPLOYMENT", "self_host");
   vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "google-client");
   vi.stubEnv("DIREX_GOOGLE_CLIENT_SECRET", "g");
   expect(await offered()).toEqual(["google", "imap_smtp"]);

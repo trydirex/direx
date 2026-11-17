@@ -66,9 +66,9 @@ test("the page lists what needs you, a card per area, and what Direx never does"
 });
 
 test("an email account that sends but hasn't passed its unsubscribe check isn't shown as all fine", async () => {
-  vi.spyOn(api, "GET").mockImplementation(((path: string) => {
+  vi.spyOn(api, "GET").mockImplementation(((path: string, options?: { params?: { query?: { purpose?: string } } }) => {
     if (path === "/api/w/{workspaceId}/credentials") return reply(200, { credentials: [box({})] });
-    if (path === "/api/w/{workspaceId}/mailbox-providers") return reply(200, { providers: [{ connection: "gmail", label: "Gmail", connect: "oauth" }] });
+    if (path === "/api/w/{workspaceId}/mailbox-providers") return reply(200, { providers: options?.params?.query?.purpose === "existing" ? [{ connection: "gmail", label: "Gmail", connect: "oauth" }] : [] });
     if (path === "/api/w/{workspaceId}/outreach/mailbox-checks") return reply(200, { checks: [] });
     return reply(404, { error: "not_found" });
   }) as never);

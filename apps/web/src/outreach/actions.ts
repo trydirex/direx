@@ -21,7 +21,7 @@ export const outreachQuery = (workspaceId: string) =>
   queryOptions({ queryKey: inWorkspace(workspaceId, "outreach"), queryFn: () => call(api.GET("/api/w/{workspaceId}/outreach", inW(workspaceId))) });
 /** Connected mail accounts only: model keys and connected social accounts can't send email. */
 export async function mailboxes(workspaceId: string) {
-  const [credentials, providers] = await Promise.all([api.GET("/api/w/{workspaceId}/credentials", inW(workspaceId)), api.GET("/api/w/{workspaceId}/mailbox-providers", inW(workspaceId))]);
+  const [credentials, providers] = await Promise.all([api.GET("/api/w/{workspaceId}/credentials", inW(workspaceId)), api.GET("/api/w/{workspaceId}/mailbox-providers", { params: { path: { workspaceId }, query: { purpose: "existing" } } })]);
   const connections = (providers.data?.providers ?? []).map((p) => p.connection);
   return (credentials.data?.credentials ?? []).filter((c) => c.connection !== null && connections.includes(c.connection));
 }
@@ -29,7 +29,7 @@ export const mailboxesQuery = (workspaceId: string) =>
   queryOptions({
     queryKey: inWorkspace(workspaceId, "outreach", "mailboxes"),
     queryFn: async () => {
-      const [credentials, providers] = await Promise.all([call(api.GET("/api/w/{workspaceId}/credentials", inW(workspaceId))), call(api.GET("/api/w/{workspaceId}/mailbox-providers", inW(workspaceId)))]);
+      const [credentials, providers] = await Promise.all([call(api.GET("/api/w/{workspaceId}/credentials", inW(workspaceId))), call(api.GET("/api/w/{workspaceId}/mailbox-providers", { params: { path: { workspaceId }, query: { purpose: "existing" } } }))]);
       const connections = providers.providers.map((p) => p.connection);
       return credentials.credentials.filter((c) => c.connection !== null && connections.includes(c.connection)).map(({ id, name }) => ({ id, name }));
     },

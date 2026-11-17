@@ -89,7 +89,7 @@ const MailboxProvider = z
 const providersRoute = route({
   method: "get",
   path: "/api/w/{workspaceId}/mailbox-providers",
-  request: { params: ws },
+  request: { params: ws, query: z.object({ purpose: z.enum(["connect", "existing"]).optional() }) },
   responses: { 200: json(z.object({ providers: z.array(MailboxProvider) }), "The ways to connect a Mailbox here"), ...errors },
 });
 const connectFormRoute = route({
@@ -410,7 +410,8 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
 
   return app
     .openapi(providersRoute, (c) => {
-      const providers = (mailboxes?.providers() ?? []).map(({ connection, label, connect, fields, presets }) => ({ connection, label, connect, fields, presets }));
+      const eligible = c.req.valid("query").purpose === "existing" ? mailboxes?.eligibleProviders() : mailboxes?.providers();
+      const providers = (eligible ?? []).map(({ connection, label, connect, fields, presets }) => ({ connection, label, connect, fields, presets }));
       return c.json({ providers }, 200);
     })
     .openapi(connectFormRoute, async (c) => {

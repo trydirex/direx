@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import type { components } from "../api/schema";
 import { dayWords } from "../campaigns/actions";
-import { credentialsQuery, mailboxChecksQuery, mailboxProvidersQuery, split, type Credential, type MailboxCheck } from "../credentials/actions";
+import { credentialsQuery, mailboxChecksQuery, existingMailboxProvidersQuery, split, type Credential, type MailboxCheck } from "../credentials/actions";
 import { accountsQuery, type Account } from "../social/actions";
 import { dollars, modelsQuery } from "../models/actions";
 import { rulesQuery, type Rule } from "../standing-rules/actions";
@@ -35,7 +35,7 @@ export function useNeeds(workspace: S["MyWorkspace"], me: string) {
   const id = workspace.id;
   const manage = workspace.role === "owner" || workspace.role === "admin";
   const credentials = useQuery(credentialsQuery(id)).data;
-  const providers = useQuery(mailboxProvidersQuery(id)).data;
+  const providers = useQuery(existingMailboxProvidersQuery(id)).data;
   const checks = useQuery(mailboxChecksQuery(id)).data ?? [];
   const accounts = useQuery(accountsQuery(id)).data;
   const usage = useQuery(modelsQuery(id, manage)).data?.usage;

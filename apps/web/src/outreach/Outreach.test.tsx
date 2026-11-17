@@ -362,3 +362,14 @@ test("with nobody yet, the empty state leads to Find companies and Add a Person,
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByText("Someone not listed asked to stop").closest("details")!.open).toBe(false);
 });
+
+test("both mailbox loaders recognize existing Gmail independently of connection availability", async () => {
+  const { mailboxes, mailboxesQuery } = await import("./actions");
+  vi.spyOn(api, "GET").mockImplementation(((path: string, options: { params: { query?: { purpose?: string } } }) => {
+    if (path.endsWith("/credentials")) return reply(200, { credentials: [{ id: "gmail", name: "Stored Gmail", connection: "google" }, { id: "other", connection: "unrelated" }] });
+    return reply(200, { providers: options.params.query?.purpose === "existing" ? [{ connection: "google" }] : [] });
+  }) as never);
+  expect(await mailboxes(W)).toEqual([{ id: "gmail", name: "Stored Gmail", connection: "google" }]);
+  const query = mailboxesQuery(W);
+  expect(await query.queryFn!({} as never)).toEqual([{ id: "gmail", name: "Stored Gmail" }]);
+});

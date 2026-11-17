@@ -16,6 +16,7 @@ const pr = (over: Partial<Pr> = {}): Pr => ({
   body: filled,
   author_association: "CONTRIBUTOR",
   user: { login: "someone" },
+  head: { repo: { full_name: "someone/r" } },
   ...over,
 });
 
@@ -102,6 +103,14 @@ test("a writer's PR is held to the title and template but needs no issue and has
   const body = "## What this changes\n\nA fix.\n\n## Verification\n\nbun run check:task: passed\n";
   expect(await problems(pr({ author_association: "MEMBER", body }), "o/r", api({}))).toEqual([]);
   expect(await problems(pr({ author_association: "OWNER", title: "fix: things", body: null }), "o/r", api({}))).toHaveLength(3);
+});
+
+test("a PR from a branch in this repository is a writer's, even when a private org member shows as CONTRIBUTOR", async () => {
+  const body = "## What this changes\n\nA fix.\n\n## Verification\n\nbun run check:task: passed\n";
+  expect(await problems(pr({ head: { repo: { full_name: "o/r" } }, body }), "o/r", api({}))).toEqual([]);
+  expect(await problems(pr({ head: { repo: null }, body }), "o/r", api(small))).toEqual([
+    "no linked issue; start the description with `Closes #N` for an issue labelled `accepted`",
+  ]);
 });
 
 test("Dependabot is skipped", async () => {

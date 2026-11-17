@@ -6,7 +6,14 @@ import { readFileSync } from "node:fs";
 // template's sections. Authors without write access also: a linked issue labelled `accepted`, and
 // the size limit. Dependabot is skipped. Exit 0 pass, 1 a rule failed, 2 could not run.
 
-export type Pr = { number: number; title: string; body: string | null; author_association: string; user: { login: string } };
+export type Pr = {
+  number: number;
+  title: string;
+  body: string | null;
+  author_association: string;
+  user: { login: string };
+  head: { repo: { full_name: string } | null };
+};
 export type PrFile = { filename: string; additions: number; deletions: number };
 export type Get = <T>(path: string) => Promise<T | null>;
 
@@ -73,7 +80,9 @@ export async function problems(pr: Pr, repo: string, get: Get): Promise<string[]
   if (pr.user.login === "dependabot[bot]") return [];
   const body = pr.body ?? "";
   const out = [...titleProblems(pr.title), ...bodyProblems(body)];
-  if (WRITERS.has(pr.author_association)) return out;
+  // Pushing a branch to this repository takes write access. author_association alone isn't
+  // enough: in the event payload an org member whose membership is private is a CONTRIBUTOR.
+  if (WRITERS.has(pr.author_association) || pr.head.repo?.full_name === repo) return out;
 
   const n = linkedIssue(body);
   if (n === undefined) out.push("no linked issue; start the description with `Closes #N` for an issue labelled `accepted`");

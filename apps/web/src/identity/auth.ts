@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Better Auth's own endpoints are not in the OpenAPI document, so these calls are written by
 // hand. `callbackURL` is a path on this site; sign-in returns there.
+import { queryOptions } from "@tanstack/react-query";
+import { api } from "@/client";
 
 const post = (path: string, body: unknown) =>
   fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -23,6 +25,19 @@ export const signupRefusal = (search: string): string | undefined => REFUSALS[ne
 export async function holdInviteToken(token: string): Promise<void> {
   await post("/api/admission/token", { token }).catch(() => undefined);
 }
+
+type SignInOptions = { google: boolean; microsoft: boolean };
+
+/**
+ * Which of Google and Microsoft this server is set up for, or null when the server can't say. Fetched
+ * with who is signed in (index.html preloads it), so the sign-in page opens with the right buttons.
+ */
+export const signInOptionsQuery = queryOptions({
+  queryKey: ["sign-in-options"],
+  queryFn: async (): Promise<SignInOptions | null> => (await api.GET("/api/sign-in-options").catch(() => undefined))?.data ?? null,
+  staleTime: Infinity,
+  meta: { sameForAnyone: true },
+});
 
 export async function signInWithPassword(email: string, password: string, callbackURL: string): Promise<void> {
   const res = await post("/api/auth/sign-in/email", { email, password, callbackURL });

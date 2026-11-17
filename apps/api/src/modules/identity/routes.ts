@@ -114,6 +114,14 @@ const claimRoute = createRoute({
   },
 });
 
+// Before sign-in: which of Google and Microsoft this server is set up for, so the sign-in page
+// shows only the buttons that work. It names providers, never a client ID or secret.
+const signInOptionsRoute = createRoute({
+  method: "get",
+  path: "/api/sign-in-options",
+  responses: { 200: json(z.object({ google: z.boolean(), microsoft: z.boolean() }).openapi("SignInOptions"), "The sign-in providers this server is set up for") },
+});
+
 // Someone who signed up with an email link, Google or Microsoft adds a password (ADR 0024).
 // Behind step-up, as anyone holding a stolen session could otherwise lock in a way back.
 const setPasswordRoute = createRoute({
@@ -144,6 +152,10 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
   app.use("/api/w/:workspaceId/*", requireMember(auth));
 
   return app
+    .openapi(signInOptionsRoute, (c) => {
+      const p = auth().options.socialProviders;
+      return c.json({ google: !!p.google, microsoft: !!p.microsoft }, 200);
+    })
     .openapi(meRoute, async (c) => {
       const s = await session(c.req.raw.headers);
       if (!s) return c.json({ error: "not_signed_in" }, 401);

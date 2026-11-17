@@ -6,6 +6,7 @@
   "POST /api/auth/*",
   "ALL /api/w/:workspaceId",
   "ALL /api/w/:workspaceId/*",
+  "GET /api/sign-in-options",
   "GET /api/me",
   "POST /api/account/password",
   "POST /api/account/password",

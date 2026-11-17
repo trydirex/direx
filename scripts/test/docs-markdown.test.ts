@@ -5,6 +5,33 @@ import { expect, test } from "vitest";
 
 const root = join(import.meta.dirname, "../..");
 
+function withoutCodeSpans(text: string): string {
+  let prose = "";
+  for (let i = 0; i < text.length;) {
+    // Escapes apply in prose; inside a code span, even a backslash cannot escape its closer.
+    if (text[i] === "\\") {
+      prose += text.slice(i, i + 2);
+      i += 2;
+      continue;
+    }
+    if (text[i] !== "`") {
+      prose += text[i++];
+      continue;
+    }
+    const run = /^`+/.exec(text.slice(i))![0];
+    const candidates = /`+/g;
+    candidates.lastIndex = i + run.length;
+    let close: RegExpExecArray | null;
+    while ((close = candidates.exec(text)) && close[0].length !== run.length) { /* seek an equal run */ }
+    if (close) i = close.index + run.length;
+    else {
+      prose += run;
+      i += run.length;
+    }
+  }
+  return prose;
+}
+
 // trydirex.com renders docs/ from each release tag, and GitHub renders it as it is, so every page
 // stays plain Markdown: one H1 as its title, and no MDX (ADR 0034, DX-R-0034-004).
 export function problems(text: string): string[] {
@@ -13,13 +40,33 @@ export function problems(text: string): string[] {
   let fence = "";
   let h1s = 0;
   let paragraph: string[] = [];
+  const listIndents: number[] = [];
   const checkParagraph = () => {
     // Code spans can cross soft line breaks, but cannot cross paragraph/block boundaries.
-    const prose = paragraph.join("\n").replace(/(?<!`)(`+)(?!`)[\s\S]*?(?<!`)\1(?!`)/g, "");
+    const prose = withoutCodeSpans(paragraph.join("\n"));
     if (/<[A-Z][\w.]*[\s/>]/.test(prose)) found.push("a JSX component");
     paragraph = [];
   };
-  for (const line of text.split("\n")) {
+  for (const raw of text.split("\n")) {
+    // Tabs advance to four-column stops before measuring container indentation.
+    let line = raw.replace(/^[ \t]+/, (prefix) => {
+      let width = 0;
+      for (const char of prefix) width += char === "\t" ? 4 - width % 4 : 1;
+      return " ".repeat(width);
+    });
+    if (line.trim()) {
+      const indent = /^ */.exec(line)![0].length;
+      while (listIndents.length && indent < listIndents.at(-1)!) listIndents.pop();
+      line = line.slice(listIndents.at(-1) ?? 0);
+      if (!fence && !/^ {0,3}(?:(?:\* *){3,}|(?:- *){3,}|(?:_ *){3,})$/.test(line)) {
+        const marker = /^ {0,3}(?:[-+*]|\d{1,9}[.)])(?: {1,4}(?=\S)| (?= +\S)| *$)/.exec(line);
+        if (marker) {
+          checkParagraph();
+          listIndents.push((listIndents.at(-1) ?? 0) + marker[0].length);
+          line = line.slice(marker[0].length);
+        }
+      }
+    }
     const opener = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     const run = opener?.[1];
     if (fence) {
@@ -96,6 +143,7 @@ test("Setext underlines require paragraph text", () => {
   expect(problems("# Title\n\n## Section\n===\n")).toEqual([]);
   expect(problems("# Title\n\n---\n===\n")).toEqual([]);
   expect(problems("# Title\n\nSection\n---\n===\n")).toEqual([]);
+  expect(problems("# Title\n\n* * *\n===\n")).toEqual([]);
 });
 
 test("JSX checks exclude complete multiline code spans within a paragraph", () => {
@@ -105,4 +153,25 @@ test("JSX checks exclude complete multiline code spans within a paragraph", () =
   expect(problems("# Title\n\n`example\n\n<Tabs>\n`\n")).toEqual(["a JSX component"]);
   expect(problems("# Title\n\n`example\n<Tabs>\n` <Other />\n")).toEqual(["a JSX component"]);
   expect(problems("# Title\n\n`example\n\n```\n`\n```\n<Tabs />\n")).toEqual(["a JSX component"]);
+});
+
+test("escaped opening backticks do not hide JSX", () => {
+  expect(problems("# Title\n\n" + "\\" + "`<Tabs />`\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n" + "\\".repeat(2) + "`<Tabs />`\n")).toEqual([]);
+  expect(problems("# Title\n\n" + "\\".repeat(3) + "`<Tabs />`\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n`<Tabs />" + "\\" + "`\n")).toEqual([]);
+  expect(problems("# Title\n\n" + "\\" + "`literal `<Tabs />`\n")).toEqual([]);
+  expect(problems("# Title\n\n" + "\\" + "``<Tabs />`\n")).toEqual([]);
+});
+
+test("indented code is measured inside list containers", () => {
+  expect(problems("# Title\n\n- Item\n\n    <Tabs />\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n- Item\n\n      <Tabs />\n")).toEqual([]);
+  expect(problems("# Title\n\n10. Item\n\n      <Tabs />\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n10. Item\n\n        <Tabs />\n")).toEqual([]);
+  expect(problems("# Title\n\n- Item\n  - Nested\n\n      <Tabs />\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n- Item\n  - Nested\n\n        <Tabs />\n")).toEqual([]);
+  expect(problems("# Title\n\n- Item\n\nParagraph\n\n    <Tabs />\n")).toEqual([]);
+  expect(problems("# Title\n\n- Item\n\n\t<Tabs />\n")).toEqual(["a JSX component"]);
+  expect(problems("# Title\n\n- Item\n\n  ```\n  <Tabs />\n  ```\n")).toEqual([]);
 });

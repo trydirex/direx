@@ -14,7 +14,7 @@ import { toast } from "@/components/toast";
 import { membersQuery } from "../identity/actions";
 import { SignIn } from "../identity/SignIn";
 import type { Role } from "../items/actions";
-import { makeToken, revokeToken, tokensQuery, type ExternalToken, type TokenChoices } from "./actions";
+import { makeToken, revokeToken, tokenRequestsQuery, tokensQuery, type ExternalToken, type TokenChoices } from "./actions";
 
 type Words = { label: string; hint: string };
 /** What each reader lets a token see, in the form's words. */
@@ -43,6 +43,39 @@ const SAYS: Record<string, string> = {
   forbidden: "Only Owners and Admins can make a token.",
 };
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+const when = (iso: string) => new Date(iso).toLocaleString(undefined, { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+/** How a door request ended, in words; the request's content is never kept. */
+const OUTCOME: Record<string, string> = {
+  ok: "Answered",
+  invalid_input: "Refused: the request didn't fit the reader",
+  reader_not_allowed: "Refused: not something this token can read",
+  rate_limited: "Refused: too many requests",
+  too_large: "Refused: too large",
+  bad_cursor: "Refused: an old or unknown cursor",
+  error: "Direx couldn't answer",
+};
+
+/** A token's last 20 requests, loaded when someone opens the list. */
+function Requests(p: { workspaceId: string; tokenId: string }) {
+  const rows = useQuery(tokenRequestsQuery(p.workspaceId, p.tokenId));
+  return (
+    <QueryBoundary query={rows} skeleton={<Skeleton className="mt-2 h-10 w-full" />}>
+      {(list) =>
+        list.length === 0 ? (
+          <p className="mt-2 text-muted-foreground">None yet.</p>
+        ) : (
+          <ul className="mt-2 flex flex-col gap-1">
+            {list.map((r, i) => (
+              <li key={`${r.at}-${i}`}>
+                <span className="text-muted-foreground">{when(r.at)}</span> {r.reader === "mcp" ? "MCP" : (READER_WORDS[r.reader]?.label ?? r.reader)}: {OUTCOME[r.outcome] ?? r.outcome}
+              </li>
+            ))}
+          </ul>
+        )
+      }
+    </QueryBoundary>
+  );
+}
 
 export function Tokens(p: { workspaceId: string; role: Role; me: string }) {
   const makes = p.role === "owner" || p.role === "admin";
@@ -83,6 +116,7 @@ function Row(p: { workspaceId: string; token: ExternalToken; maker: string }) {
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [open, setOpen] = useState(false);
   const [tone, state] = STATE[t.state];
   const revoke = async () => {
     setBusy(true);
@@ -109,6 +143,10 @@ function Row(p: { workspaceId: string; token: ExternalToken; maker: string }) {
         <p className="text-sm text-muted-foreground">
           Made by {p.maker} on {day(t.createdAt)}. {t.revokedAt ? `Revoked on ${day(t.revokedAt)}.` : `Expires on ${day(t.expiresAt)}.`} {t.lastUsedAt ? `Last used on ${day(t.lastUsedAt)}.` : "Not used yet."}
         </p>
+        <details className="text-sm" onToggle={(e) => setOpen(e.currentTarget.open)}>
+          <summary className="cursor-pointer">Recent requests</summary>
+          {open && <Requests workspaceId={p.workspaceId} tokenId={t.id} />}
+        </details>
       </div>
       {error && <Notice tone="error">{error}</Notice>}
       {(t.state === "live" || t.state === "stopped") && (

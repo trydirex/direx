@@ -14,4 +14,5 @@ export { createMailboxPauses, type MailboxPauses } from "./application/mailboxes
 export { CHANNELS as OUTSIDE_CHANNELS, createOutsideTouches, type OutsideTouches, type ReplyStop } from "./application/outside-touches";
 export { createHeaderCheck, finishHeaderCheck, isProbeCapability, probeRecipient, probeWordingVersion, PROBE_WORDING_VERSION, type ProbeFor } from "./application/header-check";
 export { OPTOUT_PROMPT, optOutEval } from "./application/optout-model";
+export { createReplyDesk, replyDeskKind } from "./application/reply-desk";
 export { isPublicHttps, optOutFooter } from "./domain/footer";

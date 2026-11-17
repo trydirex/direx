@@ -20,7 +20,7 @@ import { BRIEF_OUTPUT_KEY, briefSink, createPageReader, seoDefinitions, seoKinds
 import { COMPARISON_OUTPUT_KEY, competitorDefinitions, competitorKinds, createLabels, createMoves, LABELS_OUTPUT_KEY, POST_OUTPUT_KEY } from "./modules/competitors/index";
 import { newsletterAfterSend, newsletterKinds, newsletterWeekly } from "./modules/newsletter/index";
 import { createStandingRules, ruleStillCovers, standingRuleKinds, suspendForAgent, suspendOnProviderLimit, suspendOnStale } from "./modules/standing-rules/index";
-import { connectedMailboxes, createReplies, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
+import { connectedMailboxes, createReplies, createReplyDesk, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
 import { planDefinitions, planKinds, planSinks } from "./modules/plans/index";
 import { createLedger, type SigningKeys } from "./modules/ledger/index";
 import { accountHealthCheck, pauseOnAccountLimit, postAppearance, postLimitCheck, previewOf, socialKinds } from "./modules/social/index";
@@ -150,6 +150,7 @@ export async function compose(opts: WorkerOptions) {
     searchMailboxes: mailboxSearch({ plugins: () => plugins, vault: opts.vault, connected: connectedMailboxes, skipFor }),
     // Mail a search finds is received mail, so placement mail older than the skip list is taken aside as the poll's is.
     claim: (tx, e) => routePlacement(tx, { ...e, pluginId: "", trigger: EMAIL_RECEIVED }, matchExpected),
+    desk: createReplyDesk({ items: () => items, generate: () => models?.generate }),
   });
   const consumers = [replies.intake, campaignReplies({ items: () => items, humanReply })];
   // Third-party plugins a Server admin installed run only in the sandbox (ADR 0026 rule 009). Where it
@@ -237,7 +238,7 @@ export async function compose(opts: WorkerOptions) {
     const r = await fetchImage(url, AbortSignal.timeout(4_000)).catch(() => null);
     return r?.ok ? { bytes: r.bytes } : null;
   };
-  const items = createItems({ ledger, actionPermission, kinds: { ...factKinds(), ...planKinds({ now, onPlanApproved: campaignOnPlanApproved({ now, items: () => items }) }), ...campaignKinds({ now }), ...optOutReviewKind({ boss, now }), ...modelSignInKind(), ...socialKinds() , ...standingRuleKinds(), ...prospectKinds({ boss, now }), ...newsletterKinds(), ...seoKinds({ now }), ...competitorKinds(), ...lessons.kinds(), ...next.kinds(), ...askKinds({ items: () => items, now }), ...askStartKinds({ starts: askStarts, boss, now }) }, now, describeChange: describeFactChange, onSubmitted: standingRules.onSubmitted, onApproved: standingRules.onApproved, onApplied: async (workspaceId, item) => {
+  const items = createItems({ ledger, actionPermission, kinds: { ...factKinds(), ...planKinds({ now, onPlanApproved: campaignOnPlanApproved({ now, items: () => items }) }), ...campaignKinds({ now }), ...optOutReviewKind({ boss, now }), ...replyDeskKind(), ...modelSignInKind(), ...socialKinds() , ...standingRuleKinds(), ...prospectKinds({ boss, now }), ...newsletterKinds(), ...seoKinds({ now }), ...competitorKinds(), ...lessons.kinds(), ...next.kinds(), ...askKinds({ items: () => items, now }), ...askStartKinds({ starts: askStarts, boss, now }) }, now, describeChange: describeFactChange, onSubmitted: standingRules.onSubmitted, onApproved: standingRules.onApproved, onApplied: async (workspaceId, item) => {
       // Each only suggests or follows up, so one failing doesn't stop the other.
       await opts.campaigns().planApplied(workspaceId, item).catch((e) => console.error("campaigns: planApplied failed", item.id, e));
       await next.onApplied(workspaceId, item);

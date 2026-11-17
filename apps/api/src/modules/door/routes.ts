@@ -46,9 +46,8 @@ export function doorApp(d: { tokens: Pick<Tokens, "verify">; requests: Requests;
       const record = (outcome: DoorOutcome) => d.requests.record(workspaceId, caller.tokenId, name, outcome);
       c.set("caller", caller);
       c.set("record", record);
-      const admitted = await d.requests.admit(workspaceId, caller.tokenId);
+      const admitted = await d.requests.admit(workspaceId, caller.tokenId, name);
       if (!admitted.ok) {
-        if (admitted.first) await record("rate_limited");
         c.header("Retry-After", String(admitted.retryAfter));
         return c.json({ error: "rate_limited" }, 429);
       }

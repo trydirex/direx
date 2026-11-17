@@ -15,7 +15,7 @@ const OTHER = crypto.randomUUID();
 const owner = crypto.randomUUID();
 const otherOwner = crypto.randomUUID();
 const tokens = createTokens({ maxDays: null });
-const requests = createRequests({ caps: { perToken: 3, perWorkspace: 1000 } });
+const requests = createRequests({ caps: { perToken: 3, perWorkspace: 1000 }, now: () => new Date("2026-11-16T09:30:30.500Z") });
 
 const Input = z.strictObject({ cursor: z.string().nullish() });
 const fake = (disclosure: DoorRead["disclosure"], read?: DoorRead["read"]): DoorRead => ({

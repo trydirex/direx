@@ -19,14 +19,18 @@ export function createRequests(d: { caps?: Caps; now?: () => Date } = {}) {
   const caps = d.caps ?? DEFAULT_CAPS;
   const now = d.now ?? (() => new Date());
   return {
-    /** Counts this request, or says how many seconds to wait and whether this refusal is the token's first this minute. */
-    async admit(workspaceId: string, tokenId: string): Promise<{ ok: true } | { ok: false; retryAfter: number; first: boolean }> {
+    /** Counts this request; records the first refusal atomically with its suppression marker. */
+    async admit(workspaceId: string, tokenId: string, reader: string): Promise<{ ok: true } | { ok: false; retryAfter: number; first: boolean }> {
       const at = now();
       const minute = new Date(Math.floor(at.getTime() / MINUTE_MS) * MINUTE_MS);
       const retryAfter = Math.max(1, Math.ceil((minute.getTime() + MINUTE_MS - at.getTime()) / 1000));
       return repo.inWorkspace(workspaceId, async (tx) => {
         await repo.pruneCounters(tx, workspaceId, new Date(minute.getTime() - KEEP_MS));
-        const over = async () => ({ ok: false as const, retryAfter, first: (await repo.bumpCounter(tx, workspaceId, `refused:${tokenId}`, minute)) === 1 });
+        const over = async () => {
+          const first = (await repo.bumpCounter(tx, workspaceId, `refused:${tokenId}`, minute)) === 1;
+          if (first) await repo.insertRequest(tx, { workspaceId, tokenId, reader, outcome: "rate_limited", at });
+          return { ok: false as const, retryAfter, first };
+        };
         if ((await repo.bumpCounter(tx, workspaceId, `token:${tokenId}`, minute)) > caps.perToken) return over();
         if ((await repo.bumpCounter(tx, workspaceId, "workspace", minute)) > caps.perWorkspace) return over();
         return { ok: true as const };

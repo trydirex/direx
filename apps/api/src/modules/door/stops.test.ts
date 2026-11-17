@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // When a token's creator stops being an Owner or Admin, each of their live tokens gets one audit row
-// and the remaining Owners and Admins one email naming them (ADR 0032 rules 005 and 011, Q9).
+// and the remaining Owners and Admins one email naming them (ADR 0032 rules 005 and 011, Q9). Last,
+// the same through the app main.ts builds, where a role change or removal in Members does it.
 import { beforeAll, expect, test } from "vitest";
+import { app } from "../../main";
 import { adminEmails, logMailer, type Mail } from "../identity/index";
+import { TEST_SECRET, testIdentity } from "../identity/test-auth";
 import { seedWorkspace, setRole, tokenAudit } from "./fixtures/members";
 import { createStops, createTokens } from "./index";
+
+process.env.DIREX_AUTH_SECRET = TEST_SECRET;
+process.env.DIREX_MASTER_KEY = "11".repeat(32);
 
 const W = crypto.randomUUID();
 const owner = crypto.randomUUID();
@@ -66,4 +72,31 @@ test("nothing is written or sent when the member keeps the permission, never had
   await stopped(W, crypto.randomUUID(), "admin", null);
   expect(await stopsFor(ids)).toEqual([]);
   expect(outbox).toEqual([]);
+});
+
+test("in the app main.ts builds, demoting or removing a token's maker in Members stops their tokens", async () => {
+  const site = testIdentity();
+  const owner = await site.signIn();
+  const w = (await site.createOrg(owner, "Stops")).workspace.id;
+  const live = createTokens({ maxDays: null });
+  const made = async (userId: string) => {
+    const r = await live.create(w, { name: "Script", days: 7, readers: ["read_changes"], kinds: [] }, userId);
+    if (!r.ok) throw new Error(r.reason);
+    return r;
+  };
+  const stoppedIn = async (id: string) => (await tokenAudit(w)).filter((a) => a.tokenId === id && a.event === "external_token.stopped");
+  const send = (path: string, method: string, body?: unknown) =>
+    app.request(path, { method, headers: { cookie: owner, ...(body !== undefined && { "content-type": "application/json" }) }, ...(body !== undefined && { body: JSON.stringify(body) }) });
+
+  for (const [how, request] of [
+    ["demoted", (userId: string) => send(`/api/w/${w}/members/${userId}`, "PATCH", { role: "marketer" })],
+    ["removed", (userId: string) => send(`/api/w/${w}/members/${userId}`, "DELETE")],
+  ] as const) {
+    const admin = await site.addMember(owner, w, "admin");
+    const t = await made(admin.userId);
+    expect(await live.verify(w, t.token), how).not.toBeNull();
+    expect((await request(admin.userId)).status, how).toBe(200);
+    expect(await stoppedIn(t.id), how).toHaveLength(1);
+    expect(await live.verify(w, t.token), how).toBeNull();
+  }
 });

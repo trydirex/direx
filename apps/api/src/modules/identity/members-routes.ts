@@ -4,7 +4,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Auth } from "./adapters/auth";
 import { acceptInvite, createInvite, listInvites, previewInvite, revokeInvite, type InviteDeps } from "./application/invites";
-import { auditLog, changeRole, deleteWorkspace, listMembers, removeMember, type OnDelete } from "./application/members";
+import { auditLog, changeRole, deleteWorkspace, listMembers, removeMember, type OnDelete, type OnMemberChange } from "./application/members";
 import { ROLES } from "./domain/roles";
 import { requirePermission, requireStepUp, type MemberEnv } from "./middleware";
 
@@ -137,7 +137,7 @@ const previewRoute = route({
   },
 });
 
-export function memberRoutes(auth: () => Auth, deps: () => InviteDeps, onDelete?: OnDelete) {
+export function memberRoutes(auth: () => Auth, deps: () => InviteDeps, onDelete?: OnDelete, onMemberChange?: OnMemberChange) {
   const app = new OpenAPIHono<MemberEnv>({
     defaultHook: (result, c) => {
       if (!result.success) {
@@ -153,11 +153,11 @@ export function memberRoutes(auth: () => Auth, deps: () => InviteDeps, onDelete?
       return c.json({ members: rows.map((r) => ({ ...r, createdAt: iso(r.createdAt) })) }, 200);
     })
     .openapi(changeRoleRoute, async (c) => {
-      const refused = await changeRole(c.get("member"), c.req.valid("param").userId, c.req.valid("json").role);
+      const refused = await changeRole(c.get("member"), c.req.valid("param").userId, c.req.valid("json").role, onMemberChange);
       return refused ? c.json({ error: refused }, STATUS[refused]) : c.json({ ok: true as const }, 200);
     })
     .openapi(removeMemberRoute, async (c) => {
-      const refused = await removeMember(c.get("member"), c.req.valid("param").userId);
+      const refused = await removeMember(c.get("member"), c.req.valid("param").userId, onMemberChange);
       return refused ? c.json({ error: refused }, STATUS[refused]) : c.json({ ok: true as const }, 200);
     })
     .openapi(listInvitesRoute, async (c) => {

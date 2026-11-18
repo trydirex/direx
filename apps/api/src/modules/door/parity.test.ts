@@ -54,3 +54,32 @@ test("the MCP tools are exactly the document's operations, and each answers as i
   }
   await client.close();
 });
+
+test.each([
+  { reason: "already_waiting" as const, itemId: crypto.randomUUID() },
+  { reason: "refused" as const, code: "connection_not_found" },
+  { reason: "proposal_cap" as const },
+])("MCP preserves proposal refusal details: $reason", async (refusal) => {
+  const refusing = doorApp({
+    tokens,
+    requests: createRequests({ caps: { perToken: 100, perWorkspace: 1000 } }),
+    registrations: registerReaders(reads),
+    proposals: registerProposals({ inputs: { fact_proposal: Input, draft: Input }, propose: async () => ({ ok: false, ...refusal }) }),
+  });
+  const client = new Client({ name: "refusal-parity", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`http://door.test${DOOR_BASE}/w/${W}/mcp`), { requestInit: { headers: { authorization: `Bearer ${raw}` } }, fetch: async (input, init) => refusing.request(String(input), init) }));
+  try {
+    for (const name of DOOR_KINDS) {
+      const viaRoute = await refusing.request(`${DOOR_BASE}/w/${W}/${name}`, { method: "POST", headers: { authorization: `Bearer ${raw}`, "content-type": "application/json" }, body: JSON.stringify({}) });
+      const viaTool = await client.callTool({ name, arguments: {} });
+      const { reason, ...details } = refusal;
+      const expected = { error: reason, ...details };
+      expect(viaRoute.ok).toBe(false);
+      expect(await viaRoute.json()).toEqual(expected);
+      expect(viaTool.isError).toBe(true);
+      expect(viaTool.content).toEqual([{ type: "text", text: reason === "proposal_cap" ? reason : JSON.stringify(expected) }]);
+    }
+  } finally {
+    await client.close();
+  }
+});

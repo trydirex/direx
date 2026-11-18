@@ -67,3 +67,36 @@ test("an Item with nothing recorded shows no Written from line", async () => {
   await screen.findByText(/Draft, by Brand reader/);
   expect(screen.queryByLabelText("Written from")).toBeNull();
 });
+
+test("History names the External token a proposal came through, and says External token for one it can't find", async () => {
+  const T = "00000000-0000-4000-8000-0000000000bb";
+  const fromTokens = [
+    { at, from: null, to: "needs_approval", reason: null, actor: { kind: "system", id: `external_token:${T}` } },
+    { at, from: "needs_approval", to: "needs_approval", reason: null, actor: { kind: "system", id: "external_token:00000000-0000-4000-8000-0000000000cc" } },
+  ];
+  vi.spyOn(api, "GET").mockImplementation(((path: string) =>
+    Promise.resolve({
+      data:
+        path === "/api/w/{workspaceId}/members"
+          ? { members: [] }
+          : path === "/api/w/{workspaceId}/external-tokens"
+            ? { tokens: [{ id: T, name: "Zapier" }], choices: { lifetimes: [], readers: [], kinds: [] } }
+            : { item, content: { body: "Hi" }, timeline: fromTokens, ruleGrantedBy: null },
+      response: new Response(null, { status: 200 }),
+    })) as never);
+  render(withQueries(<ItemPanel workspaceId={W} id="i1" role="viewer" />));
+  expect(await screen.findByText(/Needs approval, by External token "Zapier"/)).toBeTruthy();
+  expect(screen.getByText(/Needs approval, by External token$/)).toBeTruthy();
+});
+
+test("History doesn't ask for the tokens when no step came through one", async () => {
+  const get = vi.spyOn(api, "GET").mockImplementation(((path: string) =>
+    Promise.resolve({
+      data: path === "/api/w/{workspaceId}/members" ? { members: [] } : { item, content: { body: "Hi" }, timeline, ruleGrantedBy: null },
+      response: new Response(null, { status: 200 }),
+    })) as never);
+  render(withQueries(<ItemPanel workspaceId={W} id="i1" role="owner" />));
+  await screen.findByText(/Draft, by Brand reader/);
+  expect(get.mock.calls.map((c) => c[0])).not.toContain("/api/w/{workspaceId}/external-tokens");
+});
+

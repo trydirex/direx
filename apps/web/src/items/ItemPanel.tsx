@@ -23,6 +23,7 @@ import { BriefView, type BriefContent } from "../seo/BriefView";
 import { CounterMoveView, type CounterMoveContent } from "../facts/CounterMove";
 import { ProposalView } from "../lessons/ProposalView";
 import { membersQuery } from "../identity/actions";
+import { isTokenActor, useTokenWords } from "./token-actor";
 import { meQuery } from "../shell/session";
 import { AGENT_NAMES } from "../models/actions";
 import { FIELD_LABEL, type Field as FactField } from "../facts/actions";
@@ -418,8 +419,9 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
   // Names for History: who did each step, rather than only what kind of actor it was.
   const members = useQuery(membersQuery(p.workspaceId)).data;
   const me = useQuery(meQuery).data;
+  const tokenWords = useTokenWords(p.workspaceId, (query.data?.timeline ?? []).map((e) => e.actor));
   const who = (a: { kind: "person" | "agent" | "system"; id: string }) =>
-    (a.kind === "person" && (members?.find((m) => m.userId === a.id)?.name || members?.find((m) => m.userId === a.id)?.email)) || (a.kind === "agent" && AGENT_NAMES[a.id]) || ACTOR_WORDS[a.kind];
+    (a.kind === "person" && (members?.find((m) => m.userId === a.id)?.name || members?.find((m) => m.userId === a.id)?.email)) || (a.kind === "agent" && AGENT_NAMES[a.id]) || (isTokenActor(a) && tokenWords(a.id)) || ACTOR_WORDS[a.kind];
   const [error, setError] = useState<string>();
   // What the person typed, until a change reloads the Item's own time.
   const [typed, setTyped] = useState<string>();

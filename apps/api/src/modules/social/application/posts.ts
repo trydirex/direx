@@ -8,7 +8,7 @@ import { warn, type Items, type ItemKind, type Warning } from "../../items/index
 import type { Media } from "../../media/index";
 import { specHash, type Actor, type Check } from "../../ledger/index";
 import type { Plugins, Prepared as PreparedSpec } from "../../plugins/index";
-import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, runByOf, specOfAction, withinSlot, type SocialTx } from "../adapters/repo";
+import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, replacePost, runByOf, specOfAction, withinSlot, type SocialTx } from "../adapters/repo";
 import { canDo } from "../domain/can-do";
 import { isPublicUrl } from "../domain/public-url";
 import { firstLink, imageType, mustRead, type KeptPreview, type LinkPreview } from "../domain/link-preview";
@@ -100,6 +100,7 @@ function imagesInList(spec: unknown, payload: unknown): { mediaId: string; fileN
 
 export function createPosts(deps: PostsDeps) {
   const now = deps.now ?? (() => new Date());
+  const staleReplacement = new Error("Post replaced by another draft");
   const network = (connection: string) => deps.networks().find((n) => n.connection === connection);
 
   /** The approved file a post binds, by hash, or null for a text post. */
@@ -269,9 +270,15 @@ export function createPosts(deps: PostsDeps) {
           if (over) warnings.push(warn("unspecified", over));
         }
         const details = { title: `${r.n.label}: ${step.title}`, workArea: "social", channel: t.connection, plannedAt: at, warnings, groupKey, groupLabel: step.title };
-        const existing = await inWorkspace(workspaceId, (tx) => existingPost(tx, step.campaignId, step.stepKey, t.connection, networkId, clipId));
-        const record = (itemId: string, actionId: string | null) =>
-          inWorkspace(workspaceId, (tx) => insertPost(tx, { workspaceId, campaignId: step.campaignId, stepKey: step.stepKey, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId, createdAt: now() }));
+        const found = await inWorkspace(workspaceId, (tx) => existingPost(tx, step.campaignId, step.stepKey, t.connection, networkId, clipId));
+        // A cancelled post can't be revised, so a new one takes its place on the step.
+        const existing = found?.cancelled ? null : found;
+        const record = async (tx: SocialTx, itemId: string, actionId: string | null) => {
+          const row = { workspaceId, campaignId: step.campaignId, stepKey: step.stepKey, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId, createdAt: now() };
+          if (found?.cancelled) {
+            if (!(await replacePost(tx, found.id, found.itemId, row)).length) throw staleReplacement;
+          } else await insertPost(tx, row);
+        };
 
         if (r.mode === "manual") {
           // A text post's payload stays as it was before video, so its revision doesn't change.
@@ -286,14 +293,13 @@ export function createPosts(deps: PostsDeps) {
             results.push(revised.ok ? { ...base, ok: true, itemId: existing.itemId, mode: "manual" } : { ...base, ok: false, reason: revised.reason });
             continue;
           }
-          const made = await deps.items().createItem(workspaceId, { kind: MANUAL_POST, state: "needs_approval", payload, actor, details: { ...details, snapshot: cited } });
-          if (!made.ok) {
-            results.push({ ...base, ok: false, reason: made.reason });
-            continue;
+          try {
+            const made = await deps.items().createItem(workspaceId, { kind: MANUAL_POST, state: "needs_approval", payload, actor, details: { ...details, snapshot: cited } }, (tx, itemId) => record(tx, itemId, null));
+            results.push(made.ok ? { ...base, ok: true, itemId: made.item.id, mode: "manual" } : { ...base, ok: false, reason: made.reason });
+          } catch (e) {
+            if (e !== staleReplacement) throw e;
+            results.push({ ...base, ok: false, reason: "stale" });
           }
-          // ponytail: two requests at once can leave a second Item with no post row. A person can cancel it; a shared transaction with items if it shows up.
-          await record(made.item.id, null);
-          results.push({ ...base, ok: true, itemId: made.item.id, mode: "manual" });
           continue;
         }
 
@@ -319,20 +325,23 @@ export function createPosts(deps: PostsDeps) {
           results.push(revised.ok ? { ...base, ok: true, itemId: existing.itemId, mode: "publish" } : { ...base, ok: false, reason: revised.reason });
           continue;
         }
-        const item = await deps.items().createActionItem(workspaceId, {
-          // A post step's key is as it always was; a clip's post adds the clip.
-          idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}`,
-          capability: r.provider.publish,
-          dedupe: r.provider.dedupe,
-          spec: p.spec,
-          credentialId: t.credentialId,
-          actor,
-          details: { ...details, snapshot },
-        });
-        const fresh = await deps.items().actionIdOf(workspaceId, item.id);
-        await record(item.id, fresh);
-        await deps.items().submitItem(workspaceId, item.id, actor);
-        results.push({ ...base, ok: true, itemId: item.id, mode: "publish" });
+        try {
+          const item = await deps.items().createActionItem(workspaceId, {
+            // Keep the original key for a first draft. A replacement follows the cancelled Action, or Item for a hand post.
+            idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}${found?.cancelled ? `:after:${found.actionId ?? found.itemId}` : ""}`,
+            capability: r.provider.publish,
+            dedupe: r.provider.dedupe,
+            spec: p.spec,
+            credentialId: t.credentialId,
+            actor,
+            details: { ...details, snapshot },
+          }, (tx, itemId, actionId) => record(tx, itemId, actionId));
+          await deps.items().submitItem(workspaceId, item.id, actor);
+          results.push({ ...base, ok: true, itemId: item.id, mode: "publish" });
+        } catch (e) {
+          if (e !== staleReplacement) throw e;
+          results.push({ ...base, ok: false, reason: "stale" });
+        }
       }
       return results;
     },
@@ -456,7 +465,7 @@ export async function postAppearance(workspaceId: string, itemId: string, networ
       const type = got && imageType(got.bytes);
       const image = got && type ? { type, bytes: got.bytes } : null;
       hasImage = image !== null;
-      await inWorkspace(workspaceId, (tx) => keepPreview(tx, row.id, { url, preview, at: now.toISOString() } satisfies KeptPreview, image));
+      await inWorkspace(workspaceId, (tx) => keepPreview(tx, row.id, itemId, { url, preview, at: now.toISOString() } satisfies KeptPreview, image));
     }
     link = preview && { url, title: preview.title, description: preview.description, site: preview.site, image: hasImage };
   }

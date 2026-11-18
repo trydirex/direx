@@ -192,6 +192,40 @@ test("a post's Item shows the account and the network it goes out as", async () 
   expect((await call(`/api/w/${W}/social/posts/${r!.itemId}/link-image`, cookie)).status).toBe(404);
 });
 
+test("a preview fetched before replacement cannot restore the cancelled post's card or image", async () => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  const [first] = await draft(id, [{ ...a, text: "https://acme.test/old" }]);
+  const started = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const pending = postAppearance(W, first!.itemId, networks(), {
+    text: "https://acme.test/old",
+    readPreview: async () => {
+      started.resolve();
+      await resume.promise;
+      return { title: "Old", description: null, site: "Acme", image: "https://cdn.test/old.png" };
+    },
+    readImage: async () => ({ bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]) }),
+  });
+  await started.promise;
+  try {
+    ok(await items.cancel(W, first!.itemId, { userId: owner }));
+    const [next] = await draft(id, [{ ...a, text: "https://acme.test/new" }]);
+    expect(next).toMatchObject({ ok: true });
+    expect(next!.itemId).not.toBe(first!.itemId);
+    resume.resolve();
+    await pending;
+    expect(await q("select link_preview, link_image, link_image_type from social_posts where item_id = $1", [next!.itemId])).toEqual([
+      { link_preview: null, link_image: null, link_image_type: null },
+    ]);
+    expect(await postLinkImage(W, next!.itemId)).toBeNull();
+  } finally {
+    resume.resolve();
+    await pending;
+  }
+});
+
 test("rejecting one holds only that Network", async () => {
   beforeWhen();
   const id = await postStep();
@@ -202,6 +236,106 @@ test("rejecting one holds only that Network", async () => {
   await dispatch(two!.itemId);
   expect((await stateOf(one!.itemId)).state).toBe("cancelled");
   expect((await stateOf(two!.itemId)).state).toBe("sent");
+});
+
+test("a cancelled post gives way to a new one on the same account, and a sent one still can't be written again", async () => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  const [first] = await draft(id, [{ ...a, text: "First" }]);
+  ok(await items.cancel(W, first!.itemId, { userId: owner }));
+  const [again] = await draft(id, [{ ...a, text: "Again" }]);
+  expect(again).toMatchObject({ ok: true, mode: "publish" });
+  expect(again!.itemId).not.toBe(first!.itemId);
+  expect((await stateOf(first!.itemId)).state).toBe("cancelled");
+  // A copy-and-paste post the person dismissed gives way the same way.
+  const hand = { connection: "later", credentialId: null, networkId: null };
+  const [dismissed] = await draft(id, [{ ...hand, text: "By hand" }]);
+  ok(await items.cancel(W, dismissed!.itemId, { userId: owner }));
+  const [handAgain] = await draft(id, [{ ...hand, text: "By hand again" }]);
+  expect(handAgain).toMatchObject({ ok: true, mode: "manual" });
+  expect(handAgain!.itemId).not.toBe(dismissed!.itemId);
+  expect(await q("select count(*)::int as n from social_posts where campaign_id = $1", [id])).toEqual([{ n: 2 }]);
+  // What went out stays: writing that account again is refused, and nothing posts twice.
+  await approve(again!.itemId);
+  await dispatch(again!.itemId);
+  const [late] = await draft(id, [{ ...a, text: "Third" }], new Date(clock.at.getTime() + 3_600_000));
+  expect(late).toMatchObject({ ok: false, reason: "wrong_state" });
+  expect(net.state.published.filter((p) => p.spec.text === "Third")).toEqual([]);
+});
+
+test.each(["publish", "manual"] as const)("cancelled posts can switch publishing modes repeatedly starting with %s", async (firstMode) => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  let mode: "publish" | "manual" = firstMode;
+  const switching = createPosts({ plugins: () => plugins, vault: () => ({ appSource: async () => own.app }), networks: () => [{ ...info, features: mode === "manual" ? [] : info.features }], items: () => items, now });
+  const step = { campaignId: id, stepKey: "launch", title: "Launch post", plannedAt: WHEN };
+  const modes = firstMode === "publish" ? ["publish", "manual", "publish", "manual", "publish"] as const : ["manual", "publish", "manual", "publish"] as const;
+  const previous: string[] = [];
+  for (const [i, nextMode] of modes.entries()) {
+    mode = nextMode;
+    const target = { ...a, text: `Replacement ${i}` };
+    const [made] = await switching.draft(W, step, [target], owner);
+    expect(made).toMatchObject({ ok: true, mode });
+    const itemId = made!.itemId!;
+    expect(previous).not.toContain(itemId);
+    expect((await stateOf(itemId)).state).toBe("needs_approval");
+    expect(await q("select item_id from social_posts where campaign_id = $1", [id])).toEqual([{ item_id: itemId }]);
+    // A repeat still returns this draft; only replacing a cancelled Item changes the key.
+    expect((await switching.draft(W, step, [target], owner))[0]).toMatchObject({ ok: true, itemId });
+    for (const old of previous) expect((await stateOf(old)).state).toBe("cancelled");
+    if (i < modes.length - 1) {
+      ok(await items.cancel(W, itemId, { userId: owner }));
+      previous.push(itemId);
+    } else {
+      expect((await approve(itemId)).status).toBe(200);
+      await dispatch(itemId);
+      expect((await stateOf(itemId)).state).toBe("sent");
+      expect(net.state.published.filter((p) => p.spec.text === target.text && p.spec.target === a.networkId)).toHaveLength(1);
+    }
+  }
+});
+
+test.each([
+  ["manual", "manual"], ["manual", "publish"], ["publish", "manual"], ["publish", "publish"],
+] as const)("a delayed %s replacement cannot overwrite a posted %s winner", async (loserMode, winnerMode) => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  const [first] = await draft(id, [{ ...a, text: "Cancelled" }]);
+  ok(await items.cancel(W, first!.itemId, { userId: owner }));
+  let reached!: () => void;
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { reached = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const delayedItems = {
+    ...items,
+    createItem: async (...args: Parameters<typeof items.createItem>) => { reached(); await gate; return items.createItem(...args); },
+    createActionItem: async (...args: Parameters<typeof items.createActionItem>) => { reached(); await gate; return items.createActionItem(...args); },
+  };
+  const make = (mode: "manual" | "publish", service = items) => createPosts({ plugins: () => plugins, vault: () => ({ appSource: async () => own.app }), networks: () => [{ ...info, features: mode === "manual" ? [] : info.features }], items: () => service, now });
+  const step = { campaignId: id, stepKey: "launch", title: "Launch post", plannedAt: WHEN };
+  const losing = make(loserMode, delayedItems).draft(W, step, [{ ...a, text: "Losing text" }], owner);
+  await waiting;
+  try {
+    const winnerPosts = make(winnerMode);
+    const [winner] = await winnerPosts.draft(W, step, [{ ...a, text: "Winning text" }], owner);
+    expect(winner).toMatchObject({ ok: true, mode: winnerMode });
+    expect((await approve(winner!.itemId!)).status).toBe(200);
+    if (winnerMode === "publish") await dispatch(winner!.itemId!);
+    else ok(await winnerPosts.markPosted(W, winner!.itemId!, "https://net.example/manual", owner));
+    const before = await q("select * from social_posts where campaign_id = $1", [id]);
+    release();
+    expect(await losing).toMatchObject([{ ok: false, reason: "stale" }]);
+    expect(await q("select * from social_posts where campaign_id = $1", [id])).toEqual(before);
+    expect((await stateOf(winner!.itemId!)).state).toBe(winnerMode === "publish" ? "sent" : "applied");
+    expect(await q("select count(*)::int as n from items where group_key = $1", [`campaign:${id}:step:launch`])).toEqual([{ n: 2 }]);
+    expect(await q("select count(*)::int as n from actions where idempotency_key like $1", [`social:${id}:%`])).toEqual([{ n: winnerMode === "publish" ? 2 : 1 }]);
+  } finally {
+    release();
+    await losing;
+  }
 });
 
 test("editing an approved draft voids its approval under the same Action, and drafting the same text again changes nothing", async () => {

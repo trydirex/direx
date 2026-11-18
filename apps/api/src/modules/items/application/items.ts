@@ -186,8 +186,12 @@ export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, rec
     /** For a module that records what an Item belongs to only after it was submitted. */
     announceSubmitted,
 
-    async createActionItem(workspaceId: string, a: NewActionItem): Promise<ItemView> {
-      return (await inWorkspace(workspaceId, (tx) => createActionItemIn(tx, workspaceId, a))).item;
+    async createActionItem(workspaceId: string, a: NewActionItem, also?: (tx: ItemsTx, itemId: string, actionId: string) => Promise<void>): Promise<ItemView> {
+      return (await inWorkspace(workspaceId, async (tx) => {
+        const made = await createActionItemIn(tx, workspaceId, a);
+        if (also) await also(tx, made.item.id, (await readItem(tx, made.item.id))!.item.actionId!);
+        return made;
+      })).item;
     },
     createActionItemIn,
 
@@ -229,14 +233,16 @@ export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, rec
     },
 
     /** A non-Action Item of a registered kind. With `replace`, it cancels any still waiting in its group first, so one stays. */
-    async createItem(workspaceId: string, a: { kind: string; state?: "draft" | "needs_approval"; payload: unknown; actor: Actor; details: NewDetails; replace?: boolean }) {
+    async createItem(workspaceId: string, a: { kind: string; state?: "draft" | "needs_approval"; payload: unknown; actor: Actor; details: NewDetails; replace?: boolean }, also?: (tx: ItemsTx, itemId: string) => Promise<void>) {
       if (!kinds[a.kind]) return { ok: false, reason: "unknown_kind" } as const;
       if (a.replace && !a.details.groupKey) return { ok: false, reason: "group_key_required" } as const;
       const row = await inWorkspace(workspaceId, async (tx) => {
         const live = a.replace ? await lockLiveGroup(tx, workspaceId, a.kind, a.details.groupKey!) : [];
         if (kinds[a.kind]!.canCreate && !(await kinds[a.kind]!.canCreate!(tx, a.payload))) return null;
         for (const old of live) await moveOwnState(tx, old, "cancelled", a.actor, now());
-        return insertOwnItem(tx, workspaceId, { kind: a.kind, state: a.state ?? "needs_approval", payload: a.payload, ...a.details }, a.actor, now());
+        const made = await insertOwnItem(tx, workspaceId, { kind: a.kind, state: a.state ?? "needs_approval", payload: a.payload, ...a.details }, a.actor, now());
+        if (also) await also(tx, made.id);
+        return made;
       });
       if (!row) return { ok: false, reason: "superseded" } as const;
       return { ok: true, item: (await view(workspaceId, row.id))! } as const;

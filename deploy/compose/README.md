@@ -46,9 +46,17 @@ Set up once, on the server, from this folder:
 2. Make an age key **on your own computer**: `age-keygen -o direx-backup.key`. Put that file in
    your password manager; it is the only way to read a backup. Only its public key, the
    `age1...` line it prints, goes on the server.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:163656cf8ae1f308e9134701d86da5c3fbaed08a6e317e2bdd752a7f22068193 -->
+
 3. Copy the root key out once and put it in the password manager too:
-   `docker compose run --rm --no-deps -T --entrypoint sh direx -c 'cat "$DIREX_DATA_DIR/master.key"' >master.key`,
+   `(umask 077; docker compose run --rm --no-deps -T --entrypoint sh direx -c 'cat "$DIREX_DATA_DIR/master.key"' >master.key)`,
    then delete `master.key` from the server.
+
+
+<!-- /coderabbit-ai-generated:v1 -->
+
 4. In `.env`, set `DIREX_BACKUP_REMOTE` (the remote and folder, such as `b2:direx-backups`) and
    `DIREX_BACKUP_AGE_RECIPIENT` (the `age1...` key).
 5. Run `sh backup.sh` once, then run it each night from cron (`crontab -e`):

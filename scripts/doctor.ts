@@ -113,8 +113,6 @@ export async function lastLedgerSweep(url: string): Promise<Date | null> {
     await client.connect();
     const q = "SELECT max(completed_on) AS at FROM pgboss.job WHERE name = 'ledger.sweep' AND state = 'completed'";
     return (await client.query<{ at: Date | null }>(q)).rows[0]!.at;
-  } catch {
-    return null;
   } finally {
     await client.end().catch(() => {});
   }
@@ -158,7 +156,9 @@ export function backupProblem(
     return `no backup has finished yet. Run: sh deploy/compose/backup.sh, then add it to cron (${BACKUP_DOCS})`;
   }
   if (Number.isNaN(at)) return `${path} doesn't hold a time. Run: sh deploy/compose/backup.sh`;
-  const hours = Math.floor((now() - at) / 3_600_000);
+  const age = now() - at;
+  if (age < -300_000) return `${path} holds a time in the future. Check the server clock`;
+  const hours = Math.floor(age / 3_600_000);
   return hours < 26 ? null : `the last backup finished ${hours} hours ago. Check the cron line and state/backup.log (${BACKUP_DOCS})`;
 }
 

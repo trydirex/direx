@@ -144,3 +144,22 @@ test("with no plugin installed there is nothing to confine; with one, the report
     await clear();
   }
 });
+
+
+test("sweep connection and query faults propagate without worker polling", async () => {
+  await expect(lastLedgerSweep("postgres://unused:unused@127.0.0.1:1/unused")).rejects.toThrow();
+  const url = thisDatabase().DIREX_DB_OWNER_URL!;
+  await owner.query("alter schema pgboss rename to pgboss_unavailable");
+  try {
+    await expect(workerAlive(() => lastLedgerSweep(url))).rejects.toThrow(/pgboss/);
+  } finally {
+    await owner.query("alter schema pgboss_unavailable rename to pgboss");
+  }
+});
+
+test("backup clock skew is tolerated for five minutes, and future times beyond it fail", () => {
+  const marker = { DIREX_BACKUP_MARKER: "/backup" };
+  expect(backupProblem(marker, () => NOW, () => new Date(NOW + 300_000).toISOString())).toBeNull();
+  expect(backupProblem(marker, () => NOW, () => new Date(NOW + 300_001).toISOString())).toContain("time in the future");
+  expect(backupProblem(marker, () => NOW, () => hoursAgo(26))).toContain("26 hours ago");
+});

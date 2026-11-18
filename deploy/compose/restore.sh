@@ -71,11 +71,20 @@ $DC up -d --wait direx || fail "Direx didn't start" "see: $DC logs direx"
 # A backup taken before anyone claimed the server has no Server admin, and this install's backups
 # start only once cron runs backup.sh. Any other failure means the restore isn't usable yet.
 say "checking the installation"
-report=$($DC exec -T direx bun run doctor 2>&1) || true
+doctor_status=0
+report=$($DC exec -T direx bun run doctor 2>&1) || doctor_status=$?
 printf '%s\n' "$report"
 if printf '%s\n' "$report" | grep '^FAIL ' | grep -v '^FAIL this server has a Server admin:' | grep -qv '^FAIL last backup under 26 hours old:'; then
   fail "a check failed" "follow the fix printed above"
 fi
-# A doctor that crashed prints no FAIL line, and no ok line for the key this restore put back.
+# Only exit 1 with an explicitly exempted failed check is an expected nonzero exit.
+if [ "$doctor_status" -ne 0 ]; then
+  [ "$doctor_status" -eq 1 ] || fail "doctor couldn't run" "see its output above and: $DC logs direx"
+  printf '%s\n' "$report" | grep -Eq '^FAIL (this server has a Server admin|last backup under 26 hours old):' ||
+    fail "doctor couldn't run" "see its output above and: $DC logs direx"
+fi
+# The root key check alone doesn't prove the later production checks finished.
+printf '%s\n' "$report" | tail -n 1 | grep -Eq '^ok port [0-9]+ free or running Direx$' ||
+  fail "doctor didn't finish" "see its output above and: $DC logs direx"
 printf '%s\n' "$report" | grep -q '^ok root key$' || fail "doctor didn't finish" "see its output above and: $DC logs direx"
 say "done"

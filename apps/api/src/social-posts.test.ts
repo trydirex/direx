@@ -263,6 +263,47 @@ test.each(["publish", "manual"] as const)("cancelled posts can switch publishing
   }
 });
 
+test.each([
+  ["manual", "manual"], ["manual", "publish"], ["publish", "manual"], ["publish", "publish"],
+] as const)("a delayed %s replacement cannot overwrite a posted %s winner", async (loserMode, winnerMode) => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  const [first] = await draft(id, [{ ...a, text: "Cancelled" }]);
+  ok(await items.cancel(W, first!.itemId, { userId: owner }));
+  let reached!: () => void;
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { reached = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const delayedItems = {
+    ...items,
+    createItem: async (...args: Parameters<typeof items.createItem>) => { reached(); await gate; return items.createItem(...args); },
+    createActionItem: async (...args: Parameters<typeof items.createActionItem>) => { reached(); await gate; return items.createActionItem(...args); },
+  };
+  const make = (mode: "manual" | "publish", service = items) => createPosts({ plugins: () => plugins, vault: () => ({ appSource: async () => own.app }), networks: () => [{ ...info, features: mode === "manual" ? [] : info.features }], items: () => service, now });
+  const step = { campaignId: id, stepKey: "launch", title: "Launch post", plannedAt: WHEN };
+  const losing = make(loserMode, delayedItems).draft(W, step, [{ ...a, text: "Losing text" }], owner);
+  await waiting;
+  try {
+    const winnerPosts = make(winnerMode);
+    const [winner] = await winnerPosts.draft(W, step, [{ ...a, text: "Winning text" }], owner);
+    expect(winner).toMatchObject({ ok: true, mode: winnerMode });
+    expect((await approve(winner!.itemId!)).status).toBe(200);
+    if (winnerMode === "publish") await dispatch(winner!.itemId!);
+    else ok(await winnerPosts.markPosted(W, winner!.itemId!, "https://net.example/manual", owner));
+    const before = await q("select * from social_posts where campaign_id = $1", [id]);
+    release();
+    expect(await losing).toMatchObject([{ ok: false, reason: "stale" }]);
+    expect(await q("select * from social_posts where campaign_id = $1", [id])).toEqual(before);
+    expect((await stateOf(winner!.itemId!)).state).toBe(winnerMode === "publish" ? "sent" : "applied");
+    expect(await q("select count(*)::int as n from items where group_key = $1", [`campaign:${id}:step:launch`])).toEqual([{ n: 2 }]);
+    expect(await q("select count(*)::int as n from actions where idempotency_key like $1", [`social:${id}:%`])).toEqual([{ n: winnerMode === "publish" ? 2 : 1 }]);
+  } finally {
+    release();
+    await losing;
+  }
+});
+
 test("editing an approved draft voids its approval under the same Action, and drafting the same text again changes nothing", async () => {
   beforeWhen();
   const id = await postStep();

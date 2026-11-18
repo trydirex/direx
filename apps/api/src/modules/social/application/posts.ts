@@ -100,6 +100,7 @@ function imagesInList(spec: unknown, payload: unknown): { mediaId: string; fileN
 
 export function createPosts(deps: PostsDeps) {
   const now = deps.now ?? (() => new Date());
+  const staleReplacement = new Error("Post replaced by another draft");
   const network = (connection: string) => deps.networks().find((n) => n.connection === connection);
 
   /** The approved file a post binds, by hash, or null for a text post. */
@@ -272,11 +273,12 @@ export function createPosts(deps: PostsDeps) {
         const found = await inWorkspace(workspaceId, (tx) => existingPost(tx, step.campaignId, step.stepKey, t.connection, networkId, clipId));
         // A cancelled post can't be revised, so a new one takes its place on the step.
         const existing = found?.cancelled ? null : found;
-        const record = (itemId: string, actionId: string | null) =>
-          inWorkspace(workspaceId, (tx) => {
-            const row = { workspaceId, campaignId: step.campaignId, stepKey: step.stepKey, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId, createdAt: now() };
-            return found?.cancelled ? replacePost(tx, found.id, row) : insertPost(tx, row);
-          });
+        const record = async (tx: SocialTx, itemId: string, actionId: string | null) => {
+          const row = { workspaceId, campaignId: step.campaignId, stepKey: step.stepKey, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId, createdAt: now() };
+          if (found?.cancelled) {
+            if (!(await replacePost(tx, found.id, found.itemId, row)).length) throw staleReplacement;
+          } else await insertPost(tx, row);
+        };
 
         if (r.mode === "manual") {
           // A text post's payload stays as it was before video, so its revision doesn't change.
@@ -291,14 +293,13 @@ export function createPosts(deps: PostsDeps) {
             results.push(revised.ok ? { ...base, ok: true, itemId: existing.itemId, mode: "manual" } : { ...base, ok: false, reason: revised.reason });
             continue;
           }
-          const made = await deps.items().createItem(workspaceId, { kind: MANUAL_POST, state: "needs_approval", payload, actor, details: { ...details, snapshot: cited } });
-          if (!made.ok) {
-            results.push({ ...base, ok: false, reason: made.reason });
-            continue;
+          try {
+            const made = await deps.items().createItem(workspaceId, { kind: MANUAL_POST, state: "needs_approval", payload, actor, details: { ...details, snapshot: cited } }, (tx, itemId) => record(tx, itemId, null));
+            results.push(made.ok ? { ...base, ok: true, itemId: made.item.id, mode: "manual" } : { ...base, ok: false, reason: made.reason });
+          } catch (e) {
+            if (e !== staleReplacement) throw e;
+            results.push({ ...base, ok: false, reason: "stale" });
           }
-          // ponytail: two requests at once can leave a second Item with no post row. A person can cancel it; a shared transaction with items if it shows up.
-          await record(made.item.id, null);
-          results.push({ ...base, ok: true, itemId: made.item.id, mode: "manual" });
           continue;
         }
 
@@ -324,20 +325,23 @@ export function createPosts(deps: PostsDeps) {
           results.push(revised.ok ? { ...base, ok: true, itemId: existing.itemId, mode: "publish" } : { ...base, ok: false, reason: revised.reason });
           continue;
         }
-        const item = await deps.items().createActionItem(workspaceId, {
-          // Keep the original key for a first draft. A replacement follows the cancelled Action, or Item for a hand post.
-          idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}${found?.cancelled ? `:after:${found.actionId ?? found.itemId}` : ""}`,
-          capability: r.provider.publish,
-          dedupe: r.provider.dedupe,
-          spec: p.spec,
-          credentialId: t.credentialId,
-          actor,
-          details: { ...details, snapshot },
-        });
-        const fresh = await deps.items().actionIdOf(workspaceId, item.id);
-        await record(item.id, fresh);
-        await deps.items().submitItem(workspaceId, item.id, actor);
-        results.push({ ...base, ok: true, itemId: item.id, mode: "publish" });
+        try {
+          const item = await deps.items().createActionItem(workspaceId, {
+            // Keep the original key for a first draft. A replacement follows the cancelled Action, or Item for a hand post.
+            idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}${found?.cancelled ? `:after:${found.actionId ?? found.itemId}` : ""}`,
+            capability: r.provider.publish,
+            dedupe: r.provider.dedupe,
+            spec: p.spec,
+            credentialId: t.credentialId,
+            actor,
+            details: { ...details, snapshot },
+          }, (tx, itemId, actionId) => record(tx, itemId, actionId));
+          await deps.items().submitItem(workspaceId, item.id, actor);
+          results.push({ ...base, ok: true, itemId: item.id, mode: "publish" });
+        } catch (e) {
+          if (e !== staleReplacement) throw e;
+          results.push({ ...base, ok: false, reason: "stale" });
+        }
       }
       return results;
     },

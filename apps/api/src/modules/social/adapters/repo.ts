@@ -97,11 +97,12 @@ export const existingPost = async (tx: WorkspaceTx, campaignId: string, stepKey:
  * Puts a new post in a cancelled one's place on its step: rows are never deleted, and one account has one place per
  * step. The cancelled Item keeps its history; the old link and its card go, as they belonged to the old text.
  */
-export const replacePost = (tx: WorkspaceTx, id: string, row: typeof socialPosts.$inferInsert) =>
+export const replacePost = (tx: WorkspaceTx, id: string, observedItemId: string, row: typeof socialPosts.$inferInsert) =>
   tx
     .update(socialPosts)
     .set({ credentialId: row.credentialId ?? null, accountName: row.accountName ?? null, itemId: row.itemId, actionId: row.actionId ?? null, createdAt: row.createdAt, postedUrl: null, linkPreview: null, linkImage: null, linkImageType: null })
-    .where(eq(socialPosts.id, id));
+    .where(and(eq(socialPosts.id, id), eq(socialPosts.itemId, observedItemId)))
+    .returning({ id: socialPosts.id });
 
 export const insertPost = (tx: WorkspaceTx, row: typeof socialPosts.$inferInsert) => tx.insert(socialPosts).values(row).onConflictDoNothing();
 

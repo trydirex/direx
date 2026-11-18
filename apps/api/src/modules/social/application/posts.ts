@@ -6,7 +6,7 @@ import type { SocialNetworkInfo } from "../domain/network";
 import type { Vault } from "../../credentials/index";
 import { warn, type Items, type ItemKind, type Warning } from "../../items/index";
 import type { Media } from "../../media/index";
-import { specHash, type Check } from "../../ledger/index";
+import { specHash, type Actor, type Check } from "../../ledger/index";
 import type { Plugins, Prepared as PreparedSpec } from "../../plugins/index";
 import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, runByOf, specOfAction, withinSlot, type SocialTx } from "../adapters/repo";
 import { canDo } from "../domain/can-do";
@@ -169,6 +169,55 @@ export function createPosts(deps: PostsDeps) {
     return { ...p, text: storedSpec("social.publish", p.spec).text };
   }
 
+  /**
+   * A Calendar post outside any campaign, made as a step's post is, and always waiting for approval:
+   * never approved or scheduled here. `actor` is who wrote it, a person or a system actor such as an
+   * External token (ADR 0032 rule 004), and `extra` warnings go on the Item with the post's own, such as
+   * `untrusted_source`, which keeps it out of approve-all.
+   */
+  async function writeAs(workspaceId: string, t: PostTarget & { at: Date }, actor: Actor, extra: readonly Warning[] = []): Promise<PostResult> {
+    const base = { connection: t.connection, networkId: t.networkId };
+    // A time already gone can't be posted at, as a move to one is refused.
+    if (t.at <= now()) return { ...base, ok: false, reason: "slot_in_past" };
+    const r = await resolve(workspaceId, t);
+    if (!r.ok) return { ...base, ...r };
+    const networkId = t.networkId ?? "";
+    const warnings: Warning[] = [...extra];
+    const crowded = t.networkId && (await inWorkspace(workspaceId, (tx) => withinSlot(tx, { connection: t.connection, networkId, except: null, at: t.at, ms: SLOT_MS })));
+    if (crowded) warnings.push(warn("unspecified", SAME_SLOT));
+    if (r.mode === "manual") warnings.push(...tooLong(r.n, t.text));
+    const details = { title: calendarTitle(r.n, t.text), workArea: "social", channel: t.connection, plannedAt: t.at, warnings };
+    const record = (itemId: string, actionId: string | null) =>
+      inWorkspace(workspaceId, (tx) => insertPost(tx, { workspaceId, campaignId: null, stepKey: `calendar:${itemId}`, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId: null, createdAt: now() }));
+    if (r.mode === "manual") {
+      const payload = { text: t.text, followUps: t.followUps ?? [] };
+      const made = await deps.items().createItem(workspaceId, { kind: MANUAL_POST, state: "needs_approval", payload, actor, details: { ...details, snapshot: [] } });
+      if (!made.ok) return { ...base, ok: false, reason: made.reason };
+      await record(made.item.id, null);
+      return { ...base, ok: true, itemId: made.item.id, mode: "manual" };
+    }
+    let p: Prepared;
+    try {
+      p = await prepared(workspaceId, t, r);
+    } catch (e) {
+      return { ...base, ok: false, reason: "refused_by_network", detail: refusal(e) };
+    }
+    if (!r.links && p.text !== t.text) warnings.push(warn("unspecified", LINKS_REMOVED));
+    const version = deps.plugins().capabilityVersion(r.provider.publish);
+    const item = await deps.items().createActionItem(workspaceId, {
+      idempotencyKey: `social:calendar:${crypto.randomUUID()}`,
+      capability: r.provider.publish,
+      dedupe: r.provider.dedupe,
+      spec: p.spec,
+      credentialId: t.credentialId,
+      actor,
+      details: { ...details, snapshot: version ? [{ kind: "capability", id: r.provider.publish, version }] : [] },
+    });
+    await record(item.id, await deps.items().actionIdOf(workspaceId, item.id));
+    await deps.items().submitItem(workspaceId, item.id, actor);
+    return { ...base, ok: true, itemId: item.id, mode: "publish" };
+  }
+
   return {
     /** What a draft would become, changing nothing: the text after the Network's rules, and its count. */
     async preview(workspaceId: string, t: PostTarget): Promise<PostResult & { text?: string; count?: { used: number; limit: number } }> {
@@ -288,53 +337,9 @@ export function createPosts(deps: PostsDeps) {
       return results;
     },
 
-    /**
-     * A post a person writes on the Calendar, outside any campaign. It is made as a step's post is, and it
-     * waits for approval: never approved or scheduled here.
-     */
-    async write(workspaceId: string, t: PostTarget & { at: Date }, userId: string): Promise<PostResult> {
-      const actor = { userId };
-      const base = { connection: t.connection, networkId: t.networkId };
-      // A time already gone can't be posted at, as a move to one is refused.
-      if (t.at <= now()) return { ...base, ok: false, reason: "slot_in_past" };
-      const r = await resolve(workspaceId, t);
-      if (!r.ok) return { ...base, ...r };
-      const networkId = t.networkId ?? "";
-      const warnings: Warning[] = [];
-      const crowded = t.networkId && (await inWorkspace(workspaceId, (tx) => withinSlot(tx, { connection: t.connection, networkId, except: null, at: t.at, ms: SLOT_MS })));
-      if (crowded) warnings.push(warn("unspecified", SAME_SLOT));
-      if (r.mode === "manual") warnings.push(...tooLong(r.n, t.text));
-      const details = { title: calendarTitle(r.n, t.text), workArea: "social", channel: t.connection, plannedAt: t.at, warnings };
-      const record = (itemId: string, actionId: string | null) =>
-        inWorkspace(workspaceId, (tx) => insertPost(tx, { workspaceId, campaignId: null, stepKey: `calendar:${itemId}`, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId: null, createdAt: now() }));
-      if (r.mode === "manual") {
-        const payload = { text: t.text, followUps: t.followUps ?? [] };
-        const made = await deps.items().createItem(workspaceId, { kind: MANUAL_POST, state: "needs_approval", payload, actor, details: { ...details, snapshot: [] } });
-        if (!made.ok) return { ...base, ok: false, reason: made.reason };
-        await record(made.item.id, null);
-        return { ...base, ok: true, itemId: made.item.id, mode: "manual" };
-      }
-      let p: Prepared;
-      try {
-        p = await prepared(workspaceId, t, r);
-      } catch (e) {
-        return { ...base, ok: false, reason: "refused_by_network", detail: refusal(e) };
-      }
-      if (!r.links && p.text !== t.text) warnings.push(warn("unspecified", LINKS_REMOVED));
-      const version = deps.plugins().capabilityVersion(r.provider.publish);
-      const item = await deps.items().createActionItem(workspaceId, {
-        idempotencyKey: `social:calendar:${crypto.randomUUID()}`,
-        capability: r.provider.publish,
-        dedupe: r.provider.dedupe,
-        spec: p.spec,
-        credentialId: t.credentialId,
-        actor,
-        details: { ...details, snapshot: version ? [{ kind: "capability", id: r.provider.publish, version }] : [] },
-      });
-      await record(item.id, await deps.items().actionIdOf(workspaceId, item.id));
-      await deps.items().submitItem(workspaceId, item.id, actor);
-      return { ...base, ok: true, itemId: item.id, mode: "publish" };
-    },
+    /** A post a person writes on the Calendar, as they wrote it: see `writeAs`. */
+    write: (workspaceId: string, t: PostTarget & { at: Date }, userId: string) => writeAs(workspaceId, t, { userId }),
+    writeAs,
 
     /**
      * A person's own words for a post, checked by its network as a draft is. Its follow-ups, video and

@@ -2,11 +2,13 @@
 # Publishes @trydirex/plugin-sdk to npm when a person pushes a version tag such as v0.1.0, but only
 # when the SDK's own version (packages/plugin-sdk/package.json) is not on npm yet. The SDK keeps its
 # own version because plugins report it and the host gates fields on it, so most releases skip.
+# A person can also run it by hand, to retry a publish that failed after the tag was pushed.
 name: release-sdk
 
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -37,7 +39,8 @@ jobs:
       # Packs the tarball and proves it starts a worker in clean Node and Bun projects first.
       - if: steps.version.outputs.publish
         run: bun run sdk:pack --out sdk-dist
+      # The ./ matters: npm reads sdk-dist/<file> as a GitHub owner/repo shorthand.
       - if: steps.version.outputs.publish
-        run: npm publish sdk-dist/*.tgz --provenance --access public
+        run: npm publish ./sdk-dist/*.tgz --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -115,6 +115,9 @@ export function routesFor(deployment: Deployment): Record<string, Route> {
     // The lesson check passed every labelled sentence on the subscription, 2026-11-07. Same safety terms.
     lesson_check: { candidates: [{ ...CHECK_CANDIDATES.claude_code, evalRef: "lesson_check-v1-claude_code-claude-haiku-5-5.json" }] },
     optout_detect: { candidates: [{ ...CHECK_CANDIDATES.claude_code, evalRef: "optout_detect-v1-claude_code-claude-haiku-5-5.json" }] },
+    // The reply desk's label passed REPLY_LABEL_BAR on its synthetic set on the subscription, 3 runs, 2026-11-18.
+    // It only orders the queue and picks the alert; a failure leaves the reply unlabelled, never unseen.
+    reply_label: { candidates: [{ ...CHECK_CANDIDATES.claude_code, evalRef: "reply_label-v2-claude_code-claude-haiku-5-5.json" }] },
     // The Voice check (ADR 0022) passed its eval on the subscription, 5 runs, 2026-11-13. Same safety terms.
     voice_check: { candidates: [{ ...CHECK_CANDIDATES.claude_code, evalRef: "voice_check-v1-claude_code-claude-haiku-5-5.json" }] },
     // The sentence behind each number on Home. Passed WHY_BAR on the subscription on Haiku, 5 runs, 2026-11-12.

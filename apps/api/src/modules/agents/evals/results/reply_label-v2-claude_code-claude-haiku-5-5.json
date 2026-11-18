@@ -1,0 +1,22 @@
+{
+  "agent": "reply_label",
+  "definitionVersion": 2,
+  "promptDigest": "24a3f82b4e94e28d139ec1e4c4c24ca87446a0a10ab02ab96b651a61c5961a97",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "passed": true,
+  "at": "2026-11-18T16:12:46.937Z",
+  "runs": 3,
+  "cases": [
+    {
+      "name": "labels",
+      "passed": true,
+      "passes": 149
+    }
+  ],
+  "measures": {
+    "interestedRecall": 0.983,
+    "accuracy": 0.974,
+    "missedHot": 1
+  }
+}

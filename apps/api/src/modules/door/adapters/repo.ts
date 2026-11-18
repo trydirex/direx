@@ -107,7 +107,8 @@ export async function bumpCounter(tx: WorkspaceTx, workspaceId: string, scope: s
 export const pruneCounters = (tx: WorkspaceTx, workspaceId: string, before: Date) =>
   tx.delete(doorCounters).where(and(eq(doorCounters.workspaceId, workspaceId), lt(doorCounters.minute, before)));
 
-export const insertRequest = (tx: WorkspaceTx, r: { workspaceId: string; tokenId: string; reader: string; outcome: DoorOutcome; at: Date }) => tx.insert(doorRequests).values(r);
+/** `operation` and the older `reader` get the same name until a later release drops `reader` (DX-R-0029-005). */
+export const insertRequest = (tx: WorkspaceTx, r: { workspaceId: string; tokenId: string; reader: string; outcome: DoorOutcome; at: Date }) => tx.insert(doorRequests).values({ ...r, operation: r.reader });
 
 /** A token's latest requests, newest first: reader, outcome and time only. */
 export const recentRequests = (tx: WorkspaceTx, tokenId: string, limit: number) =>

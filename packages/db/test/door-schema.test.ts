@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Database-level guarantees of External tokens (ADR 0032 rule 005), as direx_app inside one Workspace.
+// Database-level guarantees of External tokens (ADR 0032 rule 005) and the door's proposal record
+// (rule 004), as direx_app inside one Workspace.
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import type pg from "pg";
 import { withWorkspace } from "../src/index";
 import { organizations, workspaces } from "../src/schema";
+import { doorProposals } from "../src/schema-door";
 import { appClient, insertAuthUser } from "../../../test/db";
 
 let c: pg.Client;
@@ -115,4 +118,50 @@ test("a counter counts up in one statement, stays positive, and belongs to its W
   } finally {
     await c.query("select set_config('app.workspace_id', $1, false)", [W]);
   }
+});
+
+// Proposals (ADR 0032 rule 004, door-proposals P1): one row per token and idempotency key, written once.
+const digest = () => hash();
+async function proposal(key: string) {
+  const token = (await add()).rows[0].id as string;
+  const item = (await c.query(`insert into items (workspace_id, kind, state, title, warnings, created_at, updated_at) values ($1, 'plan_change', 'needs_approval', 't', '[]', now(), now()) returning id`, [W])).rows[0].id as string;
+  const put = (k = key, d = digest()) =>
+    c.query(`insert into door_proposals (workspace_id, token_id, idempotency_key, body_digest, kind, item_id, created_at) values ($1, $2, $3, $4, 'draft', $5, now())`, [W, token, k, d, item]);
+  return { token, item, put };
+}
+
+test("a token's idempotency key is used once, and the app can't change or delete the record", async () => {
+  const p = await proposal("retry-1");
+  await p.put();
+  await expect(p.put()).rejects.toThrow(/door_proposals_pkey/);
+  await expect(p.put("", digest())).rejects.toThrow(/door_proposals_key_check/);
+  await expect(p.put("other", "not-a-digest")).rejects.toThrow(/door_proposals_body_digest_check/);
+  await expect(c.query("update door_proposals set item_id = item_id where token_id = $1", [p.token])).rejects.toThrow(/permission denied/);
+  await expect(c.query("delete from door_proposals where token_id = $1", [p.token])).rejects.toThrow(/permission denied/);
+});
+
+test("another Workspace sees no proposal", async () => {
+  const p = await proposal("seen-once");
+  await p.put();
+  await c.query("select set_config('app.workspace_id', $1, false)", [OTHER]);
+  try {
+    expect((await c.query("select count(*)::int as n from door_proposals where token_id = $1", [p.token])).rows[0].n).toBe(0);
+  } finally {
+    await c.query("select set_config('app.workspace_id', $1, false)", [W]);
+  }
+  expect((await c.query("select count(*)::int as n from door_proposals where token_id = $1", [p.token])).rows[0].n).toBe(1);
+});
+
+test("a request records its operation, and the proposal refusals are outcomes too", async () => {
+  const token = (await add()).rows[0].id as string;
+  const req = (outcome: string) => c.query(`insert into door_requests (workspace_id, token_id, reader, operation, outcome, at) values ($1, $2, 'fact_proposal', 'fact_proposal', $3, now())`, [W, token, outcome]);
+  for (const outcome of ["kind_not_allowed", "already_waiting", "idempotency_conflict", "proposal_cap", "refused"]) await expect(req(outcome)).resolves.toBeDefined();
+  await expect(req("maybe")).rejects.toThrow(/door_requests_outcome_check/);
+});
+
+test("the schema declares door_proposals' keys and checks as migration 0151 made them", async () => {
+  const t = getTableConfig(doorProposals);
+  const declared = [...t.primaryKeys.map((k) => k.getName()), ...t.foreignKeys.map((f) => f.getName()), ...t.checks.map((ch) => ch.name)].sort();
+  const migrated = (await c.query("select conname from pg_constraint where conrelid = 'door_proposals'::regclass and contype <> 'n' order by conname")).rows.map((r) => r.conname as string);
+  expect(declared).toEqual(migrated);
 });

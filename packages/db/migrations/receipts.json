@@ -12,7 +12,8 @@
     "trigger_events",
     "ask_messages",
     "campaign_people",
-    "door_requests"
+    "door_requests",
+    "door_proposals"
   ],
   "checkFrom": 137,
   "files": {
@@ -619,6 +620,14 @@
     "0150_step_mailboxes.sql": {
       "sha256": "bc923d5c60872454543e2b16b9adcc5ba665f638b236d8a7bee239ce1b49e5d8",
       "description": "Adds campaign_step_mailboxes, the Mailboxes an email step's emails are shared across, with forced RLS, and copies each step's one Mailbox into it."
+    },
+    "0151_door_proposals.sql": {
+      "sha256": "0f9fc7cd182d6668ddfe0096833d42135b943e02e60baf3eb4338a3b3dd27444",
+      "description": "Add door_proposals, a token's proposals keyed by its idempotency key, and a nullable door_requests.operation beside reader, which a later release fills, makes NOT NULL and drops; door outcomes gain the proposal refusals"
+    },
+    "0152_door_requests_validate_outcome.sql": {
+      "sha256": "790e0921bee6a5fb806ca40227a4cb5c17bf1c0b7a5fd788491c2495d924987f",
+      "description": "Validate the expanded door request outcomes after migration 0151 releases its table lock, allowing request writes during the scan"
     }
   }
 }

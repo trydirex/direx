@@ -41,7 +41,8 @@ export type HeaderCheckDeps = {
 type Settings = NonNullable<Awaited<ReturnType<typeof credentialSettings>>>;
 
 /** The address a probe goes to: the sign-in, since receiving the probe there is what proves it. */
-export const signInOf = (s: Pick<Settings, "key" | "meta">) => String(s.meta.username ?? s.key).trim().toLowerCase();
+// A password Mailbox signs in with `username`; a Gmail one keeps its address in `accountEmail`, its key being `google:<address>`.
+export const signInOf = (s: Pick<Settings, "key" | "meta">) => String(s.meta.username ?? s.meta.accountEmail ?? s.key).trim().toLowerCase();
 
 /** What a result is bound to: change the sender, servers or sign-in and the Mailbox is unchecked again. */
 export const settingsHash = (s: Pick<Settings, "connection" | "key" | "meta">) =>

@@ -11,7 +11,7 @@ import { loadPlugins } from "../plugins/index";
 import { touchCheck } from "../schedule/index";
 import { currentCheck } from "./adapters/header-checks";
 import { inWorkspace, saveSettings } from "./adapters/repo";
-import { createHeaderCheck, isProbeCapability, PROBE_TEXT, PROBE_WORDING_VERSION, probeRecipient, probeWordingVersion } from "./application/header-check";
+import { createHeaderCheck, isProbeCapability, PROBE_TEXT, PROBE_WORDING_VERSION, probeRecipient, probeWordingVersion, signInOf } from "./application/header-check";
 import { REPLY_STOP } from "./domain/footer";
 import { TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
 
@@ -74,6 +74,11 @@ test("a contributor's Connect sends one probe to the Mailbox's own sign-in, with
   expect(lastText()).toBe(`${PROBE_TEXT}\n\n--\nSam at Acme\n1 Main St\n${REPLY_STOP}`);
   // On localhost there's no link or one-click header, exactly as for a cold email.
   expect(raw).not.toContain("List-Unsubscribe");
+});
+
+test("a Gmail Mailbox's sign-in is its account address, not its `google:` credential key", () => {
+  expect(signInOf({ key: "google:Me@acme.test", meta: { accountEmail: "Me@acme.test", scopes: ["openid"] } })).toBe("me@acme.test");
+  expect(signInOf({ key: "me@acme.test", meta: {} })).toBe("me@acme.test");
 });
 
 test("on a public HTTPS address the probe carries a link Direx never issued, and the one-click headers", async () => {

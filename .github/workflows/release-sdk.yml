@@ -2,13 +2,18 @@
 # Publishes @trydirex/plugin-sdk to npm when a person pushes a version tag such as v0.1.0, but only
 # when the SDK's own version (packages/plugin-sdk/package.json) is not on npm yet. The SDK keeps its
 # own version because plugins report it and the host gates fields on it, so most releases skip.
-# A person can also run it by hand, to retry a publish that failed after the tag was pushed.
+# A person can also retry by hand, naming the release tag whose SDK and build inputs must match.
 name: release-sdk
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to retry (for example v0.1.0; its SDK version may differ)
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -26,6 +31,17 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
+      # A retry may run from main to pick up workflow fixes, but must publish the release's SDK.
+      - name: Verify manual release source
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          git check-ref-format "refs/tags/$RELEASE_TAG"
+          git fetch --no-tags origin "refs/tags/$RELEASE_TAG"
+          git diff --exit-code FETCH_HEAD HEAD -- \
+            packages/plugin-sdk scripts/sdk-pack.ts package.json bun.lock \
+            bunfig.toml .bun-version tsconfig.base.json
       - id: version
         run: |
           v=$(node -p 'require("./packages/plugin-sdk/package.json").version')

@@ -32,3 +32,11 @@ export const tokenAudit = (workspaceId: string) =>
       .where(isNotNull(workspaceAudit.subjectTokenId))
       .orderBy(workspaceAudit.id),
   );
+
+/** One Item waiting for a person, for a proposal record to point at. */
+export async function seedItem(workspaceId: string): Promise<string> {
+  const r = await withWorkspace(workspaceId, (tx) =>
+    tx.execute(sql`insert into items (workspace_id, kind, state, title, warnings, created_at, updated_at) values (${workspaceId}, 'plan_change', 'needs_approval', 't', '[]', now(), now()) returning id`),
+  );
+  return (r.rows[0] as { id: string }).id;
+}

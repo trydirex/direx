@@ -3,7 +3,7 @@
 // go in the Workspace audit log in the same transaction, as credentials' removals do.
 import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { workspaceAudit, workspaceMembers, workspaces } from "@direx/db/schema";
-import { DOOR_OUTCOMES, doorCounters, doorRequests, externalTokens } from "@direx/db/schema-door";
+import { DOOR_OUTCOMES, doorCounters, doorProposals, doorRequests, externalTokens } from "@direx/db/schema-door";
 import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 
 export const inWorkspace = withWorkspace;
@@ -119,3 +119,25 @@ export const recentRequests = (tx: WorkspaceTx, tokenId: string, limit: number) 
     .where(eq(doorRequests.tokenId, tokenId))
     .orderBy(desc(doorRequests.id))
     .limit(limit);
+
+/**
+ * Proposals take one lock per Workspace, held until the transaction ends, so two at once can't both pass
+ * a cap or both use one idempotency key (ADR 0032 rule 006).
+ */
+// ponytail: one lock per Workspace serialises its proposals (200 a day at most); per-token locks if that ever queues.
+export const lockProposals = (tx: WorkspaceTx, workspaceId: string) => tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`door:proposals:${workspaceId}`}, 0))`);
+
+/** What a token already proposed under this idempotency key, if anything. */
+export async function findProposal(tx: WorkspaceTx, tokenId: string, idempotencyKey: string) {
+  const rows = await tx
+    .select({ bodyDigest: doorProposals.bodyDigest, kind: doorProposals.kind, itemId: doorProposals.itemId })
+    .from(doorProposals)
+    .where(and(eq(doorProposals.tokenId, tokenId), eq(doorProposals.idempotencyKey, idempotencyKey)));
+  return rows[0] ?? null;
+}
+
+/** This Workspace's proposals since `since`: which token, which Item, when. */
+export const proposalsSince = (tx: WorkspaceTx, since: Date) =>
+  tx.select({ tokenId: doorProposals.tokenId, itemId: doorProposals.itemId, createdAt: doorProposals.createdAt }).from(doorProposals).where(gt(doorProposals.createdAt, since));
+
+export const insertProposal = (tx: WorkspaceTx, p: typeof doorProposals.$inferInsert) => tx.insert(doorProposals).values(p);

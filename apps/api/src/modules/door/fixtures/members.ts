@@ -4,7 +4,7 @@
 import { withWorkspace } from "@direx/db";
 import { authDb, authSchema } from "@direx/db/auth";
 import { workspaceAudit, workspaceMembers } from "@direx/db/schema";
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { seedMember } from "../../identity/fixtures/member";
 import type { Role } from "../../identity/index";
 
@@ -19,6 +19,10 @@ export async function setRole(workspaceId: string, userId: string, role: Role | 
     if (role) await tx.insert(workspaceMembers).values({ workspaceId, userId, role, createdAt: new Date() });
   });
 }
+
+/** Deletes the Workspace as its Owner would, leaving it restorable until purge. */
+export const softDeleteWorkspace = (workspaceId: string, by: string) =>
+  withWorkspace(workspaceId, (tx) => tx.execute(sql`select system.soft_delete_workspace(${workspaceId}::uuid, ${by}::uuid)`));
 
 export const tokenAudit = (workspaceId: string) =>
   withWorkspace(workspaceId, (tx) =>

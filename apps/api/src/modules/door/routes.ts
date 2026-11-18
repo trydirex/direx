@@ -3,7 +3,7 @@
 // registered reader and nothing else, so no route written for the web app can end up here. Each
 // request needs an External token for the Workspace in its URL. In order: the token, the caps, the
 // reader the token chose, the body's size, then the read; every step after the token leaves one
-// request row. Any failed token check gets the same 401, so the answer says nothing about why.
+// request row, except a token's repeat refusals at the caps within one minute. Any failed token check gets the same 401, so the answer says nothing about why.
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
@@ -46,9 +46,8 @@ export function doorApp(d: { tokens: Pick<Tokens, "verify">; requests: Requests;
       const record = (outcome: DoorOutcome) => d.requests.record(workspaceId, caller.tokenId, name, outcome);
       c.set("caller", caller);
       c.set("record", record);
-      const admitted = await d.requests.admit(workspaceId, caller.tokenId);
+      const admitted = await d.requests.admit(workspaceId, caller.tokenId, name);
       if (!admitted.ok) {
-        await record("rate_limited");
         c.header("Retry-After", String(admitted.retryAfter));
         return c.json({ error: "rate_limited" }, 429);
       }

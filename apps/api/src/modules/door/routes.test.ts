@@ -15,7 +15,7 @@ const OTHER = crypto.randomUUID();
 const owner = crypto.randomUUID();
 const otherOwner = crypto.randomUUID();
 const tokens = createTokens({ maxDays: null });
-const requests = createRequests({ caps: { perToken: 3, perWorkspace: 1000 } });
+const requests = createRequests({ caps: { perToken: 3, perWorkspace: 1000 }, now: () => new Date("2026-11-16T09:30:30.500Z") });
 
 const Input = z.strictObject({ cursor: z.string().nullish() });
 const fake = (disclosure: DoorRead["disclosure"], read?: DoorRead["read"]): DoorRead => ({
@@ -98,13 +98,14 @@ test("a reader the token didn't choose is 403, counted and recorded", async () =
   expect(await outcomes(t.id)).toEqual(["reader_not_allowed"]);
 });
 
-test("over the cap is 429 with Retry-After, and recorded", async () => {
+test("over the cap is 429 with Retry-After, recorded once a minute however often it repeats", async () => {
   const t = await token();
   for (let i = 0; i < 3; i++) expect((await post("read_changes", bearer(t.token))).status).toBe(200);
   const res = await post("read_changes", bearer(t.token));
   expect(await answer(res)).toEqual([429, { error: "rate_limited" }]);
   expect(Number(res.headers.get("retry-after"))).toBeGreaterThan(0);
-  expect((await outcomes(t.id))[0]).toBe("rate_limited");
+  expect((await post("read_changes", bearer(t.token))).status).toBe(429);
+  expect(await outcomes(t.id)).toEqual(["rate_limited", "ok", "ok", "ok"]);
 });
 
 test("a body over 16 KB is 413; bad JSON, an unknown field and a bad cursor are 400; each is recorded", async () => {

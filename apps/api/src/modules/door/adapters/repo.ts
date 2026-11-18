@@ -2,7 +2,7 @@
 // External tokens in the database, every query inside one Workspace under forced RLS. Token events
 // go in the Workspace audit log in the same transaction, as credentials' removals do.
 import { withWorkspace, type WorkspaceTx } from "@direx/db";
-import { workspaceAudit, workspaceMembers } from "@direx/db/schema";
+import { workspaceAudit, workspaceMembers, workspaces } from "@direx/db/schema";
 import { DOOR_OUTCOMES, doorCounters, doorRequests, externalTokens } from "@direx/db/schema-door";
 import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 
@@ -54,7 +54,7 @@ export async function revokeToken(tx: WorkspaceTx, workspaceId: string, tokenId:
   return true;
 }
 
-/** The unrevoked token with this hash, with its creator's role now. */
+/** The unrevoked token with this hash, with its creator's role now. None once its Workspace is deleted. */
 export async function findByHash(tx: WorkspaceTx, tokenHash: string) {
   const rows = await tx
     .select({
@@ -66,6 +66,7 @@ export async function findByHash(tx: WorkspaceTx, tokenHash: string) {
       creatorRole: workspaceMembers.role,
     })
     .from(externalTokens)
+    .innerJoin(workspaces, and(eq(workspaces.workspaceId, externalTokens.workspaceId), isNull(workspaces.deletedAt)))
     .leftJoin(workspaceMembers, and(eq(workspaceMembers.workspaceId, externalTokens.workspaceId), eq(workspaceMembers.userId, externalTokens.createdBy)))
     .where(and(eq(externalTokens.tokenHash, tokenHash), isNull(externalTokens.revokedAt)));
   return rows[0] ?? null;

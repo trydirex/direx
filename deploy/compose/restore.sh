@@ -84,7 +84,7 @@ if [ "$doctor_status" -ne 0 ]; then
     fail "doctor couldn't run" "see its output above and: $DC logs direx"
 fi
 # The root key check alone doesn't prove the later production checks finished.
-printf '%s\n' "$report" | tail -n 1 | grep -Eq '^ok port [0-9]+ free or running Direx$' ||
+printf '%s\n' "$report" | grep -E '^(ok |FAIL )' | tail -n 1 | grep -Eq '^ok port [0-9]+ free or running Direx$' ||
   fail "doctor didn't finish" "see its output above and: $DC logs direx"
 printf '%s\n' "$report" | grep -q '^ok root key$' || fail "doctor didn't finish" "see its output above and: $DC logs direx"
 say "done"

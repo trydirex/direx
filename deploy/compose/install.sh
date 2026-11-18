@@ -107,8 +107,11 @@ fi
 
 # backup.sh writes here and Direx reads it; made now so Docker doesn't create it as root. Readable
 # by all, whatever umask wrote .env, because Direx reads it as its own user, not this one.
-mkdir -p state
-chmod 755 state
+mkdir -p state || fail "the backup state directory couldn't be created" "check permissions on this directory, then run install.sh again"
+state_mode=$(stat -c '%a' state) || fail "the backup state directory's permissions couldn't be read" "check state, then run install.sh again"
+if [ "$state_mode" != "755" ]; then
+  chmod 755 state || fail "the backup state directory needs mode 755" "have its owner run chmod 755 state, then run install.sh again"
+fi
 
 image="ghcr.io/trydirex/direx:$(envget DIREX_VERSION)"
 if docker image inspect "$image" >/dev/null 2>&1; then

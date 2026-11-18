@@ -6,7 +6,7 @@ import { join, relative, resolve } from "node:path";
 // Packs the plugin SDK the way npm will publish it and proves the tarball works outside the
 // monorepo: it holds only MIT files, and a clean Node project and a clean Bun project (the hello
 // example, bundled) both start a worker from it that answers initialize with its manifest.
-// `--out <dir>` keeps the tarball, which is the file the founder publishes. Exit 0 pass, 1 fail.
+// `--out <dir>` keeps the tarball, which is the file release-sdk.yml publishes. Exit 0 pass, 1 fail.
 
 const repo = join(import.meta.dir, "..");
 const sdk = join(repo, "packages/plugin-sdk");
@@ -57,14 +57,17 @@ try {
   run([process.execPath, "run", "build"], sdk);
 
   // The published package.json drops the "bun" condition, which points at src/ for the monorepo
-  // and would send a Bun install to files the tarball does not hold, and the build script.
+  // and would send a Bun install to files the tarball does not hold, the build script, and
+  // "private", which keeps anyone from publishing the source folder instead of this tarball.
   const stage = join(tmp, "stage");
   mkdirSync(stage);
   cpSync(join(sdk, "dist"), join(stage, "dist"), { recursive: true });
   for (const f of ["LICENSE", "README.md"]) copyFileSync(join(sdk, f), join(stage, f));
   const pkg = JSON.parse(readFileSync(join(sdk, "package.json"), "utf8"));
   delete pkg.exports["."].bun;
+  delete pkg.exports["./host"].bun;
   delete pkg.scripts;
+  delete pkg.private;
   writeFileSync(join(stage, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
   const [packed] = JSON.parse(run(["npm", "pack", "--json", "--pack-destination", tmp], stage)) as { filename: string }[];
   const tarball = join(tmp, packed!.filename);
@@ -111,6 +114,17 @@ await runWorker(plugin);
   hello.dependencies["@trydirex/plugin-sdk"] = `file:${tarball}`;
   writeFileSync(join(bun, "package.json"), `${JSON.stringify(hello, null, 2)}\n`);
   run([process.execPath, "install"], bun);
+
+  // Both published entry points must resolve without the monorepo's src/ files.
+  const hostCheck = `import { deepStrictEqual } from "node:assert";
+import { readErrorData } from "@trydirex/plugin-sdk/host";
+deepStrictEqual(readErrorData({ reason: "quota_exhausted", waitMs: 500 }), { reason: "failed", waitMs: 500 });
+`;
+  for (const [runtime, cwd] of [["node", node], [process.execPath, bun]] as const) {
+    writeFileSync(join(cwd, "host.mjs"), hostCheck);
+    run([runtime, "host.mjs"], cwd);
+    console.log(`${runtime}: host import ok`);
+  }
   run([process.execPath, "run", "build"], bun);
   console.log(`bun: initialize answered ${await initialize([process.execPath, "dist/plugin.js"], bun)}`);
 

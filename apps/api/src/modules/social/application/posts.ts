@@ -8,7 +8,7 @@ import { warn, type Items, type ItemKind, type Warning } from "../../items/index
 import type { Media } from "../../media/index";
 import { specHash, type Actor, type Check } from "../../ledger/index";
 import type { Plugins, Prepared as PreparedSpec } from "../../plugins/index";
-import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, runByOf, specOfAction, withinSlot, type SocialTx } from "../adapters/repo";
+import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, replacePost, runByOf, specOfAction, withinSlot, type SocialTx } from "../adapters/repo";
 import { canDo } from "../domain/can-do";
 import { isPublicUrl } from "../domain/public-url";
 import { firstLink, imageType, mustRead, type KeptPreview, type LinkPreview } from "../domain/link-preview";
@@ -269,9 +269,14 @@ export function createPosts(deps: PostsDeps) {
           if (over) warnings.push(warn("unspecified", over));
         }
         const details = { title: `${r.n.label}: ${step.title}`, workArea: "social", channel: t.connection, plannedAt: at, warnings, groupKey, groupLabel: step.title };
-        const existing = await inWorkspace(workspaceId, (tx) => existingPost(tx, step.campaignId, step.stepKey, t.connection, networkId, clipId));
+        const found = await inWorkspace(workspaceId, (tx) => existingPost(tx, step.campaignId, step.stepKey, t.connection, networkId, clipId));
+        // A cancelled post can't be revised, so a new one takes its place on the step.
+        const existing = found?.cancelled ? null : found;
         const record = (itemId: string, actionId: string | null) =>
-          inWorkspace(workspaceId, (tx) => insertPost(tx, { workspaceId, campaignId: step.campaignId, stepKey: step.stepKey, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId, createdAt: now() }));
+          inWorkspace(workspaceId, (tx) => {
+            const row = { workspaceId, campaignId: step.campaignId, stepKey: step.stepKey, connection: t.connection, networkId, credentialId: t.credentialId, accountName: r.account?.name ?? null, itemId, actionId, clipId, createdAt: now() };
+            return found?.cancelled ? replacePost(tx, found.id, row) : insertPost(tx, row);
+          });
 
         if (r.mode === "manual") {
           // A text post's payload stays as it was before video, so its revision doesn't change.
@@ -320,8 +325,8 @@ export function createPosts(deps: PostsDeps) {
           continue;
         }
         const item = await deps.items().createActionItem(workspaceId, {
-          // A post step's key is as it always was; a clip's post adds the clip.
-          idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}`,
+          // A post step's key is as it always was; a clip's post adds the clip, and a post in a cancelled one's place adds that Action.
+          idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}${found?.cancelled && found.actionId ? `:after:${found.actionId}` : ""}`,
           capability: r.provider.publish,
           dedupe: r.provider.dedupe,
           spec: p.spec,

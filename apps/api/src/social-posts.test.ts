@@ -204,6 +204,32 @@ test("rejecting one holds only that Network", async () => {
   expect((await stateOf(two!.itemId)).state).toBe("sent");
 });
 
+test("a cancelled post gives way to a new one on the same account, and a sent one still can't be written again", async () => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  const [first] = await draft(id, [{ ...a, text: "First" }]);
+  ok(await items.cancel(W, first!.itemId, { userId: owner }));
+  const [again] = await draft(id, [{ ...a, text: "Again" }]);
+  expect(again).toMatchObject({ ok: true, mode: "publish" });
+  expect(again!.itemId).not.toBe(first!.itemId);
+  expect((await stateOf(first!.itemId)).state).toBe("cancelled");
+  // A copy-and-paste post the person dismissed gives way the same way.
+  const hand = { connection: "later", credentialId: null, networkId: null };
+  const [dismissed] = await draft(id, [{ ...hand, text: "By hand" }]);
+  ok(await items.cancel(W, dismissed!.itemId, { userId: owner }));
+  const [handAgain] = await draft(id, [{ ...hand, text: "By hand again" }]);
+  expect(handAgain).toMatchObject({ ok: true, mode: "manual" });
+  expect(handAgain!.itemId).not.toBe(dismissed!.itemId);
+  expect(await q("select count(*)::int as n from social_posts where campaign_id = $1", [id])).toEqual([{ n: 2 }]);
+  // What went out stays: writing that account again is refused, and nothing posts twice.
+  await approve(again!.itemId);
+  await dispatch(again!.itemId);
+  const [late] = await draft(id, [{ ...a, text: "Third" }], new Date(clock.at.getTime() + 3_600_000));
+  expect(late).toMatchObject({ ok: false, reason: "wrong_state" });
+  expect(net.state.published.filter((p) => p.spec.text === "Third")).toEqual([]);
+});
+
 test("editing an approved draft voids its approval under the same Action, and drafting the same text again changes nothing", async () => {
   beforeWhen();
   const id = await postStep();

@@ -6,7 +6,7 @@ import { join, relative, resolve } from "node:path";
 // Packs the plugin SDK the way npm will publish it and proves the tarball works outside the
 // monorepo: it holds only MIT files, and a clean Node project and a clean Bun project (the hello
 // example, bundled) both start a worker from it that answers initialize with its manifest.
-// `--out <dir>` keeps the tarball, which is the file the founder publishes. Exit 0 pass, 1 fail.
+// `--out <dir>` keeps the tarball, which is the file release-sdk.yml publishes. Exit 0 pass, 1 fail.
 
 const repo = join(import.meta.dir, "..");
 const sdk = join(repo, "packages/plugin-sdk");
@@ -57,7 +57,8 @@ try {
   run([process.execPath, "run", "build"], sdk);
 
   // The published package.json drops the "bun" condition, which points at src/ for the monorepo
-  // and would send a Bun install to files the tarball does not hold, and the build script.
+  // and would send a Bun install to files the tarball does not hold, the build script, and
+  // "private", which keeps anyone from publishing the source folder instead of this tarball.
   const stage = join(tmp, "stage");
   mkdirSync(stage);
   cpSync(join(sdk, "dist"), join(stage, "dist"), { recursive: true });
@@ -65,6 +66,7 @@ try {
   const pkg = JSON.parse(readFileSync(join(sdk, "package.json"), "utf8"));
   delete pkg.exports["."].bun;
   delete pkg.scripts;
+  delete pkg.private;
   writeFileSync(join(stage, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
   const [packed] = JSON.parse(run(["npm", "pack", "--json", "--pack-destination", tmp], stage)) as { filename: string }[];
   const tarball = join(tmp, packed!.filename);

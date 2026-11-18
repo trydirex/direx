@@ -124,6 +124,6 @@ test("the author entry holds only author API", () => {
   ]);
 });
 
-test("the package stays private until it is ready to publish", () => {
+test("the source package stays private, so only the packed tarball is published", () => {
   expect(pkg.private).toBe(true);
 });

@@ -9,9 +9,9 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { requirePermission, requireStepUp, type MemberEnv } from "../identity/index";
-import { invoke } from "./application/invoke";
+import { invoke, proposeVia } from "./application/invoke";
 import { DOOR_KINDS, DOOR_READERS } from "./domain/catalogue";
-import type { Registration } from "./application/registry";
+import type { ProposalRegistration, Registration } from "./application/registry";
 import { answerMcp } from "./mcp";
 import type { DoorOutcome, Requests } from "./application/requests";
 import type { Tokens } from "./application/tokens";
@@ -31,7 +31,8 @@ const refusals = {
   429: { description: "rate_limited; Retry-After says how many seconds", content: { "application/json": { schema: refusal } } },
 };
 
-export function doorApp(d: { tokens: Pick<Tokens, "verify">; requests: Requests; registrations: readonly Registration[] }) {
+export function doorApp(d: { tokens: Pick<Tokens, "verify">; requests: Requests; registrations: readonly Registration[]; proposals?: readonly ProposalRegistration[] }) {
+  const proposals = d.proposals ?? [];
   const app = new OpenAPIHono<DoorEnv>();
   app.openAPIRegistry.registerComponent("securitySchemes", "externalToken", { type: "http", scheme: "bearer", description: "An External token, dxt_..." });
 
@@ -98,9 +99,46 @@ export function doorApp(d: { tokens: Pick<Tokens, "verify">; requests: Requests;
     });
   }
 
+  // Proposals (ADR 0032 rule 004): the kind check, idempotency and proposal caps are the intake's.
+  const STATUS = { kind_not_allowed: 403, invalid_input: 400, idempotency_conflict: 409, already_waiting: 409, proposal_cap: 429, refused: 422 } as const;
+  for (const p of proposals) {
+    app.post(`${DOOR_BASE}/w/:workspaceId/${p.name}`, admit(p.name), limit, async (c) => {
+      const text = await c.req.text();
+      let input: unknown;
+      try {
+        input = text ? JSON.parse(text) : {};
+      } catch {
+        await c.get("record")("invalid_input");
+        return c.json({ error: "invalid_input" }, 400);
+      }
+      const r = await proposeVia(d.requests, c.get("caller"), p, input);
+      if (r.ok) return c.json(r.value, 200);
+      return c.json({ error: r.refusal, ...(r.itemId && { itemId: r.itemId }), ...(r.code && { code: r.code }) }, STATUS[r.refusal]);
+    });
+    const answer = (description: string) => ({ description, content: { "application/json": { schema: z.object({ error: z.string(), itemId: z.uuid().optional(), code: z.string().optional() }) } } });
+    app.openAPIRegistry.registerPath({
+      method: "post",
+      path: `${DOOR_BASE}/w/{workspaceId}/${p.name}`,
+      operationId: p.name,
+      description: p.description,
+      security: [{ externalToken: [] }],
+      request: { params: z.object({ workspaceId: z.uuid() }), body: { content: { "application/json": { schema: p.input } } } },
+      responses: {
+        200: { description: "The Item, waiting for a person; the same one for a retry", content: { "application/json": { schema: p.output } } },
+        400: answer("invalid_input"),
+        401: refusals[401],
+        403: answer("kind_not_allowed"),
+        409: answer("idempotency_conflict, or already_waiting with that Item's id"),
+        413: refusals[413],
+        422: answer("refused, with the owning module's code"),
+        429: answer("rate_limited or proposal_cap"),
+      },
+    });
+  }
+
   // The MCP face: the token and caps here, the reader check per tool call inside `invoke`.
   const mcpPath = `${DOOR_BASE}/w/:workspaceId/mcp`;
-  app.post(mcpPath, admit("mcp"), limit, (c) => answerMcp(c.req.raw, c.get("caller"), d.registrations, d.requests));
+  app.post(mcpPath, admit("mcp"), limit, (c) => answerMcp(c.req.raw, c.get("caller"), d.registrations, d.requests, proposals));
   app.on(["GET", "DELETE"], mcpPath, (c) => c.json({ error: "method_not_allowed" }, 405));
   app.openAPIRegistry.registerPath({
     method: "post",

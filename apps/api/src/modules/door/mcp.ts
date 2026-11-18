@@ -7,16 +7,24 @@
 // against the caps, which the route's gate applied. The only file that may import the SDK.
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
-import { invoke } from "./application/invoke";
-import type { Registration } from "./application/registry";
+import { invoke, proposeVia } from "./application/invoke";
+import type { ProposalRegistration, Registration } from "./application/registry";
 import type { Requests } from "./application/requests";
 import type { TokenCaller } from "./domain/tokens";
 
-export async function answerMcp(request: Request, caller: TokenCaller, registrations: readonly Registration[], requests: Pick<Requests, "record">): Promise<Response> {
+export async function answerMcp(request: Request, caller: TokenCaller, registrations: readonly Registration[], requests: Pick<Requests, "record">, proposals: readonly ProposalRegistration[] = []): Promise<Response> {
   const server = new McpServer({ name: "direx-door", version: "1" });
   for (const reg of registrations.filter((r) => caller.readers.includes(r.name))) {
     server.registerTool(reg.name, { description: reg.description, inputSchema: reg.input, outputSchema: reg.output, annotations: { readOnlyHint: true } }, async (args: unknown) => {
       const r = await invoke(requests, caller, reg, args);
+      if (!r.ok) return { isError: true, content: [{ type: "text" as const, text: r.refusal }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify(r.value) }], structuredContent: r.value };
+    });
+  }
+  // A proposal changes something, if only by waiting for a person, so it isn't read-only.
+  for (const p of proposals.filter((r) => caller.kinds.includes(r.name))) {
+    server.registerTool(p.name, { description: p.description, inputSchema: p.input, outputSchema: p.output, annotations: { readOnlyHint: false } }, async (args: unknown) => {
+      const r = await proposeVia(requests, caller, p, args);
       if (!r.ok) return { isError: true, content: [{ type: "text" as const, text: r.refusal }] };
       return { content: [{ type: "text" as const, text: JSON.stringify(r.value) }], structuredContent: r.value };
     });

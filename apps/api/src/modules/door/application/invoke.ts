@@ -5,7 +5,8 @@
 // output names. Each ending leaves one request row; a read that throws is recorded and thrown on.
 import { ZodError } from "zod";
 import type { TokenCaller } from "../domain/tokens";
-import type { Registration } from "./registry";
+import type { ProposalRefusal } from "./proposals";
+import type { ProposalRegistration, Registration } from "./registry";
 import type { DoorOutcome, Requests } from "./requests";
 
 export type Refusal = "reader_not_allowed" | "invalid_input" | "bad_cursor";
@@ -29,4 +30,21 @@ export async function invoke(requests: Pick<Requests, "record">, caller: TokenCa
     await record("error");
     throw e;
   }
+}
+
+export type Proposed = { ok: true; value: { itemId: string | null } } | { ok: false; refusal: ProposalRefusal; itemId?: string; code?: string };
+
+/** A proposal through either face, after the token and caps: one request row with how it ended (rule 011). */
+export async function proposeVia(requests: Pick<Requests, "record">, caller: TokenCaller, reg: ProposalRegistration, input: unknown): Promise<Proposed> {
+  const record = (outcome: DoorOutcome) => requests.record(caller.workspaceId, caller.tokenId, reg.name, outcome);
+  let r;
+  try {
+    r = await reg.propose(caller, input);
+  } catch (e) {
+    await record("error");
+    throw e;
+  }
+  await record(r.ok ? "ok" : r.reason);
+  if (r.ok) return { ok: true, value: { itemId: r.itemId } };
+  return { ok: false, refusal: r.reason, ...(r.itemId && { itemId: r.itemId }), ...(r.code && { code: r.code }) };
 }

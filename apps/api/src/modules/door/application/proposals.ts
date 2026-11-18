@@ -62,6 +62,9 @@ export type ProposalEntries = {
   draft: (tx: repo.ProposalTx, workspaceId: string, p: DraftProposal, actor: ProposalActor, warnings: readonly Warning[]) => Promise<Made>;
 };
 
+/** What a proposal answers: the Item it made, or null when there was nothing to make. */
+export const ProposalOutput = z.object({ itemId: z.uuid().nullable() });
+
 export type ProposalRefusal = "kind_not_allowed" | "invalid_input" | "idempotency_conflict" | "proposal_cap" | "already_waiting" | "refused";
 export type ProposalResult = { ok: true; itemId: string | null } | { ok: false; reason: ProposalRefusal; itemId?: string; code?: string };
 
@@ -93,6 +96,9 @@ export function createProposals(d: {
   }
 
   return {
+    /** Each kind's input, for the door's document and its MCP tools. */
+    inputs: { fact_proposal: FactInput, draft: DraftInput } as const,
+
     async propose(caller: TokenCaller, kind: DoorKind, raw: unknown): Promise<ProposalResult> {
       if (!caller.kinds.includes(kind)) return { ok: false, reason: "kind_not_allowed" };
       const parsed = kind === "fact_proposal" ? FactInput.safeParse(raw) : DraftInput.safeParse(raw);

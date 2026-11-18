@@ -2,7 +2,7 @@
 // Reports what stands between this checkout and a working `bun run dev`. It changes nothing and
 // prints no secret. Each line is `ok <check>` or `FAIL <check>: <next step>`; any FAIL exits 1.
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { anyFreePort, failLine, portFree, PREREQUISITES, root } from "./first-run";
 
@@ -105,11 +105,69 @@ async function mailLogsIn(url: string | null): Promise<boolean> {
   return (await smtpMailer(url, "doctor@localhost").verify?.()) === true;
 }
 
+/** When the worker last finished its every-minute ledger sweep: the heartbeat of the worker side. */
+export async function lastLedgerSweep(url: string): Promise<Date | null> {
+  const { default: pg } = await import("pg");
+  const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: 3000 });
+  try {
+    await client.connect();
+    const q = "SELECT max(completed_on) AS at FROM pgboss.job WHERE name = 'ledger.sweep' AND state = 'completed'";
+    return (await client.query<{ at: Date | null }>(q)).rows[0]!.at;
+  } catch {
+    return null;
+  } finally {
+    await client.end().catch(() => {});
+  }
+}
+
+const SWEEP_FRESH_MS = 10 * 60_000;
+
+/**
+ * Whether a ledger sweep finished in the last 10 minutes. Right after a start the first one is up to
+ * a minute and a half away, so a missing sweep is waited for that long before it counts.
+ */
+export async function workerAlive(
+  last: () => Promise<Date | null>,
+  o: { now?: () => number; sleep?: (ms: number) => Promise<void>; patienceMs?: number } = {},
+): Promise<boolean> {
+  const now = o.now ?? Date.now;
+  const sleep = o.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const patience = o.patienceMs ?? 90_000;
+  for (let waited = 0; ; waited += 5000) {
+    const at = await last();
+    if (at && now() - at.getTime() < SWEEP_FRESH_MS) return true;
+    if (waited >= patience) return false;
+    await sleep(5000);
+  }
+}
+
+const BACKUP_DOCS = "deploy/compose/README.md, Backups";
+
+/** What is wrong with the last backup backup.sh recorded, or null when it is under 26 hours old. */
+export function backupProblem(
+  env: Record<string, string | undefined>,
+  now: () => number = Date.now,
+  read: (path: string) => string = (path) => readFileSync(path, "utf8"),
+): string | null {
+  const path = env.DIREX_BACKUP_MARKER;
+  if (!path) return `no backups are set up. Set them up as in ${BACKUP_DOCS}`;
+  let at: number;
+  try {
+    at = Date.parse(read(path).trim());
+  } catch {
+    return `no backup has finished yet. Run: sh deploy/compose/backup.sh, then add it to cron (${BACKUP_DOCS})`;
+  }
+  if (Number.isNaN(at)) return `${path} doesn't hold a time. Run: sh deploy/compose/backup.sh`;
+  const hours = Math.floor((now() - at) / 3_600_000);
+  return hours < 26 ? null : `the last backup finished ${hours} hours ago. Check the cron line and state/backup.log (${BACKUP_DOCS})`;
+}
+
 /**
  * In production a server needs working mail (every sign-up confirms an email) and a Server admin
  * (ADR 0024, DX-R-0024-012). In dev, mail goes to the log and anyone may sign up, so both are skipped.
  */
-function productionChecks(owner: string, smtpUrl: () => Promise<string | null>): Check[] {
+function productionChecks(owner: string, smtpUrl: () => Promise<string | null>, env: Record<string, string | undefined>): Check[] {
+  let backup: string | null = null;
   return [
     {
       name: "mail server accepts the login",
@@ -120,6 +178,16 @@ function productionChecks(owner: string, smtpUrl: () => Promise<string | null>):
       name: "this server has a Server admin",
       run: () => hasServerAdmin(owner),
       fix: () => "run: bun run server-admin --invite, then open the link it prints and sign in",
+    },
+    {
+      name: "worker ran its ledger sweep in the last 10 minutes",
+      run: () => workerAlive(() => lastLedgerSweep(owner)),
+      fix: () => "nothing is sending or sweeping. Check the worker is running and read its log (docker compose logs direx)",
+    },
+    {
+      name: "last backup under 26 hours old",
+      run: () => (backup = backupProblem(env)) === null,
+      fix: () => backup ?? "run: sh deploy/compose/backup.sh",
     },
   ];
 }
@@ -169,7 +237,7 @@ export function checks(env: Record<string, string | undefined> = process.env, op
       fix: () => sandboxProblem ?? "run Direx with deploy/docker/compose.yml",
     },
     ...(isProduction(env)
-      ? productionChecks(owner, opts.smtpUrl ?? (async () => (await import("../apps/api/src/startup")).storedSmtpUrl(env).catch(() => null)))
+      ? productionChecks(owner, opts.smtpUrl ?? (async () => (await import("../apps/api/src/startup")).storedSmtpUrl(env).catch(() => null)), env)
       : []),
     {
       name: `port ${apiPort} free or running Direx`,

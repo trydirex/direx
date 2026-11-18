@@ -45,6 +45,31 @@ jobs:
           test "$before" = "$(sha256sum deploy/compose/.env)"
           pw=$(sed -n 's/^POSTGRES_PASSWORD=//p' deploy/compose/.env)
           ! grep -F -e "$pw" -e 'secret@greenmail' second.log install.log
+      - name: a backup restores into a fresh install, root key included
+        working-directory: deploy/compose
+        run: |
+          set -o pipefail
+          sudo apt-get install -y age rclone >/dev/null
+          shellcheck -s sh backup.sh restore.sh
+          age-keygen -o "$RUNNER_TEMP/backup.key" 2>/dev/null
+          export DIREX_BACKUP_REMOTE="$RUNNER_TEMP/backups"
+          DIREX_BACKUP_AGE_RECIPIENT=$(age-keygen -y "$RUNNER_TEMP/backup.key")
+          export DIREX_BACKUP_AGE_RECIPIENT
+          docker compose exec -T postgres psql -q -U direx_owner -d direx -v ON_ERROR_STOP=1 \
+            -c "CREATE TABLE ci_restore_probe (v text); INSERT INTO ci_restore_probe VALUES ('kept')"
+          docker compose run --rm --no-deps -T --entrypoint sh direx -c 'cat "$DIREX_DATA_DIR/master.key"' >"$RUNNER_TEMP/master.key"
+          sh backup.sh
+          test -s state/last-backup
+          docker compose down --volumes
+          sh install.sh >/dev/null
+          backup=$(ls "$DIREX_BACKUP_REMOTE"/direx-*.dump.age)
+          # Without --replace-database it refuses and changes nothing.
+          if sh restore.sh "$backup" "$RUNNER_TEMP/backup.key" "$RUNNER_TEMP/master.key"; then exit 1; fi
+          sh restore.sh --replace-database "$backup" "$RUNNER_TEMP/backup.key" "$RUNNER_TEMP/master.key" | tee restore.log
+          test "$(docker compose exec -T postgres psql -At -U direx_owner -d direx -c 'SELECT v FROM ci_restore_probe')" = kept
+          grep -q '^ok root key' restore.log
+          grep -q '^ok all migrations applied' restore.log
+          grep -q '^ok worker ran its ledger sweep' restore.log
       - name: logs on failure
         if: failure()
         working-directory: deploy/compose

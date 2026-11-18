@@ -8,3 +8,5 @@ coverage/
 # Generated on every build from the route definitions.
 apps/api/openapi.json
 apps/web/src/api/schema.d.ts
+# A server's backup marker (deploy/compose/backup.sh).
+deploy/compose/state/

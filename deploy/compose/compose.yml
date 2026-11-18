@@ -26,6 +26,8 @@ services:
     environment:
       NODE_ENV: production
       DIREX_DATA_DIR: /home/bun/.direx
+      # Written by backup.sh after each upload; doctor reads its age.
+      DIREX_BACKUP_MARKER: /var/lib/direx-state/last-backup
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,6 +39,7 @@ services:
       # Holds the vault's root key. Without it, a restart loses every stored credential, so back
       # it up apart from the database.
       - direx-data:/home/bun/.direx
+      - ./state:/var/lib/direx-state:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
       interval: 10s

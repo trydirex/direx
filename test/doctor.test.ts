@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Doctor's production checks (ADR 0024, rule 012): mail that connects and logs in, and a Server
-// admin. Against this file's database and a fake SMTP server.
+// Doctor's production checks (ADR 0024, rule 012): mail that connects and logs in, a Server admin, a
+// worker that sweeps and a recent backup. Against this file's database and a fake SMTP server.
 import { afterAll, beforeAll, beforeEach, expect, test } from "vitest";
 import { sandboxStatus } from "../apps/api/src/modules/models/index";
-import { checks, pluginSandboxProblem } from "../scripts/doctor";
+import { backupProblem, checks, lastLedgerSweep, pluginSandboxProblem, workerAlive } from "../scripts/doctor";
 import { insertAuthUser, ownerClient, withDatabase } from "./db";
 
 let owner: Awaited<ReturnType<typeof ownerClient>>;
 const MAIL = "mail server accepts the login";
 const ADMIN = "this server has a Server admin";
+const WORKER = "worker ran its ledger sweep in the last 10 minutes";
+const BACKUP = "last backup under 26 hours old";
 
 /** An SMTP server that offers a login and accepts it only when `accept`. */
 function fakeSmtp(accept: boolean) {
@@ -81,12 +83,47 @@ test("in production the checkout's own Docker and Postgres port aren't checked, 
   expect(await fromEnv({ NODE_ENV: "production" })).toBe(false);
 });
 
-test("outside production, neither check runs", () => {
+test("outside production, none of these checks runs", () => {
   for (const NODE_ENV of [undefined, "development", "test"]) {
     const names = checks({ ...process.env, NODE_ENV }).map((c) => c.name);
-    expect(names).not.toContain(MAIL);
-    expect(names).not.toContain(ADMIN);
+    for (const name of [MAIL, ADMIN, WORKER, BACKUP]) expect(names).not.toContain(name);
   }
+});
+
+test("the worker's heartbeat is the last completed ledger sweep", async () => {
+  const url = thisDatabase().DIREX_DB_OWNER_URL!;
+  if (!(await owner.query("select 1 from pgboss.queue where name = 'ledger.sweep'")).rowCount) await owner.query("select pgboss.create_queue('ledger.sweep', $1)", [{ policy: "standard" }]);
+  await owner.query("delete from pgboss.job where name = 'ledger.sweep'");
+  expect(await lastLedgerSweep(url)).toBeNull();
+  await owner.query("insert into pgboss.job (name, state, completed_on) values ('ledger.sweep', 'created', null), ('ledger.sweep', 'completed', now() - interval '3 minutes')");
+  const at = await lastLedgerSweep(url);
+  expect(Date.now() - at!.getTime()).toBeGreaterThan(170_000);
+  expect(await workerAlive(() => lastLedgerSweep(url), { patienceMs: 0 })).toBe(true);
+});
+
+const NOW = Date.parse("2026-11-18T12:00:00Z");
+const hoursAgo = (h: number) => new Date(NOW - h * 3_600_000).toISOString();
+
+test("a missing or stale sweep is waited for, a late one counts, and none fails once the patience runs out", async () => {
+  const sleeps: number[] = [];
+  const sleep = async (ms: number) => void sleeps.push(ms);
+  expect(await workerAlive(async () => new Date(NOW - 9 * 60_000), { now: () => NOW, sleep })).toBe(true);
+  expect(await workerAlive(async () => new Date(NOW - 11 * 60_000), { now: () => NOW, sleep, patienceMs: 10_000 })).toBe(false);
+  expect(sleeps).toEqual([5000, 5000]);
+  let calls = 0;
+  expect(await workerAlive(async () => (++calls < 3 ? null : new Date(NOW)), { now: () => NOW, sleep })).toBe(true);
+  expect(calls).toBe(3);
+});
+
+test("a backup under 26 hours old passes; an old one, none yet, none set up or a marker without a time each says what to do", async () => {
+  const marker = { DIREX_BACKUP_MARKER: "/var/lib/direx-state/last-backup" };
+  expect(backupProblem(marker, () => NOW, () => `${hoursAgo(25.9)}\n`)).toBeNull();
+  expect(backupProblem(marker, () => NOW, () => hoursAgo(30))).toBe("the last backup finished 30 hours ago. Check the cron line and state/backup.log (deploy/compose/README.md, Backups)");
+  expect(backupProblem({}, () => NOW, () => hoursAgo(1))).toBe("no backups are set up. Set them up as in deploy/compose/README.md, Backups");
+  expect(backupProblem(marker, () => NOW, () => "yesterday")).toBe("/var/lib/direx-state/last-backup doesn't hold a time. Run: sh deploy/compose/backup.sh");
+  const backup = checks({ ...thisDatabase(), NODE_ENV: "production", DIREX_BACKUP_MARKER: "/nowhere/last-backup" }, { smtpUrl: async () => null }).find((c) => c.name === BACKUP)!;
+  expect(await backup.run()).toBe(false);
+  expect(await backup.fix()).toBe("no backup has finished yet. Run: sh deploy/compose/backup.sh, then add it to cron (deploy/compose/README.md, Backups)");
 });
 
 test("with no plugin installed there is nothing to confine; with one, the report is the sandbox's own (ADR 0026 rule 009)", async () => {

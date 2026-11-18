@@ -105,6 +105,9 @@ elif [ -n "$DOMAIN" ] && [ "$DOMAIN" != "$(envget DIREX_DOMAIN)" ]; then
   fail ".env was written without this domain" "to change how Direx is reached, edit DIREX_DOMAIN, COMPOSE_PROFILES and DIREX_BASE_URL in .env yourself"
 fi
 
+# backup.sh writes here and Direx reads it; made now so Docker doesn't create it as root.
+mkdir -p state
+
 image="ghcr.io/trydirex/direx:$(envget DIREX_VERSION)"
 if docker image inspect "$image" >/dev/null 2>&1; then
   say "using the image already on this server"
@@ -149,12 +152,13 @@ if [ -n "$(envget DIREX_DOMAIN)" ]; then
   $DC up -d caddy || fail "Caddy didn't start" "check that ports 80 and 443 are free and the domain points here, then see: $DC logs caddy"
 fi
 
-# Until someone opens the link below, doctor reports that there is no Server admin. That one
-# failure is expected here; any other stops the install.
+# Until someone opens the link below, doctor reports that there is no Server admin, and until cron
+# runs backup.sh, that there is no backup. Those two failures are expected here; any other stops
+# the install.
 say "checking the installation"
 report=$($DC exec -T direx bun run doctor 2>&1) || true
 printf '%s\n' "$report"
-if printf '%s\n' "$report" | grep '^FAIL ' | grep -qv '^FAIL this server has a Server admin:'; then
+if printf '%s\n' "$report" | grep '^FAIL ' | grep -v '^FAIL this server has a Server admin:' | grep -qv '^FAIL last backup under 26 hours old:'; then
   fail "a check failed" "follow the fix printed above, then run install.sh again"
 fi
 

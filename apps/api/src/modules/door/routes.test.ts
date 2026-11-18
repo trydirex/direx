@@ -7,8 +7,8 @@ import { afterEach, beforeAll, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { DoorRead } from "../core-reads/index";
 import { testIdentity } from "../identity/test-auth";
-import { seedWorkspace } from "./fixtures/members";
-import { createRequests, createTokens, DOOR_BASE, doorApp, registerReaders, tokenRoutes } from "./index";
+import { seedItemIn, seedWorkspace } from "./fixtures/members";
+import { createProposals, createRequests, createTokens, DOOR_BASE, doorApp, registerProposals, registerReaders, tokenRoutes } from "./index";
 
 const W = crypto.randomUUID();
 const OTHER = crypto.randomUUID();
@@ -242,4 +242,61 @@ test("any member sees a token's recent requests: reader, outcome and time, nothi
   for (const r of rows) expect(Object.keys(r).sort()).toEqual(["at", "outcome", "reader"]);
   // A token this Workspace never made has none.
   expect(await (await site.call(`${tokensOf(w)}/${crypto.randomUUID()}/requests`, viewer.cookie)).json()).toEqual({ requests: [] });
+});
+
+// Proposals through the door (door-proposals P6): the real intake, with fake modules that make real Items.
+const AHEAD = new Date(Date.now() + 86_400_000).toISOString();
+const intake = createProposals({
+  entries: {
+    fact: async (tx) => ({ ok: true, itemId: await seedItemIn(tx, W) }),
+    draft: async (tx, _w, p) => (p.text === "late" ? { ok: false, reason: "slot_in_past" } : { ok: true, itemId: await seedItemIn(tx, W) }),
+  },
+  waiting: async () => 0,
+  maxFactChars: 1000,
+});
+const proposing = doorApp({ tokens, requests: createRequests({ caps: { perToken: 100, perWorkspace: 1000 } }), registrations: registerReaders(reads), proposals: registerProposals(intake) });
+const propose = (kind: string, raw: string, body: unknown) =>
+  proposing.request(`${DOOR_BASE}/w/${W}/${kind}`, { method: "POST", headers: { "content-type": "application/json", ...bearer(raw) }, body: JSON.stringify(body) });
+
+test("a proposal answers with its Item, the same one on a retry, and each refusal with its status and one row", async () => {
+  const t = await tokens.create(W, { name: "Poster", days: 7, readers: [], kinds: ["draft"] }, owner);
+  if (!t.ok) throw new Error(t.reason);
+  const draft = { idempotencyKey: "p1", connection: "testnet", text: "Hello", at: AHEAD };
+  const [status, made] = await answer(await propose("draft", t.token, draft));
+  expect([status, made]).toEqual([200, { itemId: expect.any(String) }]);
+  expect(await answer(await propose("draft", t.token, draft))).toEqual([200, made]);
+  expect(await answer(await propose("draft", t.token, { ...draft, text: "Changed" }))).toEqual([409, { error: "idempotency_conflict" }]);
+  expect(await answer(await propose("draft", t.token, { ...draft, idempotencyKey: "p2", text: "late" }))).toEqual([422, { error: "refused", code: "slot_in_past" }]);
+  expect(await answer(await propose("fact_proposal", t.token, { idempotencyKey: "f1", field: "tone", value: "Plain" }))).toEqual([403, { error: "kind_not_allowed" }]);
+  expect(await answer(await propose("draft", t.token, { idempotencyKey: "p3" }))).toEqual([400, { error: "invalid_input" }]);
+  expect((await requests.recent(W, t.id)).map((r) => [r.reader, r.outcome])).toEqual([
+    ["draft", "invalid_input"],
+    ["fact_proposal", "kind_not_allowed"],
+    ["draft", "refused"],
+    ["draft", "idempotency_conflict"],
+    ["draft", "ok"],
+    ["draft", "ok"],
+  ]);
+});
+
+test("the door's document lists each proposal kind beside the readers", async () => {
+  const doc = (await (await proposing.request(`${DOOR_BASE}/openapi.json`)).json()) as { paths: Record<string, unknown> };
+  expect(Object.keys(doc.paths)).toEqual(expect.arrayContaining([`${DOOR_BASE}/w/{workspaceId}/fact_proposal`, `${DOOR_BASE}/w/{workspaceId}/draft`]));
+});
+
+
+test("a proposal body that isn't JSON is invalid_input, and an intake that throws is a 500, each with its row", async () => {
+  const t = await tokens.create(W, { name: "Broken", days: 7, readers: [], kinds: ["draft"] }, owner);
+  if (!t.ok) throw new Error(t.reason);
+  const bad = await proposing.request(`${DOOR_BASE}/w/${W}/draft`, { method: "POST", headers: { "content-type": "application/json", ...bearer(t.token) }, body: "{not json" });
+  expect(await answer(bad)).toEqual([400, { error: "invalid_input" }]);
+  const failing = doorApp({
+    tokens,
+    requests: createRequests({ caps: { perToken: 100, perWorkspace: 1000 } }),
+    registrations: registerReaders(reads),
+    proposals: registerProposals({ inputs: intake.inputs, propose: async () => Promise.reject(new Error("module down")) }),
+  });
+  const res = await failing.request(`${DOOR_BASE}/w/${W}/draft`, { method: "POST", headers: { "content-type": "application/json", ...bearer(t.token) }, body: "{}" });
+  expect(res.status).toBe(500);
+  expect((await requests.recent(W, t.id)).map((r) => r.outcome)).toEqual(["error", "invalid_input"]);
 });

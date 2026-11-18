@@ -8,7 +8,7 @@ import { beforeAll, expect, test } from "vitest";
 import { z } from "zod";
 import type { DoorRead } from "../core-reads/index";
 import { seedWorkspace } from "./fixtures/members";
-import { createRequests, createTokens, DOOR_BASE, DOOR_READERS, doorApp, registerReaders } from "./index";
+import { createRequests, createTokens, DOOR_BASE, DOOR_KINDS, DOOR_READERS, doorApp, registerProposals, registerReaders } from "./index";
 
 const W = crypto.randomUUID();
 const owner = crypto.randomUUID();
@@ -23,12 +23,14 @@ const fake = (name: string, disclosure: DoorRead["disclosure"]): DoorRead => ({
   read: async (_w, raw) => ({ ok: true, value: { name, said: Input.parse(raw).say ?? null }, trust: "trusted" }),
 });
 const reads = Object.fromEntries(Object.entries(DOOR_READERS).map(([name, r]) => [name, fake(name, r.personal ? "personal" : "operational")]));
-const app = doorApp({ tokens, requests: createRequests({ caps: { perToken: 100, perWorkspace: 1000 } }), registrations: registerReaders(reads) });
+// Proposals answer as the intake would with nothing made, so both faces can be compared without Items.
+const proposals = registerProposals({ inputs: { fact_proposal: Input, draft: Input }, propose: async () => ({ ok: true, itemId: null }) });
+const app = doorApp({ tokens, requests: createRequests({ caps: { perToken: 100, perWorkspace: 1000 } }), registrations: registerReaders(reads), proposals });
 let raw = "";
 
 beforeAll(async () => {
   await seedWorkspace(W, owner);
-  const r = await tokens.create(W, { name: "Everything", days: 7, readers: Object.keys(DOOR_READERS), kinds: [] }, owner);
+  const r = await tokens.create(W, { name: "Everything", days: 7, readers: Object.keys(DOOR_READERS), kinds: [...DOOR_KINDS] }, owner);
   if (!r.ok) throw new Error(r.reason);
   raw = r.token;
 });
@@ -42,7 +44,7 @@ test("the MCP tools are exactly the document's operations, and each answers as i
   await client.connect(new StreamableHTTPClientTransport(new URL(`http://door.test${DOOR_BASE}/w/${W}/mcp`), { requestInit: { headers: { authorization: `Bearer ${raw}` } }, fetch: async (input, init) => app.request(String(input), init) }));
   const tools = (await client.listTools()).tools.map((t) => t.name).sort();
   expect(tools).toEqual(routes);
-  expect(tools).toEqual(Object.keys(DOOR_READERS).sort());
+  expect(tools).toEqual([...Object.keys(DOOR_READERS), ...DOOR_KINDS].sort());
 
   for (const name of tools) {
     const input = { say: `hello ${name}` };
@@ -51,4 +53,33 @@ test("the MCP tools are exactly the document's operations, and each answers as i
     expect(viaTool.structuredContent, name).toEqual(await viaRoute.json());
   }
   await client.close();
+});
+
+test.each([
+  { reason: "already_waiting" as const, itemId: crypto.randomUUID() },
+  { reason: "refused" as const, code: "connection_not_found" },
+  { reason: "proposal_cap" as const },
+])("MCP preserves proposal refusal details: $reason", async (refusal) => {
+  const refusing = doorApp({
+    tokens,
+    requests: createRequests({ caps: { perToken: 100, perWorkspace: 1000 } }),
+    registrations: registerReaders(reads),
+    proposals: registerProposals({ inputs: { fact_proposal: Input, draft: Input }, propose: async () => ({ ok: false, ...refusal }) }),
+  });
+  const client = new Client({ name: "refusal-parity", version: "1" });
+  await client.connect(new StreamableHTTPClientTransport(new URL(`http://door.test${DOOR_BASE}/w/${W}/mcp`), { requestInit: { headers: { authorization: `Bearer ${raw}` } }, fetch: async (input, init) => refusing.request(String(input), init) }));
+  try {
+    for (const name of DOOR_KINDS) {
+      const viaRoute = await refusing.request(`${DOOR_BASE}/w/${W}/${name}`, { method: "POST", headers: { authorization: `Bearer ${raw}`, "content-type": "application/json" }, body: JSON.stringify({}) });
+      const viaTool = await client.callTool({ name, arguments: {} });
+      const { reason, ...details } = refusal;
+      const expected = { error: reason, ...details };
+      expect(viaRoute.ok).toBe(false);
+      expect(await viaRoute.json()).toEqual(expected);
+      expect(viaTool.isError).toBe(true);
+      expect(viaTool.content).toEqual([{ type: "text", text: reason === "proposal_cap" ? reason : JSON.stringify(expected) }]);
+    }
+  } finally {
+    await client.close();
+  }
 });

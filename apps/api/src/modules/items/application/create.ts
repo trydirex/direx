@@ -46,6 +46,7 @@ export function createItems(deps: { ledger: Ledger; kinds?: Record<string, ItemK
     ...decisions({ ledger: deps.ledger, kinds, now, describeChange: deps.describeChange, onApproved: deps.onApproved, onApplied, actionPermission: deps.actionPermission, mayGrant: deps.mayGrant, editOf: deps.editOf, resumeLate: (workspaceId, actionId, actor) => inWorkspace(workspaceId, (tx) => late.resumeLateIn(tx, workspaceId, actionId, actor)) }),
     ...moves({ ledger: deps.ledger, now, onStep: deps.onMoveStep }),
     /** How many of these Items, made without an Action, still wait for a person; for the door's caps. */
+    waitingAmongIn: countWaiting,
     waitingAmong: (workspaceId: string, itemIds: readonly string[]) => inWorkspace(workspaceId, (tx) => countWaiting(tx, itemIds)),
     /** Item state changes since a cursor, oldest first, for the door's read_changes. */
     changes,

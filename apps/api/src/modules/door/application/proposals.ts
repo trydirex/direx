@@ -56,9 +56,10 @@ export type FactProposal = {
 export type DraftProposal = { connection: string; credentialId: string | null; networkId: string | null; text: string; followUps: string[]; at: Date };
 /** What an owning module answers: the Item it made (null when there was nothing to make), or its refusal. */
 export type Made = { ok: true; itemId: string | null } | { ok: false; reason: string; itemId?: string };
+/** Owners must perform all reads and writes on this transaction; never open another connection. */
 export type ProposalEntries = {
-  fact: (workspaceId: string, p: FactProposal) => Promise<Made>;
-  draft: (workspaceId: string, p: DraftProposal, actor: ProposalActor, warnings: readonly Warning[]) => Promise<Made>;
+  fact: (tx: repo.ProposalTx, workspaceId: string, p: FactProposal) => Promise<Made>;
+  draft: (tx: repo.ProposalTx, workspaceId: string, p: DraftProposal, actor: ProposalActor, warnings: readonly Warning[]) => Promise<Made>;
 };
 
 export type ProposalRefusal = "kind_not_allowed" | "invalid_input" | "idempotency_conflict" | "proposal_cap" | "already_waiting" | "refused";
@@ -68,8 +69,8 @@ const digestOf = (body: unknown) => createHash("sha256").update(JSON.stringify(b
 
 export function createProposals(d: {
   entries: ProposalEntries;
-  /** How many of these Items still wait for a person (`Items.waitingAmong`). */
-  waiting: (workspaceId: string, itemIds: readonly string[]) => Promise<number>;
+  /** How many of these Items still wait for a person (`Items.waitingAmongIn`). */
+  waiting: (tx: repo.ProposalTx, itemIds: readonly string[]) => Promise<number>;
   /** A fact's value is capped where a person's typed value is (`MAX_FACT_CHARS`). */
   maxFactChars: number;
   caps?: ProposalCaps;
@@ -80,15 +81,15 @@ export function createProposals(d: {
   const FactInput = factInput(d.maxFactChars);
 
   /** Per token first, then per Workspace: a day's proposals, then those still waiting. */
-  async function overCap(tx: Parameters<typeof repo.proposalsSince>[0], workspaceId: string, tokenId: string) {
+  async function overCap(tx: Parameters<typeof repo.proposalsSince>[0], tokenId: string) {
     const at = now().getTime();
     const recent = await repo.proposalsSince(tx, new Date(at - WAITING_WINDOW_MS));
     const today = recent.filter((p) => p.createdAt.getTime() > at - DAY_MS);
     const mine = recent.filter((p) => p.tokenId === tokenId);
     if (today.filter((p) => p.tokenId === tokenId).length >= caps.perTokenDay) return true;
-    if ((await d.waiting(workspaceId, mine.map((p) => p.itemId))) >= caps.perTokenWaiting) return true;
+    if ((await d.waiting(tx, mine.flatMap((p) => p.itemId ? [p.itemId] : []))) >= caps.perTokenWaiting) return true;
     if (today.length >= caps.perWorkspaceDay) return true;
-    return (await d.waiting(workspaceId, recent.map((p) => p.itemId))) >= caps.perWorkspaceWaiting;
+    return (await d.waiting(tx, recent.flatMap((p) => p.itemId ? [p.itemId] : []))) >= caps.perWorkspaceWaiting;
   }
 
   return {
@@ -106,19 +107,19 @@ export function createProposals(d: {
         await repo.lockProposals(tx, workspaceId);
         const seen = await repo.findProposal(tx, caller.tokenId, idempotencyKey);
         if (seen) return seen.bodyDigest === digest && seen.kind === kind ? { ok: true, itemId: seen.itemId } : { ok: false, reason: "idempotency_conflict" };
-        if (await overCap(tx, workspaceId, caller.tokenId)) return { ok: false, reason: "proposal_cap" };
+        if (await overCap(tx, caller.tokenId)) return { ok: false, reason: "proposal_cap" };
 
         let made: Made;
         if (kind === "fact_proposal") {
           const f = body as Omit<z.infer<typeof FactInput>, "idempotencyKey">;
-          made = await d.entries.fact(workspaceId, { ...f, source: { kind: "document", label: `External token "${caller.name}"` }, actor, warnings, takeOver: false });
+          made = await d.entries.fact(tx, workspaceId, { ...f, source: { kind: "document", label: `External token "${caller.name}"` }, actor, warnings, takeOver: false });
         } else {
           const p = body as Omit<z.infer<typeof DraftInput>, "idempotencyKey">;
-          made = await d.entries.draft(workspaceId, { connection: p.connection, credentialId: p.credentialId ?? null, networkId: p.networkId ?? null, text: p.text, followUps: p.followUps ?? [], at: new Date(p.at) }, actor, warnings);
+          made = await d.entries.draft(tx, workspaceId, { connection: p.connection, credentialId: p.credentialId ?? null, networkId: p.networkId ?? null, text: p.text, followUps: p.followUps ?? [], at: new Date(p.at) }, actor, warnings);
         }
         if (!made.ok) return made.reason === "already_waiting" ? { ok: false, reason: "already_waiting", ...(made.itemId && { itemId: made.itemId }) } : { ok: false, reason: "refused", code: made.reason };
-        // The module made its Item in its own transaction; if this record then fails, a retry makes a second.
-        if (made.itemId) await repo.insertProposal(tx, { workspaceId, tokenId: caller.tokenId, idempotencyKey, bodyDigest: digest, kind, itemId: made.itemId, createdAt: now() });
+        // Owner effects and every successful result commit together, including a no-Item result.
+        await repo.insertProposal(tx, { workspaceId, tokenId: caller.tokenId, idempotencyKey, bodyDigest: digest, kind, itemId: made.itemId, createdAt: now() });
         return { ok: true, itemId: made.itemId };
       });
     },

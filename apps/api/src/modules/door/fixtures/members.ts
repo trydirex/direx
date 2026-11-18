@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Test support for External tokens: a Workspace with members whose roles a test can change, and the
 // audit rows a token left.
-import { withWorkspace } from "@direx/db";
+import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { authDb, authSchema } from "@direx/db/auth";
 import { workspaceAudit, workspaceMembers } from "@direx/db/schema";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
@@ -40,3 +40,15 @@ export async function seedItem(workspaceId: string): Promise<string> {
   );
   return (r.rows[0] as { id: string }).id;
 }
+
+/** An owner write in the proposal transaction, including its rollback. */
+export async function seedItemIn(tx: WorkspaceTx, workspaceId: string): Promise<string> {
+  const r = await tx.execute(sql`insert into items (workspace_id, kind, state, title, warnings, created_at, updated_at) values (${workspaceId}, 'plan_change', 'needs_approval', 't', '[]', now(), now()) returning id`);
+  return (r.rows[0] as { id: string }).id;
+}
+
+/** Count owner Items after a failed proposal transaction. */
+export const proposalItemCount = (workspaceId: string) => withWorkspace(workspaceId, async (tx) => {
+  const r = await tx.execute(sql`select count(*)::int as n from items`);
+  return (r.rows[0] as { n: number }).n;
+});

@@ -2,9 +2,12 @@
 // The door's proposal intake against the database, with fake owning modules that make real Items: the
 // token's name, the untrusted warning and no take-over reach the module; a replay answers the same and
 // a changed body is refused; kinds and input are checked; caps count per token, then per Workspace.
-import { expect, test } from "vitest";
-import { seedItem, seedWorkspace } from "./fixtures/members";
+import { expect, test, vi } from "vitest";
+import { proposalItemCount, seedItemIn, seedWorkspace } from "./fixtures/members";
 import { createProposals, createTokens, type Made, type ProposalCaps } from "./index";
+
+import { itemsWorld } from "../items/fixtures/items";
+import * as repo from "./adapters/repo";
 
 const tokens = createTokens({ maxDays: null });
 const AHEAD = new Date(Date.now() + 86_400_000).toISOString();
@@ -22,20 +25,20 @@ async function space() {
 }
 
 /** An intake whose modules make a real Item each time, all of them still waiting until a test decides one. */
-function world(w: string, o: { caps?: ProposalCaps; fact?: () => Promise<Made> } = {}) {
+function world(w: string, o: { caps?: ProposalCaps; fact?: () => Promise<Made>; waiting?: Parameters<typeof createProposals>[0]["waiting"] } = {}) {
   const calls: unknown[][] = [];
   const waiting = new Set<string>();
-  const made = async (): Promise<Made> => {
-    const itemId = await seedItem(w);
+  const made = async (tx: Parameters<typeof seedItemIn>[0]): Promise<Made> => {
+    const itemId = await seedItemIn(tx, w);
     waiting.add(itemId);
     return { ok: true, itemId };
   };
   const proposals = createProposals({
     entries: {
-      fact: async (_w, p) => (calls.push(["fact", p]), o.fact ? o.fact() : made()),
-      draft: async (_w, p, actor, warnings) => (calls.push(["draft", p, actor, warnings]), made()),
+      fact: async (tx, _w, p) => (calls.push(["fact", p]), o.fact ? o.fact() : made(tx)),
+      draft: async (tx, _w, p, actor, warnings) => (calls.push(["draft", p, actor, warnings]), made(tx)),
     },
-    waiting: async (_w, ids) => ids.filter((id) => waiting.has(id)).length,
+    waiting: o.waiting ?? (async (_tx, ids) => ids.filter((id) => waiting.has(id)).length),
     maxFactChars: 1000,
     caps: o.caps,
   });
@@ -139,4 +142,50 @@ test("caps count what still waits, per token, then per Workspace, and a decision
   expect((await proposals.propose(b, "fact_proposal", fact("w3", "Three"))).ok).toBe(true);
   // Two wait across the Workspace now (a's second and b's first), so a third token is over its cap.
   expect(await proposals.propose(await caller(undefined, "Make"), "fact_proposal", fact("w4", "Four"))).toEqual({ ok: false, reason: "proposal_cap" });
+});
+
+
+test("successful no-Item results replay even after the owner would give a different answer", async () => {
+  const { w, caller } = await space();
+  const c = await caller();
+  const first = world(w, { fact: async () => ({ ok: true, itemId: null }) });
+  expect(await first.proposals.propose(c, "fact_proposal", fact("noop"))).toEqual({ ok: true, itemId: null });
+  const retry = world(w);
+  expect(await retry.proposals.propose(c, "fact_proposal", fact("noop"))).toEqual({ ok: true, itemId: null });
+  expect(retry.calls).toHaveLength(0);
+  expect(await retry.proposals.propose(c, "fact_proposal", fact("noop", "Changed"))).toEqual({ ok: false, reason: "idempotency_conflict" });
+});
+
+test("more simultaneous proposals than pool connections complete and replay once", async () => {
+  const { w, caller } = await space();
+  const c = await caller();
+  const { items } = await itemsWorld();
+  const { proposals, calls } = world(w, { waiting: items.waitingAmongIn });
+  const answers = await Promise.all(Array.from({ length: 12 }, (_, i) => proposals.propose(c, "fact_proposal", fact(`parallel-${i}`))));
+  expect(answers[0]).toEqual({ ok: true, itemId: expect.any(String) });
+  expect(answers.every((answer) => answer.ok)).toBe(true);
+  expect(await proposals.propose(c, "fact_proposal", fact("parallel-0"))).toEqual(answers[0]);
+  expect(calls).toHaveLength(12);
+});
+
+
+test.each(["record", "after_record"])("owner writes roll back on %s failure and a retry creates only one Item", async (failure) => {
+  const { w, caller } = await space();
+  const c = await caller();
+  const { proposals } = world(w);
+  const insert = repo.insertProposal;
+  const fault = vi.spyOn(repo, "insertProposal").mockImplementationOnce(async (...args) => {
+    if (failure === "after_record") await insert(...args);
+    throw new Error("injected recording failure");
+  });
+  try {
+    await expect(proposals.propose(c, "fact_proposal", fact("retry"))).rejects.toThrow("injected recording failure");
+  } finally {
+    fault.mockRestore();
+  }
+  expect(await proposalItemCount(w)).toBe(0);
+  const retried = await proposals.propose(c, "fact_proposal", fact("retry"));
+  expect(retried).toEqual({ ok: true, itemId: expect.any(String) });
+  expect(await proposals.propose(c, "fact_proposal", fact("retry"))).toEqual(retried);
+  expect(await proposalItemCount(w)).toBe(1);
 });

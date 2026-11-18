@@ -7,6 +7,7 @@ import { DOOR_OUTCOMES, doorCounters, doorProposals, doorRequests, externalToken
 import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
 
 export const inWorkspace = withWorkspace;
+export type ProposalTx = WorkspaceTx;
 
 export type NewToken = typeof externalTokens.$inferInsert;
 type Audit = { event: "external_token.created" | "external_token.revoked"; tokenId: string; actorUserId: string; stepUp: boolean; at: Date };
@@ -140,4 +141,4 @@ export async function findProposal(tx: WorkspaceTx, tokenId: string, idempotency
 export const proposalsSince = (tx: WorkspaceTx, since: Date) =>
   tx.select({ tokenId: doorProposals.tokenId, itemId: doorProposals.itemId, createdAt: doorProposals.createdAt }).from(doorProposals).where(gt(doorProposals.createdAt, since));
 
-export const insertProposal = (tx: WorkspaceTx, p: typeof doorProposals.$inferInsert) => tx.insert(doorProposals).values(p);
+export const insertProposal = async (tx: WorkspaceTx, p: typeof doorProposals.$inferInsert) => tx.insert(doorProposals).values(p);

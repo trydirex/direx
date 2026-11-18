@@ -14,7 +14,7 @@ import { addDays, approve, approveLabel, cancel, type detail, itemQuery, ITEM_ME
 import { CompanyReview, PageLink } from "../prospecting/CompanyReview";
 import { SIGNAL_WORDS, type Review } from "../prospecting/actions";
 import { addHold, eligibility, personHolds, recordWords, releaseHold, warningWords, type EligibilityRecord } from "../outreach/actions";
-import { ReplyReview } from "./ReplyReview";
+import { ReplyItem, ReplyReview, type ReplyContent } from "./ReplyReview";
 import { Rewrite } from "./Rewrite";
 import { StateChip } from "./StateChip";
 import { WrittenFrom } from "./WrittenFrom";
@@ -23,6 +23,7 @@ import { BriefView, type BriefContent } from "../seo/BriefView";
 import { CounterMoveView, type CounterMoveContent } from "../facts/CounterMove";
 import { ProposalView } from "../lessons/ProposalView";
 import { membersQuery } from "../identity/actions";
+import { meQuery } from "../shell/session";
 import { AGENT_NAMES } from "../models/actions";
 import { FIELD_LABEL, type Field as FactField } from "../facts/actions";
 import { editPersonDraft, resolveStall, say } from "../campaigns/actions";
@@ -416,6 +417,7 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
   const query = useQuery({ ...itemQuery(p.workspaceId, p.id), initialData: p.initial });
   // Names for History: who did each step, rather than only what kind of actor it was.
   const members = useQuery(membersQuery(p.workspaceId)).data;
+  const me = useQuery(meQuery).data;
   const who = (a: { kind: "person" | "agent" | "system"; id: string }) =>
     (a.kind === "person" && (members?.find((m) => m.userId === a.id)?.name || members?.find((m) => m.userId === a.id)?.email)) || (a.kind === "agent" && AGENT_NAMES[a.id]) || ACTOR_WORDS[a.kind];
   const [error, setError] = useState<string>();
@@ -518,7 +520,7 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
   const w = { workspaceId: p.workspaceId };
   const campaign = () => ({ ...w, campaignId: (d.content as { campaignId: string }).campaignId });
   const plainApprove =
-    i.state === "needs_approval" && i.kind !== "fact_conflict" && i.kind !== "opt_out_review" && i.kind !== "company_review" && i.kind !== "standing_rule_offer" && i.kind !== "next_step" && i.kind !== "plan_change" && mayApprove(p.role);
+    i.state === "needs_approval" && i.kind !== "fact_conflict" && i.kind !== "opt_out_review" && i.kind !== "reply" && i.kind !== "company_review" && i.kind !== "standing_rule_offer" && i.kind !== "next_step" && i.kind !== "plan_change" && mayApprove(p.role);
 
   const approveText = i.kind === "action" ? approveLabel([{ at: sendsAt }]) : i.kind === "brief" ? "I'll make this change" : i.kind === "competitor_move" ? "I've done this" : i.kind === "campaign_stall" ? "Keep waiting" : i.kind === "campaign_waiting" || i.kind === "campaign_launch_moved" ? "Got it" : i.kind === "keys_lost" ? "Resume them" : i.kind === "late_sends" ? "Send the emails" : "Accept";
   const approveButton = plainApprove && (
@@ -528,7 +530,7 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
     </Button>
   );
 
-  const dontSend = editable && !unknown && i.kind !== "opt_out_review" && i.kind !== "company_review" && i.kind !== "plan_change" && mayEdit(p.role) && (
+  const dontSend = editable && !unknown && i.kind !== "opt_out_review" && i.kind !== "reply" && i.kind !== "company_review" && i.kind !== "plan_change" && mayEdit(p.role) && (
     <Button pending={pending} variant="outline" onClick={() => void act(async () => settle(await cancel(p.workspaceId, i.id, opened)))}>
       {dismissOnly ? "Dismiss" : "Don't send"}
     </Button>
@@ -589,6 +591,8 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
       {error && <Notice tone="error">{error}</Notice>}
       {i.kind === "opt_out_review" ? (
         <ReplyReview key={i.state} workspaceId={p.workspaceId} signalId={(d.content as { signalId: string }).signalId} initial={p.initial?.reply} />
+      ) : i.kind === "reply" ? (
+        <ReplyItem workspaceId={p.workspaceId} content={d.content as ReplyContent} members={members} meId={me?.id} initial={p.initial?.reply} />
       ) : i.kind === "brief" ? (
         <BriefView c={d.content as BriefContent} workspaceId={p.workspaceId} />
       ) : i.kind === "competitor_move" ? (
@@ -638,6 +642,16 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
             </Button>
             <Button pending={pending} size="sm" variant="outline" onClick={() => void act(async () => settle(await approve(p.workspaceId, i, "not_opt_out")))}>
               They didn't
+            </Button>
+          </>
+        )}
+        {i.kind === "reply" && i.state === "needs_approval" && mayApprove(p.role) && (
+          <>
+            <Button pending={pending} size="sm" variant="outline" onClick={() => void act(async () => settle(await approve(p.workspaceId, i, "no_answer")))}>
+              No answer needed
+            </Button>
+            <Button pending={pending} size="sm" variant="outline" onClick={() => void act(async () => settle(await approve(p.workspaceId, i, "answered_elsewhere")))}>
+              Answered elsewhere
             </Button>
           </>
         )}

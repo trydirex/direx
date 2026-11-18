@@ -789,6 +789,8 @@ const panelCases: [string, Partial<Item>, unknown, string, string, unknown?][] =
   ["Resume", { state: "held", reasonCode: "cap", reason: "over the cap" }, {}, "Check again and resume", "/api/w/{workspaceId}/items/{id}/resume"],
   ["Opted out", { kind: "opt_out_review" }, { signalId: "s1" }, "They asked to stop", "/api/w/{workspaceId}/items/{id}/approve", { revision: 2, choice: "opted_out" }],
   ["Not opted out", { kind: "opt_out_review" }, { signalId: "s1" }, "They didn't", "/api/w/{workspaceId}/items/{id}/approve", { revision: 2, choice: "not_opt_out" }],
+  ["No answer needed", { kind: "reply" }, { signalId: "s1", thread: ["s1"], actionId: null, label: "no", quote: null, owner: { userIds: [], rule: "workspace_owners" } }, "No answer needed", "/api/w/{workspaceId}/items/{id}/approve", { revision: 2, choice: "no_answer" }],
+  ["Answered elsewhere", { kind: "reply" }, { signalId: "s1", thread: ["s1"], actionId: null, label: "no", quote: null, owner: { userIds: [], rule: "workspace_owners" } }, "Answered elsewhere", "/api/w/{workspaceId}/items/{id}/approve", { revision: 2, choice: "answered_elsewhere" }],
   ["Start", { kind: "next_step" }, { link: "plan_to_templates", campaignId: "c9" }, "Start", "/api/w/{workspaceId}/items/{id}/approve", { revision: 2 }],
   ["Go ahead", { kind: "campaign_stall" }, { campaignId: "c9", stepKey: "second", choices: ["go_ahead"] }, "Go ahead without it", "/api/w/{workspaceId}/campaigns/{id}/steps/{key}/stall", { choice: "go_ahead" }],
   ["Cancel the step", { kind: "campaign_stall" }, { campaignId: "c9", stepKey: "second", choices: [] }, "Cancel the step", "/api/w/{workspaceId}/campaigns/{id}/steps/{key}/stall", { choice: "cancel" }],

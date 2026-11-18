@@ -16,7 +16,7 @@ import { CallFailed, EMAIL_RECEIVED, loadPlugins, receivedMail } from "../plugin
 import { touchCheck } from "../schedule/index";
 import { setPause, clearPause, pauseOf } from "./adapters/pauses";
 import { inWorkspace } from "./adapters/repo";
-import { replyOwner } from "./application/reply-desk";
+import { mailMembers, replyOwner } from "./application/reply-desk";
 import { resultLines } from "./application/results";
 import { passMailboxCheck, TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
 import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, createReplyDesk, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, replyDeskKind, sendingPaused } from "./index";
@@ -41,6 +41,9 @@ let searchIncomplete = false;
 let modelSays: { answer: string; quote?: string | null } | "refuse" = "refuse";
 // The reply desk's label, scripted the same way.
 let labelSays: { label: string; quote: string } | "refuse" = "refuse";
+// What the reply desk's owner alerts would send, and whether sending one fails.
+const alerts: { userIds: string[]; subject: string; text: string }[] = [];
+let alertFails = false;
 const modelCalls: string[] = [];
 const fakeGenerate = (async (req: { purpose: string; parts: { kind: string; text: string }[] }) => {
   modelCalls.push(`${req.purpose}:${req.parts.map((p) => p.kind).join(",")}`);
@@ -58,7 +61,14 @@ const replies: ReturnType<typeof createReplies> = createReplies({
     const { events } = await plugins.query(workspaceId, "com.trydirex.gmail/mail.from", { email }, credentialId);
     return { events: receivedMail(events).map((e) => ({ ...e, workspaceId, credentialId })), complete: !searchIncomplete };
   },
-  desk: createReplyDesk({ items: () => items, generate: () => fakeGenerate }),
+  desk: createReplyDesk({
+    items: () => items,
+    generate: () => fakeGenerate,
+    notify: async (_w, userIds, mail) => {
+      if (alertFails) throw new Error("smtp down");
+      alerts.push({ userIds, ...mail });
+    },
+  }),
 });
 await replies.ensureQueue();
 await boss.createQueue("plugins.poll");
@@ -794,7 +804,7 @@ test("a reply that isn't an opt-out opens one reply Item, labelled and owned by 
   expect(first).toMatchObject({ action_id: sent });
   await replies.decide(W, first.id);
   expect(await replyItems(personId)).toMatchObject([
-    { state: "needs_approval", title: `${to} wants to talk`, payload: { signalId: first.id, actionId: sent, label: "interested", quote: "can we talk Friday", owner: { userIds: [owner], rule: "approver" } } },
+    { state: "needs_approval", title: `${to} wants to talk`, payload: { signalId: first.id, thread: [first.id], actionId: sent, label: "interested", quote: "can we talk Friday", owner: { userIds: [owner], rule: "approver" } } },
   ]);
 
   labelSays = { label: "question", quote: "does it work with HubSpot" };
@@ -804,7 +814,19 @@ test("a reply that isn't an opt-out opens one reply Item, labelled and owned by 
   await replies.decide(W, second.id);
   const both = await replyItems(personId);
   expect(both.map((i) => i.state)).toEqual(["cancelled", "needs_approval"]);
-  expect(both[1]).toMatchObject({ title: `${to} asked a question`, payload: { signalId: second.id, label: "question" } });
+  expect(both[1]).toMatchObject({ title: `${to} asked a question`, payload: { signalId: second.id, thread: [first.id, second.id], label: "question" } });
+
+  // Its owner was told once, by name and our own subject, never with the reply's words.
+  const subject = (await q("select spec->>'subject' as s from actions where id = $1", [sent]))[0].s as string;
+  const told = alerts.filter((a) => a.subject === `${to} wants to talk`);
+  expect(told).toEqual([{ userIds: [owner], subject: `${to} wants to talk`, text: expect.stringContaining(`"${subject}"`) }]);
+  expect(told[0]!.text).not.toContain("Friday");
+  // A later reply in the same thread sorted as wanting to talk again tells no one twice.
+  labelSays = { label: "interested", quote: "Friday at 10" };
+  await inThread(to, messageId, "Friday at 10 then.");
+  const third = (await signals(to)).find((x) => x.id !== first.id && x.id !== second.id)!;
+  await replies.decide(W, third.id);
+  expect(alerts.filter((a) => a.subject === `${to} wants to talk`)).toHaveLength(1);
   modelSays = "refuse";
   labelSays = "refuse";
 });
@@ -829,12 +851,35 @@ test("an unlabelled reply still opens its Item, owned by the Owners when nobody 
   modelSays = "refuse";
 });
 
+test("an alert that can't be sent leaves the reply Item open and the job done", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  labelSays = { label: "interested", quote: "Let's talk" };
+  alertFails = true;
+  fake.deliver({ from: to, subject: "Re: Hello", text: "Let's talk." });
+  await poll();
+  const [signal] = await signals(to);
+  await replies.decide(W, signal.id);
+  expect(await replyItems(personId)).toMatchObject([{ state: "needs_approval", payload: { label: "interested" } }]);
+  alertFails = false;
+  modelSays = "refuse";
+  labelSays = "refuse";
+});
+
 test("a reply's owner is the email's approver, else the Mailbox's person, else the Workspace's Owners", () => {
   expect(replyOwner("a", "m", ["o"])).toEqual({ userIds: ["a"], rule: "approver" });
   expect(replyOwner(null, "m", ["o"])).toEqual({ userIds: ["m"], rule: "mailbox" });
   expect(replyOwner(null, null, ["o", "p"])).toEqual({ userIds: ["o", "p"], rule: "workspace_owners" });
 });
 
+test("an alert goes to each owner still a member, and to nobody when no mailer is set up", async () => {
+  const sent: { to: string }[] = [];
+  const emailOf = async (_w: string, id: string) => (id === "gone" ? undefined : `${id}@acme.test`);
+  await mailMembers(async (m) => void sent.push(m), emailOf)(W, ["a", "gone", "b"], { subject: "s", text: "t" });
+  expect(sent).toEqual([{ to: "a@acme.test", subject: "s", text: "t" }, { to: "b@acme.test", subject: "s", text: "t" }]);
+  await mailMembers(undefined, emailOf)(W, ["a"], { subject: "s", text: "t" });
+  expect(sent).toHaveLength(2);
+});
 
 test("settling an older reply preserves a later pending reply for its own decision and Item", async () => {
   const { personId, to } = await addPerson();

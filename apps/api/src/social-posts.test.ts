@@ -9,7 +9,7 @@ import { campaignCheck, campaignKinds, campaignOnPlanApproved, campaignOnPlanCre
 import { createVault, credentialLabel, credentialReady, rootKeyFromEnv } from "./modules/credentials/index";
 import { createFacts, describeFactChange, factKinds, factVersion } from "./modules/facts/index";
 import { approverMayApprove, workspaceLive } from "./modules/identity/index";
-import { createItems, itemRoutes } from "./modules/items/index";
+import { createItems, itemRoutes, warn } from "./modules/items/index";
 import { TEST_SECRET, testIdentity, testLedger } from "./modules/outreach/fixtures/support";
 import { createOutreach, outreachFloors } from "./modules/outreach/index";
 import { createPlans, planKinds, type PlanBody } from "./modules/plans/index";
@@ -831,4 +831,15 @@ test("a post written on the Calendar waits for approval, outside any campaign, o
   expect(over.status).toBe(409);
   net.state.limit = 100;
   expect((await write({ connection: "nope", credentialId: null, networkId: null, text: "x" })).status).toBe(400);
+});
+
+test("a post written in a system actor's name keeps its extra warnings, waits for approval and names the actor", async () => {
+  beforeWhen();
+  const a = await account();
+  const actor = { system: `external_token:${crypto.randomUUID()}` };
+  const r = await posts.writeAs(W, { ...a, text: "From a token", at: WHEN }, actor, [warn("untrusted_source", 'Sent by External token "Zapier".')]);
+  if (!r.ok) throw new Error(r.reason);
+  expect(await stateOf(r.itemId!)).toMatchObject({ state: "needs_approval", clean: false, warnings: expect.arrayContaining([{ code: "untrusted_source", text: 'Sent by External token "Zapier".' }]) });
+  const detail = (await (await call(`/api/w/${W}/items/${r.itemId}`, cookie)).json()) as { timeline: { actor: { kind: string; id: string } }[] };
+  expect(detail.timeline[0]?.actor).toEqual({ kind: "system", id: actor.system });
 });

@@ -192,6 +192,40 @@ test("a post's Item shows the account and the network it goes out as", async () 
   expect((await call(`/api/w/${W}/social/posts/${r!.itemId}/link-image`, cookie)).status).toBe(404);
 });
 
+test("a preview fetched before replacement cannot restore the cancelled post's card or image", async () => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  const [first] = await draft(id, [{ ...a, text: "https://acme.test/old" }]);
+  const started = Promise.withResolvers<void>();
+  const resume = Promise.withResolvers<void>();
+  const pending = postAppearance(W, first!.itemId, networks(), {
+    text: "https://acme.test/old",
+    readPreview: async () => {
+      started.resolve();
+      await resume.promise;
+      return { title: "Old", description: null, site: "Acme", image: "https://cdn.test/old.png" };
+    },
+    readImage: async () => ({ bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]) }),
+  });
+  await started.promise;
+  try {
+    ok(await items.cancel(W, first!.itemId, { userId: owner }));
+    const [next] = await draft(id, [{ ...a, text: "https://acme.test/new" }]);
+    expect(next).toMatchObject({ ok: true });
+    expect(next!.itemId).not.toBe(first!.itemId);
+    resume.resolve();
+    await pending;
+    expect(await q("select link_preview, link_image, link_image_type from social_posts where item_id = $1", [next!.itemId])).toEqual([
+      { link_preview: null, link_image: null, link_image_type: null },
+    ]);
+    expect(await postLinkImage(W, next!.itemId)).toBeNull();
+  } finally {
+    resume.resolve();
+    await pending;
+  }
+});
+
 test("rejecting one holds only that Network", async () => {
   beforeWhen();
   const id = await postStep();

@@ -465,7 +465,7 @@ export async function postAppearance(workspaceId: string, itemId: string, networ
       const type = got && imageType(got.bytes);
       const image = got && type ? { type, bytes: got.bytes } : null;
       hasImage = image !== null;
-      await inWorkspace(workspaceId, (tx) => keepPreview(tx, row.id, { url, preview, at: now.toISOString() } satisfies KeptPreview, image));
+      await inWorkspace(workspaceId, (tx) => keepPreview(tx, row.id, itemId, { url, preview, at: now.toISOString() } satisfies KeptPreview, image));
     }
     link = preview && { url, title: preview.title, description: preview.description, site: preview.site, image: hasImage };
   }

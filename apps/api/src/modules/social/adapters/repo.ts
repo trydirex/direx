@@ -150,8 +150,8 @@ export const postToEdit = async (tx: WorkspaceTx, itemId: string) => {
   return row ?? null;
 };
 /** Keeps what a post's first link showed, and its image, so it's read once per link. */
-export const keepPreview = (tx: WorkspaceTx, postId: string, kept: unknown, image: { type: string; bytes: Buffer } | null) =>
-  tx.update(socialPosts).set({ linkPreview: kept, linkImage: image?.bytes ?? null, linkImageType: image?.type ?? null }).where(eq(socialPosts.id, postId));
+export const keepPreview = (tx: WorkspaceTx, postId: string, observedItemId: string, kept: unknown, image: { type: string; bytes: Buffer } | null) =>
+  tx.update(socialPosts).set({ linkPreview: kept, linkImage: image?.bytes ?? null, linkImageType: image?.type ?? null }).where(and(eq(socialPosts.id, postId), eq(socialPosts.itemId, observedItemId)));
 /** The image a post's link card shows, if it has one. */
 export const linkImageOf = (tx: WorkspaceTx, itemId: string) =>
   tx.select({ bytes: socialPosts.linkImage, type: socialPosts.linkImageType }).from(socialPosts).where(and(eq(socialPosts.itemId, itemId), isNotNull(socialPosts.linkImage))).limit(1);

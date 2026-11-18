@@ -230,6 +230,39 @@ test("a cancelled post gives way to a new one on the same account, and a sent on
   expect(net.state.published.filter((p) => p.spec.text === "Third")).toEqual([]);
 });
 
+test.each(["publish", "manual"] as const)("cancelled posts can switch publishing modes repeatedly starting with %s", async (firstMode) => {
+  beforeWhen();
+  const id = await postStep();
+  const a = await account();
+  let mode: "publish" | "manual" = firstMode;
+  const switching = createPosts({ plugins: () => plugins, vault: () => ({ appSource: async () => own.app }), networks: () => [{ ...info, features: mode === "manual" ? [] : info.features }], items: () => items, now });
+  const step = { campaignId: id, stepKey: "launch", title: "Launch post", plannedAt: WHEN };
+  const modes = firstMode === "publish" ? ["publish", "manual", "publish", "manual", "publish"] as const : ["manual", "publish", "manual", "publish"] as const;
+  const previous: string[] = [];
+  for (const [i, nextMode] of modes.entries()) {
+    mode = nextMode;
+    const target = { ...a, text: `Replacement ${i}` };
+    const [made] = await switching.draft(W, step, [target], owner);
+    expect(made).toMatchObject({ ok: true, mode });
+    const itemId = made!.itemId!;
+    expect(previous).not.toContain(itemId);
+    expect((await stateOf(itemId)).state).toBe("needs_approval");
+    expect(await q("select item_id from social_posts where campaign_id = $1", [id])).toEqual([{ item_id: itemId }]);
+    // A repeat still returns this draft; only replacing a cancelled Item changes the key.
+    expect((await switching.draft(W, step, [target], owner))[0]).toMatchObject({ ok: true, itemId });
+    for (const old of previous) expect((await stateOf(old)).state).toBe("cancelled");
+    if (i < modes.length - 1) {
+      ok(await items.cancel(W, itemId, { userId: owner }));
+      previous.push(itemId);
+    } else {
+      expect((await approve(itemId)).status).toBe(200);
+      await dispatch(itemId);
+      expect((await stateOf(itemId)).state).toBe("sent");
+      expect(net.state.published.filter((p) => p.spec.text === target.text && p.spec.target === a.networkId)).toHaveLength(1);
+    }
+  }
+});
+
 test("editing an approved draft voids its approval under the same Action, and drafting the same text again changes nothing", async () => {
   beforeWhen();
   const id = await postStep();

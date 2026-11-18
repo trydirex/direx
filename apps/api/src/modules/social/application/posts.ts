@@ -325,8 +325,8 @@ export function createPosts(deps: PostsDeps) {
           continue;
         }
         const item = await deps.items().createActionItem(workspaceId, {
-          // A post step's key is as it always was; a clip's post adds the clip, and a post in a cancelled one's place adds that Action.
-          idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}${found?.cancelled && found.actionId ? `:after:${found.actionId}` : ""}`,
+          // Keep the original key for a first draft. A replacement follows the cancelled Action, or Item for a hand post.
+          idempotencyKey: `social:${step.campaignId}:${step.stepKey}:${t.connection}:${networkId}${clipId ? `:${clipId}` : ""}${found?.cancelled ? `:after:${found.actionId ?? found.itemId}` : ""}`,
           capability: r.provider.publish,
           dedupe: r.provider.dedupe,
           spec: p.spec,

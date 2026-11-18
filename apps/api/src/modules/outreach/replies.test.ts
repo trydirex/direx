@@ -16,9 +16,10 @@ import { CallFailed, EMAIL_RECEIVED, loadPlugins, receivedMail } from "../plugin
 import { touchCheck } from "../schedule/index";
 import { setPause, clearPause, pauseOf } from "./adapters/pauses";
 import { inWorkspace } from "./adapters/repo";
+import { replyOwner } from "./application/reply-desk";
 import { resultLines } from "./application/results";
 import { passMailboxCheck, TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
-import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, sendingPaused } from "./index";
+import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, createReplyDesk, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, replyDeskKind, sendingPaused } from "./index";
 
 process.env.DIREX_AUTH_SECRET = TEST_SECRET;
 
@@ -38,9 +39,12 @@ let searchFails = false;
 let searchIncomplete = false;
 // The opt-out model, scripted. It refuses unless a test says otherwise, so a reply the rules leave goes to a person.
 let modelSays: { answer: string; quote?: string | null } | "refuse" = "refuse";
+// The reply desk's label, scripted the same way.
+let labelSays: { label: string; quote: string } | "refuse" = "refuse";
 const modelCalls: string[] = [];
 const fakeGenerate = (async (req: { purpose: string; parts: { kind: string; text: string }[] }) => {
   modelCalls.push(`${req.purpose}:${req.parts.map((p) => p.kind).join(",")}`);
+  if (req.purpose === "reply_label") return labelSays === "refuse" ? { ok: false, callId: null, refusal: "no_route" } : { ok: true, callId: crypto.randomUUID(), trust: "untrusted", output: labelSays, toolCalls: [], routeHash: "r" };
   return modelSays === "refuse" ? { ok: false, callId: null, refusal: "no_route" } : { ok: true, callId: crypto.randomUUID(), trust: "untrusted", output: modelSays, toolCalls: [], routeHash: "r" };
 }) as never;
 const replies: ReturnType<typeof createReplies> = createReplies({
@@ -54,6 +58,7 @@ const replies: ReturnType<typeof createReplies> = createReplies({
     const { events } = await plugins.query(workspaceId, "com.trydirex.gmail/mail.from", { email }, credentialId);
     return { events: receivedMail(events).map((e) => ({ ...e, workspaceId, credentialId })), complete: !searchIncomplete };
   },
+  desk: createReplyDesk({ items: () => items, generate: () => fakeGenerate }),
 });
 await replies.ensureQueue();
 await boss.createQueue("plugins.poll");
@@ -73,7 +78,7 @@ const { clock, ledger } = await testLedger({
   checks: [workspaceLive(), outreachFloors(async () => repliesBeingRead), approverMayApprove(), touchCheck({ effects: plugins.effects, now: () => clock.at }), credentialReady],
   now: () => clock.at,
 });
-const items = createItems({ ledger, kinds: optOutReviewKind({ boss, now: () => clock.at }), now: () => clock.at });
+const items = createItems({ ledger, kinds: { ...optOutReviewKind({ boss, now: () => clock.at }), ...replyDeskKind() }, now: () => clock.at });
 const outreach = createOutreach({
   items: () => items,
   send: () => ({ id: SEND, dedupe: "queryable", prepare: (ws, input) => plugins.prepare(ws, SEND, input) }),
@@ -196,7 +201,8 @@ test("a reply nothing can settle holds that Person's sends until a person says i
   const item = await reviewOf(signal.id);
   expect((await choose(item, "maybe")).status).not.toBe(200);
   expect((await choose(item, "not_opt_out")).status).toBe(200);
-  expect((await signals(to))[0]).toMatchObject({ status: "not_opt_out", decided_by: "person", text: null, quote: null });
+  // The words stay for the reply desk, which drops them when its Item is settled.
+  expect((await signals(to))[0]).toMatchObject({ status: "not_opt_out", decided_by: "person", text: "Who gave you my address?", quote: null });
   await replies.decide(W, signal.id);
   await ledger.run(W, held);
   expect(await stateOf(held)).toMatchObject({ state: "sent" });
@@ -582,7 +588,7 @@ test("a reply the model says isn't an opt-out lets that Person's held send go", 
   await ledger.run(W, held);
   modelSays = { answer: "not_opt_out", quote: null };
   await replies.decide(W, signal.id);
-  expect((await signals(to))[0]).toMatchObject({ status: "not_opt_out", decided_by: "model", text: null });
+  expect((await signals(to))[0]).toMatchObject({ status: "not_opt_out", decided_by: "model", text: "Who gave you my address? Anyway, send me pricing." });
   await ledger.run(W, held);
   expect(await stateOf(held)).toMatchObject({ state: "sent" });
   modelSays = "refuse";
@@ -770,4 +776,115 @@ test("a bounce received by another Mailbox cannot match this Mailbox's send", as
   await inWorkspace(W, (tx) => replies.intake(tx, { workspaceId: W, credentialId: crypto.randomUUID(), eventId: crypto.randomUUID(), data: { headers: { from: "mailer-daemon@example.com", date: clock.at.toISOString(), to: "", subject: "Delivery failure", inReplyTo: "", references: "" }, text: "failed", dsn: { recipients: [{ email: to, status: "5.1.1" }] } } }));
   expect(await signals(to)).toEqual([]);
   expect(await suppressed(to)).toBeUndefined();
+});
+
+const replyItems = (personId: string) => q("select id, state, title, payload from items where kind = 'reply' and payload->>'personId' = $1 order by created_at", [personId]);
+const inThread = (to: string, messageId: string, text: string) =>
+  inWorkspace(W, (tx) => replies.intake(tx, { workspaceId: W, credentialId, eventId: crypto.randomUUID(), data: { headers: { from: to, date: clock.at.toISOString(), to: "me@acme.test", subject: "Re: Hello", inReplyTo: messageId, references: messageId }, text } }));
+
+test("a reply that isn't an opt-out opens one reply Item, labelled and owned by the email's approver; a second reply in the thread replaces it", async () => {
+  const { personId, to } = await addPerson();
+  const sent = await approved(personId);
+  await ledger.run(W, sent);
+  const messageId = (await q("select correlation_key from actions where id = $1", [sent]))[0].correlation_key as string;
+  modelSays = { answer: "not_opt_out", quote: null };
+  labelSays = { label: "interested", quote: "can we talk Friday" };
+  await inThread(to, messageId, "Sounds good, can we talk Friday?");
+  const [first] = await signals(to);
+  expect(first).toMatchObject({ action_id: sent });
+  await replies.decide(W, first.id);
+  expect(await replyItems(personId)).toMatchObject([
+    { state: "needs_approval", title: `${to} wants to talk`, payload: { signalId: first.id, actionId: sent, label: "interested", quote: "can we talk Friday", owner: { userIds: [owner], rule: "approver" } } },
+  ]);
+
+  labelSays = { label: "question", quote: "does it work with HubSpot" };
+  clock.at = new Date(clock.at.getTime() + 1);
+  await inThread(to, messageId, "Also, does it work with HubSpot?");
+  const second = (await signals(to)).find((x) => x.id !== first.id)!;
+  await replies.decide(W, second.id);
+  const both = await replyItems(personId);
+  expect(both.map((i) => i.state)).toEqual(["cancelled", "needs_approval"]);
+  expect(both[1]).toMatchObject({ title: `${to} asked a question`, payload: { signalId: second.id, label: "question" } });
+  modelSays = "refuse";
+  labelSays = "refuse";
+});
+
+test("an unlabelled reply still opens its Item, owned by the Owners when nobody approved an email; settling it drops the thread's words for good", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  fake.deliver({ from: to, subject: "Re: Hello", text: "Who is this?" });
+  await poll();
+  const [signal] = await signals(to);
+  await replies.decide(W, signal.id);
+  const [item] = await replyItems(personId);
+  expect(item).toMatchObject({ title: `${to} replied`, payload: { label: "unlabelled", quote: null, actionId: null, owner: { userIds: [owner], rule: "workspace_owners" } } });
+  expect((await signals(to))[0].text).toBe("Who is this?");
+
+  expect((await choose(item.id, "sure")).status).not.toBe(200);
+  expect((await choose(item.id, "no_answer")).status).toBe(200);
+  expect((await signals(to))[0].text).toBeNull();
+  // A retried job finds no words left, so nothing opens again.
+  await replies.decide(W, signal.id);
+  expect(await replyItems(personId)).toHaveLength(1);
+  modelSays = "refuse";
+});
+
+test("a reply's owner is the email's approver, else the Mailbox's person, else the Workspace's Owners", () => {
+  expect(replyOwner("a", "m", ["o"])).toEqual({ userIds: ["a"], rule: "approver" });
+  expect(replyOwner(null, "m", ["o"])).toEqual({ userIds: ["m"], rule: "mailbox" });
+  expect(replyOwner(null, null, ["o", "p"])).toEqual({ userIds: ["o", "p"], rule: "workspace_owners" });
+});
+
+
+test("settling an older reply preserves a later pending reply for its own decision and Item", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  await inThread(to, "", "First question?");
+  const [first] = await signals(to);
+  await replies.decide(W, first.id);
+  const [item] = await replyItems(personId);
+  clock.at = new Date(clock.at.getTime() + 1);
+  await inThread(to, "", "Another question?");
+  const second = (await signals(to)).find((s) => s.id !== first.id)!;
+  expect((await choose(item.id, "no_answer")).status).toBe(200);
+  expect((await signals(to)).find((s) => s.id === first.id)!.text).toBeNull();
+  expect((await signals(to)).find((s) => s.id === second.id)!.text).toBe("Another question?");
+  await replies.decide(W, second.id);
+  expect((await replyItems(personId)).find((i) => i.state === "needs_approval")!.payload).toMatchObject({ signalId: second.id });
+  modelSays = "refuse";
+});
+
+test("a delayed older decision and retries cannot replace the newer reply Item, even after settlement", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  await inThread(to, "", "First question?");
+  const [first] = await signals(to);
+  clock.at = new Date(clock.at.getTime() + 1);
+  await inThread(to, "", "Latest question?");
+  const second = (await signals(to)).find((s) => s.id !== first.id)!;
+  await replies.decide(W, second.id);
+  await replies.decide(W, first.id);
+  await Promise.all([replies.decide(W, first.id), replies.decide(W, second.id)]);
+  const all = await replyItems(personId);
+  expect(all).toHaveLength(1);
+  expect(all[0]).toMatchObject({ state: "needs_approval", payload: { signalId: second.id } });
+  expect((await choose(all[0].id, "answered_elsewhere")).status).toBe(200);
+  await replies.decide(W, first.id);
+  expect(await replyItems(personId)).toHaveLength(1);
+  modelSays = "refuse";
+});
+
+test("concurrent decisions use UUID order for equal timestamps and leave one newest Item", async () => {
+  const { personId, to } = await addPerson();
+  modelSays = { answer: "not_opt_out", quote: null };
+  await inThread(to, "", "A question?");
+  await inThread(to, "", "Another question?");
+  const ordered = await q("select id from reply_signals where person_id = $1 order by received_at, id", [personId]);
+  await Promise.all(ordered.map((s) => replies.decide(W, s.id)));
+  const waiting = (await replyItems(personId)).filter((i) => i.state === "needs_approval");
+  expect(waiting).toHaveLength(1);
+  expect(waiting[0].payload).toMatchObject({ signalId: ordered.at(-1)!.id });
+  await replies.decide(W, ordered[0].id);
+  expect((await replyItems(personId)).filter((i) => i.state === "needs_approval")).toHaveLength(1);
+  modelSays = "refuse";
 });

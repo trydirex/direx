@@ -38,6 +38,8 @@ import { toView, type ItemView } from "./view";
  */
 export type ItemKind = {
   permission: string;
+  /** Refuses stale source data inside creation, after locking a replacement group. */
+  canCreate?: (tx: ItemsTx, payload: unknown) => Promise<boolean>;
   /** The permission for this one Item, when it depends on what the Item asks for, such as an Ask start needing its button's permission. */
   permissionOf?: (item: ItemRow) => string;
   /** False when only a person's own approval may apply it, never a grant given earlier. */
@@ -231,9 +233,12 @@ export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, rec
       if (!kinds[a.kind]) return { ok: false, reason: "unknown_kind" } as const;
       if (a.replace && !a.details.groupKey) return { ok: false, reason: "group_key_required" } as const;
       const row = await inWorkspace(workspaceId, async (tx) => {
-        for (const old of a.replace ? await lockLiveGroup(tx, workspaceId, a.kind, a.details.groupKey!) : []) await moveOwnState(tx, old, "cancelled", a.actor, now());
+        const live = a.replace ? await lockLiveGroup(tx, workspaceId, a.kind, a.details.groupKey!) : [];
+        if (kinds[a.kind]!.canCreate && !(await kinds[a.kind]!.canCreate!(tx, a.payload))) return null;
+        for (const old of live) await moveOwnState(tx, old, "cancelled", a.actor, now());
         return insertOwnItem(tx, workspaceId, { kind: a.kind, state: a.state ?? "needs_approval", payload: a.payload, ...a.details }, a.actor, now());
       });
+      if (!row) return { ok: false, reason: "superseded" } as const;
       return { ok: true, item: (await view(workspaceId, row.id))! } as const;
     },
 

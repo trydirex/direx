@@ -15,6 +15,7 @@ import { readOptOut } from "../domain/optout";
 import { autoSubject, autoSubmitted, settleByRules } from "../domain/reply-rules";
 import { pauseOnBounces } from "./mailboxes";
 import { askOptOut, type Generate } from "./optout-model";
+import type { ReplyDesk } from "./reply-desk";
 
 export const REPLY_QUEUE = "outreach.reply";
 const QUOTE_CHARS = 200;
@@ -74,6 +75,8 @@ export type RepliesDeps = {
   searchMailboxes?: (workspaceId: string, email: string) => Promise<{ events: InboundEvent[]; complete: boolean }>;
   /** Whether mail a search found belongs to another consumer, such as a Placement check; claimed mail never reaches intake. */
   claim?: (tx: OutreachTx, e: InboundEvent) => Promise<boolean>;
+  /** Opens a reply Item for each human reply that isn't an opt-out. Without it, such a reply is only recorded. */
+  desk?: ReplyDesk;
   now?: () => Date;
 };
 
@@ -202,7 +205,8 @@ export function createReplies(deps: RepliesDeps) {
               await settleSignal(tx, signalId, { status: "opted_out", decidedBy: "model", decidedAt: at, quote: reading.quote.slice(0, QUOTE_CHARS), text: null });
               await suppressAll(tx, locked, at);
             } else {
-              await settleSignal(tx, signalId, { status: "not_opt_out", decidedBy: "model", decidedAt: at, text: null });
+              // The words stay for the reply desk until a person settles its Item; the 30-day clear still applies.
+              await settleSignal(tx, signalId, { status: "not_opt_out", decidedBy: "model", decidedAt: at });
             }
           });
         } else {
@@ -211,6 +215,10 @@ export function createReplies(deps: RepliesDeps) {
         }
       }
       if (signal.status === "needs_person") return;
+      if (deps.desk) {
+        const settled = await inWorkspace(workspaceId, (tx) => readSignal(tx, signalId));
+        if (settled) await deps.desk.open(settled);
+      }
       await deps.ledger().resumeHeldBy(workspaceId, HELD_FOR_REPLY, { system: "outreach" }, async (tx, touch) => {
         if (touch.personId === signal.personId) return true;
         return (await emailsOfGroup(tx, touch.personId)).includes(signal.senderEmail);
@@ -247,7 +255,8 @@ export function optOutReviewKind(deps: { boss: PgBoss; now?: () => Date }): Reco
         if (signal?.status !== "needs_person") return { ok: true };
         const at = now();
         const quote = choice === "opted_out" ? (signal.text?.slice(0, QUOTE_CHARS) ?? null) : null;
-        await settleSignal(tx, signalId, { status: choice, decidedBy: "person", decidedAt: at, quote, text: null });
+        // A reply that isn't an opt-out keeps its words for the reply desk, which drops them when settled.
+        await settleSignal(tx, signalId, { status: choice, decidedBy: "person", decidedAt: at, quote, ...(choice === "opted_out" && { text: null }) });
         if (choice === "opted_out") await suppressAll(tx, signal, at);
         await sendJobInTx(deps.boss, tx, REPLY_QUEUE, JobPayload.parse({ workspaceId: item.workspaceId, signalId }), at);
         return { ok: true };

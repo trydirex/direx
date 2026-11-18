@@ -65,6 +65,7 @@ try {
   for (const f of ["LICENSE", "README.md"]) copyFileSync(join(sdk, f), join(stage, f));
   const pkg = JSON.parse(readFileSync(join(sdk, "package.json"), "utf8"));
   delete pkg.exports["."].bun;
+  delete pkg.exports["./host"].bun;
   delete pkg.scripts;
   delete pkg.private;
   writeFileSync(join(stage, "package.json"), `${JSON.stringify(pkg, null, 2)}\n`);
@@ -113,6 +114,17 @@ await runWorker(plugin);
   hello.dependencies["@trydirex/plugin-sdk"] = `file:${tarball}`;
   writeFileSync(join(bun, "package.json"), `${JSON.stringify(hello, null, 2)}\n`);
   run([process.execPath, "install"], bun);
+
+  // Both published entry points must resolve without the monorepo's src/ files.
+  const hostCheck = `import { deepStrictEqual } from "node:assert";
+import { readErrorData } from "@trydirex/plugin-sdk/host";
+deepStrictEqual(readErrorData({ reason: "quota_exhausted", waitMs: 500 }), { reason: "failed", waitMs: 500 });
+`;
+  for (const [runtime, cwd] of [["node", node], [process.execPath, bun]] as const) {
+    writeFileSync(join(cwd, "host.mjs"), hostCheck);
+    run([runtime, "host.mjs"], cwd);
+    console.log(`${runtime}: host import ok`);
+  }
   run([process.execPath, "run", "build"], bun);
   console.log(`bun: initialize answered ${await initialize([process.execPath, "dist/plugin.js"], bun)}`);
 

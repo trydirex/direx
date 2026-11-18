@@ -42,12 +42,20 @@ export async function mayOpenReply(tx: OutreachTx, signalId: string): Promise<bo
   return !represented;
 }
 
+// The replies in this Person's thread that aren't opt-outs and still keep their words, up to and including
+// this one. received_at plus UUID is a stable total order, and the comparison stays in SQL for its precision.
+const keptThrough = (personId: string, actionId: string | null, signalId: string) =>
+  and(eq(replySignals.personId, personId), actionId ? eq(replySignals.actionId, actionId) : isNull(replySignals.actionId), eq(replySignals.kind, "reply"), eq(replySignals.status, "not_opt_out"), sql`(${replySignals.receivedAt}, ${replySignals.id}) <= (select received_at, id from reply_signals where id = ${signalId})`, isNotNull(replySignals.text));
+
 /** Drops only replies through the settled Item's boundary; pending decisions retain their evidence. */
 export async function clearThreadText(tx: OutreachTx, personId: string, actionId: string | null, signalId: string): Promise<void> {
-  await tx
-    .update(replySignals)
-    .set({ text: null })
-    .where(and(eq(replySignals.personId, personId), actionId ? eq(replySignals.actionId, actionId) : isNull(replySignals.actionId), eq(replySignals.kind, "reply"), eq(replySignals.status, "not_opt_out"), sql`(${replySignals.receivedAt}, ${replySignals.id}) <= (select received_at, id from reply_signals where id = ${signalId})`, isNotNull(replySignals.text)));
+  await tx.update(replySignals).set({ text: null }).where(keptThrough(personId, actionId, signalId));
+}
+
+/** The replies settling this Item would clear, oldest first, so the Item shows every one of them. */
+export async function threadReplies(tx: OutreachTx, personId: string, actionId: string | null, signalId: string): Promise<string[]> {
+  const rows = await tx.select({ id: replySignals.id }).from(replySignals).where(keptThrough(personId, actionId, signalId)).orderBy(replySignals.receivedAt, replySignals.id);
+  return rows.map((r) => r.id);
 }
 
 /** Whether a reply in this thread was already sorted as wanting to talk, so its owner was already told. */

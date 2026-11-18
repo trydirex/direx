@@ -374,7 +374,7 @@ test("something put on a day goes at 9:00, or the next whole hour once today is 
   expect(firstSlotValue(new Date(2026, 10, 11), new Date(2026, 10, 17, 8, 10))).toBe("2026-11-17T09:00");
 });
 
-const replyContent = { signalId: "s1", label: "interested", quote: "can we talk <b>Friday</b>", owner: { userIds: ["u1", "u2"], rule: "approver" as const } };
+const replyContent = { signalId: "s1", thread: ["s1"], actionId: "a1", label: "interested", quote: "can we talk <b>Friday</b>", owner: { userIds: ["u1", "u2"], rule: "approver" as const } };
 const kimSays = { senderEmail: "kim@example.com", text: "<script>x</script> Sounds good, can we talk Friday?", status: "not_opt_out" };
 
 test("a reply Item shows its label with the words behind it, who owns it, and the reply folded away as plain text", () => {
@@ -388,14 +388,19 @@ test("a reply Item shows its label with the words behind it, who owns it, and th
   expect(page).not.toContain("<script>");
   // A member who left is skipped; nobody left means no owner line.
   expect(html(createElement(ReplyItem, { workspaceId: W, content: { ...replyContent, label: "unlabelled", quote: null }, members: [], meId: undefined, initial: kimSays }))).toContain("Direx didn&#x27;t sort this one");
+  // An earlier reply in the thread stays on screen until the Item is settled.
+  expect(html(createElement(ReplyItem, { workspaceId: W, content: { ...replyContent, thread: ["s0", "s1"] }, members, meId: undefined, initial: kimSays }))).toContain("Their 2 replies, oldest first");
 });
 
 test("the owner sentence says why, and you or several names take the plural", () => {
-  expect(ownerLine(["You"], "approver")).toBe("You approved the email they replied to.");
-  expect(ownerLine(["Sam"], "mailbox")).toBe("Sam owns the Mailbox it came to. Nobody approved that email.");
-  expect(ownerLine(["You"], "mailbox")).toContain("You own the Mailbox");
-  expect(ownerLine(["Sam"], "workspace_owners")).toBe("Sam is an Owner here. Nobody approved that email and the Mailbox is shared.");
-  expect(ownerLine(["Sam", "Jo"], "workspace_owners")).toContain("Sam, Jo are Owners here.");
+  expect(ownerLine(["You"], "approver", true)).toBe("You approved the email they replied to.");
+  expect(ownerLine(["Sam"], "mailbox", true)).toBe("Sam owns the Mailbox it came to. Nobody approved that email.");
+  expect(ownerLine(["You"], "mailbox", true)).toContain("You own the Mailbox");
+  expect(ownerLine(["Sam"], "workspace_owners", true)).toBe("Sam is an Owner here. Nobody approved that email, and no one person owns the Mailbox.");
+  expect(ownerLine(["Sam", "Jo"], "workspace_owners", true)).toContain("Sam, Jo are Owners here.");
+  // A reply outside our threads answers no email of ours.
+  expect(ownerLine(["Sam"], "mailbox", false)).toBe("Sam owns the Mailbox it came to. It isn't a reply to an email from Direx.");
+  expect(ownerLine(["You"], "workspace_owners", false)).toBe("You are an Owner here. It isn't a reply to an email from Direx, and no one person owns the Mailbox.");
 });
 
 test("a reply Item in the panel offers its two settle choices and nothing that sends or dismisses", () => {

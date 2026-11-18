@@ -804,7 +804,7 @@ test("a reply that isn't an opt-out opens one reply Item, labelled and owned by 
   expect(first).toMatchObject({ action_id: sent });
   await replies.decide(W, first.id);
   expect(await replyItems(personId)).toMatchObject([
-    { state: "needs_approval", title: `${to} wants to talk`, payload: { signalId: first.id, actionId: sent, label: "interested", quote: "can we talk Friday", owner: { userIds: [owner], rule: "approver" } } },
+    { state: "needs_approval", title: `${to} wants to talk`, payload: { signalId: first.id, thread: [first.id], actionId: sent, label: "interested", quote: "can we talk Friday", owner: { userIds: [owner], rule: "approver" } } },
   ]);
 
   labelSays = { label: "question", quote: "does it work with HubSpot" };
@@ -814,7 +814,7 @@ test("a reply that isn't an opt-out opens one reply Item, labelled and owned by 
   await replies.decide(W, second.id);
   const both = await replyItems(personId);
   expect(both.map((i) => i.state)).toEqual(["cancelled", "needs_approval"]);
-  expect(both[1]).toMatchObject({ title: `${to} asked a question`, payload: { signalId: second.id, label: "question" } });
+  expect(both[1]).toMatchObject({ title: `${to} asked a question`, payload: { signalId: second.id, thread: [first.id, second.id], label: "question" } });
 
   // Its owner was told once, by name and our own subject, never with the reply's words.
   const subject = (await q("select spec->>'subject' as s from actions where id = $1", [sent]))[0].s as string;

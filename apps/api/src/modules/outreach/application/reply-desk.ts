@@ -4,7 +4,7 @@
 // drops the thread's reply text. Reply text is untrusted and is never logged.
 import { z } from "zod";
 import type { ItemKind, Items } from "../../items";
-import { clearThreadText, liveApprover, mailboxOwner, mayOpenReply, sentSubject, threadWasInterested, workspaceOwners } from "../adapters/desk-repo";
+import { clearThreadText, liveApprover, mailboxOwner, mayOpenReply, sentSubject, threadReplies, threadWasInterested, workspaceOwners } from "../adapters/desk-repo";
 import { inWorkspace, type Signal } from "../adapters/repo";
 import { REPLY_LABELS } from "../domain/reply-label";
 import type { Generate } from "./optout-model";
@@ -25,6 +25,8 @@ const LABEL_WORDS: Record<(typeof REPLY_LABELS)[number] | "unlabelled", string> 
 
 export const ReplyPayload = z.object({
   signalId: z.uuid(),
+  /** Every unsettled reply in the thread, oldest first; the label and quote are the newest one's. */
+  thread: z.array(z.uuid()),
   personId: z.uuid(),
   actionId: z.uuid().nullable(),
   label: z.enum([...REPLY_LABELS, "unlabelled"]),
@@ -66,13 +68,15 @@ export function createReplyDesk(deps: { items: () => Pick<Items, "createItem">; 
     async open(s: Signal): Promise<void> {
       if (s.kind !== "reply" || s.status !== "not_opt_out" || !s.text || !s.personId) return;
       const reading = await labelReply(deps.generate?.(), s.workspaceId, s.id, s.text);
-      const groupKey = `reply:${s.personId}:${s.actionId ?? "none"}`;
-      const { owner, told, subject } = await inWorkspace(s.workspaceId, async (tx) => ({
+      const personId = s.personId;
+      const groupKey = `reply:${personId}:${s.actionId ?? "none"}`;
+      const { owner, told, subject, thread } = await inWorkspace(s.workspaceId, async (tx) => ({
         owner: replyOwner(s.actionId ? await liveApprover(tx, s.actionId) : null, s.credentialId ? await mailboxOwner(tx, s.credentialId) : null, await workspaceOwners(tx)),
         told: await threadWasInterested(tx, groupKey),
         subject: s.actionId ? await sentSubject(tx, s.actionId) : null,
+        thread: await threadReplies(tx, personId, s.actionId, s.id),
       }));
-      const payload: ReplyPayload = { signalId: s.id, personId: s.personId, actionId: s.actionId, label: reading.label, quote: "quote" in reading ? reading.quote : null, owner };
+      const payload: ReplyPayload = { signalId: s.id, thread, personId, actionId: s.actionId, label: reading.label, quote: "quote" in reading ? reading.quote : null, owner };
       const made = await deps.items().createItem(s.workspaceId, {
         kind: REPLY_KIND,
         replace: true,

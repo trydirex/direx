@@ -76,4 +76,6 @@ printf '%s\n' "$report"
 if printf '%s\n' "$report" | grep '^FAIL ' | grep -v '^FAIL this server has a Server admin:' | grep -qv '^FAIL last backup under 26 hours old:'; then
   fail "a check failed" "follow the fix printed above"
 fi
+# A doctor that crashed prints no FAIL line, and no ok line for the key this restore put back.
+printf '%s\n' "$report" | grep -q '^ok root key$' || fail "doctor didn't finish" "see its output above and: $DC logs direx"
 say "done"

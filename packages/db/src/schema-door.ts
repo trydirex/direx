@@ -112,7 +112,8 @@ export const doorProposals = pgTable(
     idempotencyKey: text("idempotency_key").notNull(),
     bodyDigest: text("body_digest").notNull(),
     kind: text("kind").notNull(),
-    itemId: uuid("item_id").notNull(),
+    // Null records a successful proposal that required no Item.
+    itemId: uuid("item_id"),
     createdAt: tz("created_at").notNull(),
   },
   (t) => [

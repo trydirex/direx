@@ -628,6 +628,10 @@
     "0152_door_requests_validate_outcome.sql": {
       "sha256": "790e0921bee6a5fb806ca40227a4cb5c17bf1c0b7a5fd788491c2495d924987f",
       "description": "Validate the expanded door request outcomes after migration 0151 releases its table lock, allowing request writes during the scan"
+    },
+    "0153_door_proposal_no_item.sql": {
+      "sha256": "15c6d326c2194d824bf63b6704994858338418a9880498bafddadc911c7f674e",
+      "description": "Replay successful proposals without an Item"
     }
   }
 }

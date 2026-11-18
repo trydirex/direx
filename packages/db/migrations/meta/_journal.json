@@ -1072,6 +1072,13 @@
       "when": 1794952140049,
       "tag": "0152_door_requests_validate_outcome",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1794952140050,
+      "tag": "0153_door_proposal_no_item",
+      "breakpoints": true
     }
   ]
 }

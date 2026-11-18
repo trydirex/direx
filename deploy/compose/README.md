@@ -46,17 +46,9 @@ Set up once, on the server, from this folder:
 2. Make an age key **on your own computer**: `age-keygen -o direx-backup.key`. Put that file in
    your password manager; it is the only way to read a backup. Only its public key, the
    `age1...` line it prints, goes on the server.
-<!-- coderabbit-ai-generated:v1 -->
-
-<!-- coderabbit-ai-generated-section:v1:163656cf8ae1f308e9134701d86da5c3fbaed08a6e317e2bdd752a7f22068193 -->
-
 3. Copy the root key out once and put it in the password manager too:
    `(umask 077; docker compose run --rm --no-deps -T --entrypoint sh direx -c 'cat "$DIREX_DATA_DIR/master.key"' >master.key)`,
    then delete `master.key` from the server.
-
-
-<!-- /coderabbit-ai-generated:v1 -->
-
 4. In `.env`, set `DIREX_BACKUP_REMOTE` (the remote and folder, such as `b2:direx-backups`) and
    `DIREX_BACKUP_AGE_RECIPIENT` (the `age1...` key).
 5. Run `sh backup.sh` once, then run it each night from cron (`crontab -e`):
@@ -65,7 +57,8 @@ Set up once, on the server, from this folder:
    17 3 * * * cd /path/to/deploy/compose && sh backup.sh >>state/backup.log 2>&1
    ```
 
-`doctor` fails once the last backup is more than 26 hours old.
+`doctor` fails once the last backup is more than 26 hours old. Until the first `backup.sh` run it
+reports that failure too; `install.sh` expects it, so it is not an install error.
 
 To restore, on a fresh install of the same or a newer version (or to test a backup, on a second
 server), with the dump, the age key and the root key copied over:

@@ -640,6 +640,14 @@
     "0155_campaign_outcomes_mark_only.sql": {
       "sha256": "c3fac7166232c1a4abcaf3d88a122938fb586bcfd4fd4824307fc858be32b575",
       "description": "Restrict campaign outcome undos to mark rows with an insert trigger, including multi-row inserts, and reject existing undo chains without rewriting audit history"
+    },
+    "0156_campaigns_to_count.sql": {
+      "sha256": "2f46de24d8ca22fcf4689011504c660b00584512a226efa5664e58d81fbb61f9",
+      "description": "Add system.campaigns_to_count(), listing each Campaign whose plan has an approved version that ended no more than 30 days ago, for the daily sweep that counts its readings"
+    },
+    "0157_campaign_readings_run_end.sql": {
+      "sha256": "d6402642141a8bd2f864f1a0630770b86809fa6037adaae355d2d3fa52c2821c",
+      "description": "Shift the campaign readings cutoff with the launch date, preserving the 30-day run-end window"
     }
   }
 }

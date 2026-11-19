@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The periodic sweeps the worker side schedules: rules over their cap, campaign stalls and owed plan
-// work, old reply text, unused media and the operational tables' retention windows. Each queue,
-// schedule and consumer goes through `later`, so it starts only after every module is built (ADR 0027
-// rule 001).
+// work, old reply text, unused media, counted plan readings and the operational tables' retention
+// windows. Each queue, schedule and consumer goes through `later`, so it starts only after every module
+// is built (ADR 0027 rule 001).
 import type { PgBoss } from "pg-boss";
 import type { Campaigns } from "../modules/campaigns/index";
 import type { Media } from "../modules/media/index";
@@ -16,6 +16,7 @@ export const SETTLE_SWEEP = "campaigns.settle_sweep";
 export const REPLY_TEXT_SWEEP = "outreach.reply_text_sweep";
 export const MEDIA_SWEEP = "media.sweep";
 export const RETENTION_SWEEP = "retention.sweep";
+export const RESULT_READINGS_SWEEP = "campaigns.readings_sweep";
 
 export type Later = (start: () => Promise<unknown>) => void;
 
@@ -23,7 +24,7 @@ export function sweeps(d: {
   boss: Pick<PgBoss, "createQueue" | "schedule" | "work">;
   later: Later;
   standingRules: Pick<StandingRules, "sweepOverCap">;
-  campaigns: () => Pick<Campaigns, "followAnchors" | "offerStalls" | "settleAll">;
+  campaigns: () => Pick<Campaigns, "followAnchors" | "offerStalls" | "settleAll" | "countReadings">;
   media: () => Pick<Media, "sweep">;
 }) {
   const { boss, later } = d;
@@ -46,4 +47,6 @@ export function sweeps(d: {
   every(RETENTION_SWEEP, "15 3 * * *", () => sweepRetention());
   // Daily [DEFAULT], after the reply-text sweep.
   every(MEDIA_SWEEP, "30 4 * * *", () => d.media().sweep());
+  // Daily [DEFAULT]: each counted Measure gets a reading when its count moved.
+  every(RESULT_READINGS_SWEEP, "0 6 * * *", () => d.campaigns().countReadings());
 }

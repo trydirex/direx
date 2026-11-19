@@ -346,16 +346,13 @@ export function changesAfter(tx: ItemsTx, after: { tx: bigint; id: number }, bef
     .limit(limit);
 }
 
-/**
- * How many of these Items still wait for a person: Items without an Action, in draft or Needs
- * approval. An Action's Item takes its state from the ledger, so it isn't counted here; the door,
- * which asks, makes none.
- */
+/** How many of these Items still wait for a person, using the ledger state for Actions. */
 export async function countWaiting(tx: ItemsTx, itemIds: readonly string[]): Promise<number> {
   if (!itemIds.length) return 0;
   const [r] = await tx
     .select({ n: count() })
     .from(items)
-    .where(and(inArray(items.id, [...itemIds]), isNull(items.actionId), inArray(items.state, ["draft", "needs_approval"])));
+    .leftJoin(actions, onAction)
+    .where(and(inArray(items.id, [...itemIds]), sql`${rawState} in ('draft', 'needs_approval')`));
   return r!.n;
 }

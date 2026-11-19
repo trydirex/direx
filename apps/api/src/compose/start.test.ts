@@ -4,10 +4,13 @@
 // drop or reconfigure one. DIREX_RECORD_QUEUES=1 rewrites the list; review that diff like code.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { withWorkspace } from "@direx/db";
+import { sql } from "drizzle-orm";
 import { PgBoss } from "pg-boss";
 import { afterAll, expect, test, vi } from "vitest";
 import { runServer } from "../main";
 import { createTokens, DOOR_BASE } from "../modules/door/index";
+import { createVault, rootKeyFromEnv } from "../modules/credentials/index";
 import { seedWorkspace } from "../modules/door/fixtures/members";
 
 process.env.DIREX_MASTER_KEY = "11".repeat(32);
@@ -65,3 +68,29 @@ test("the server takes a token's proposals: a fact waits for a person, and a dra
   expect(draft.status).toBe(422);
   expect(await draft.json()).toMatchObject({ error: "refused" });
 });
+
+
+test("mounted drafts with Actions count toward waiting caps and a pool-sized burst completes", async () => {
+  const w = crypto.randomUUID();
+  const owner = crypto.randomUUID();
+  await seedWorkspace(w, owner);
+  const vault = createVault({ rootKey: rootKeyFromEnv({ DIREX_MASTER_KEY: process.env.DIREX_MASTER_KEY! })!, now: () => new Date() });
+  const credential = await vault.create({ workspaceId: w, actorUserId: owner, scope: "workspace", kind: "api_key", key: "test-account", name: "Test account", meta: {}, value: { key: "synthetic" } });
+  if (!credential.ok) throw new Error(credential.reason);
+  const credentialId = credential.credential.id;
+  await withWorkspace(w, async (tx) => {
+    await tx.execute(sql`update credentials set kind = 'oauth2', scope = 'user', owner_user_id = ${owner}, connection = 'linkedin', meta = '{"scopes":["w_member_social"]}' where id = ${credentialId}`);
+    await tx.execute(sql`insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values (${w}, ${credentialId}, 'linkedin', 'member', 'test-member', 'Test account')`);
+  });
+  const token = await createTokens({ maxDays: null }).create(w, { name: "Drafts", days: 7, readers: [], kinds: ["draft"] }, owner);
+  if (!token.ok) throw new Error(token.reason);
+  const send = (i: number) => worker.app.request(`${DOOR_BASE}/w/${w}/draft`, { method: "POST", headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" }, body: JSON.stringify({ idempotencyKey: `draft-${i}`, connection: "linkedin", credentialId, networkId: "test-member", text: "Hello", at: new Date(Date.now() + 86_400_000).toISOString() }) });
+  const burst = await Promise.all(Array.from({ length: 10 }, (_, i) => send(i)));
+  expect(burst.map((r) => r.status)).toEqual(Array(10).fill(200));
+  for (let i = 10; i < 20; i++) expect((await send(i)).status).toBe(200);
+  expect((await send(20)).status).toBe(429);
+  await withWorkspace(w, async (tx) => {
+    const r = await tx.execute(sql`select count(*)::int as n from items i join actions a on a.id = i.action_id and a.workspace_id = i.workspace_id where a.state = 'needs_approval'`);
+    expect(r.rows[0]).toEqual({ n: 20 });
+  });
+}, 30_000);

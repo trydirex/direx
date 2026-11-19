@@ -28,7 +28,7 @@ test("a plan from before sources looks as it did: a person's reading, and no rea
 
 test("a counted Measure with no reading shows a dash with a label and what it waits on; an external one has no reading yet", () => {
   const none = (key: string, source: Tracking["measures"][number]["source"]) => ({ key, label: key, target: "10", basis, source, latest: null });
-  const m = show([none("replies", "replies"), none("interested", "interested_replies"), none("meetings", "meetings"), none("deals", "deals"), none("press", "external")]);
+  const m = show([none("replies", "replies"), none("interested", "interested_replies"), none("meetings", "meetings"), none("deals", "deals"), none("press", "external")], false);
   expect(m.getAllByText("-")).toHaveLength(4);
   for (const dash of m.getAllByText("-")) expect(dash.getAttribute("aria-hidden")).toBe("true");
   expect(m.getAllByText("No count yet")).toHaveLength(4);

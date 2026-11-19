@@ -359,3 +359,13 @@ test("a draft that ran on the subscription says so under Cost, not $0.00, and a 
   const stopped = (await screen.findByText("Cost")).closest("details")!;
   expect(stopped.textContent).not.toContain("Untested model");
 });
+
+test("counted plan measures use neutral wording when the campaign send state is unknown", async () => {
+  const measures = ["replies", "interested_replies"].map((source) => ({ ...body.measures[0], key: source, label: source, source, latest: null }));
+  serve(() => reply(200, plan({ tracking: { ...tracking, measures } })));
+  show({ role: "viewer" });
+  const m = within(await screen.findByRole("region", { name: "Measures" }));
+  expect(m.getByText("Counted by Direx from email replies. Direx counts each morning.")).toBeTruthy();
+  expect(m.getByText("Counted by Direx from replies labelled interested. Direx counts each morning.")).toBeTruthy();
+  expect(m.queryByText(/Waiting for the first email/)).toBeNull();
+});

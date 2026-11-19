@@ -56,7 +56,7 @@ const useTracking = (workspaceId: string, planId: string) => useQuery(planQuery(
 export function Measures(p: { tracking: Tracking | undefined; emailSent?: boolean | undefined; after?: (m: Tracking["measures"][number]) => ReactNode }) {
   // Direx counts each morning, so a count can lag a send or a mark by up to a day; the words say so.
   const waitsOn = (source: Tracking["measures"][number]["source"]) =>
-    source === "meetings" ? "Mark a meeting on a Person. Direx counts marks each morning." : source === "deals" ? "Mark a deal on a Person. Direx counts marks each morning." : p.emailSent ? "Direx counts each morning, so the first count comes with the next one." : "Waiting for the first email to go out.";
+    source === "meetings" ? "Mark a meeting on a Person. Direx counts marks each morning." : source === "deals" ? "Mark a deal on a Person. Direx counts marks each morning." : p.emailSent === false ? "Waiting for the first email to go out." : p.emailSent ? "Direx counts each morning, so the first count comes with the next one." : "Direx counts each morning.";
   const measures = p.tracking?.measures ?? [];
   if (!measures.length) return null;
   return (

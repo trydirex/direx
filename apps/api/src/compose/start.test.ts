@@ -4,8 +4,7 @@
 // drop or reconfigure one. DIREX_RECORD_QUEUES=1 rewrites the list; review that diff like code.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { withWorkspace } from "@direx/db";
-import { sql } from "drizzle-orm";
+import { appClient } from "../../../../test/db";
 import { PgBoss } from "pg-boss";
 import { afterAll, expect, test, vi } from "vitest";
 import { runServer } from "../main";
@@ -78,10 +77,16 @@ test("mounted drafts with Actions count toward waiting caps and a pool-sized bur
   const credential = await vault.create({ workspaceId: w, actorUserId: owner, scope: "workspace", kind: "api_key", key: "test-account", name: "Test account", meta: {}, value: { key: "synthetic" } });
   if (!credential.ok) throw new Error(credential.reason);
   const credentialId = credential.credential.id;
-  await withWorkspace(w, async (tx) => {
-    await tx.execute(sql`update credentials set kind = 'oauth2', scope = 'user', owner_user_id = ${owner}, connection = 'linkedin', meta = '{"scopes":["w_member_social"]}' where id = ${credentialId}`);
-    await tx.execute(sql`insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values (${w}, ${credentialId}, 'linkedin', 'member', 'test-member', 'Test account')`);
-  });
+  const db = await appClient();
+  try {
+    await db.query("begin");
+    await db.query("select set_config('app.workspace_id', $1, true)", [w]);
+    await db.query(`update credentials set kind = 'oauth2', scope = 'user', owner_user_id = $1, connection = 'linkedin', meta = '{"scopes":["w_member_social"]}' where id = $2`, [owner, credentialId]);
+    await db.query("insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values ($1, $2, 'linkedin', 'member', 'test-member', 'Test account')", [w, credentialId]);
+    await db.query("commit");
+  } finally {
+    await db.end();
+  }
   const token = await createTokens({ maxDays: null }).create(w, { name: "Drafts", days: 7, readers: [], kinds: ["draft"] }, owner);
   if (!token.ok) throw new Error(token.reason);
   const send = (i: number) => worker.app.request(`${DOOR_BASE}/w/${w}/draft`, { method: "POST", headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" }, body: JSON.stringify({ idempotencyKey: `draft-${i}`, connection: "linkedin", credentialId, networkId: "test-member", text: "Hello", at: new Date(Date.now() + 86_400_000).toISOString() }) });
@@ -89,8 +94,14 @@ test("mounted drafts with Actions count toward waiting caps and a pool-sized bur
   expect(burst.map((r) => r.status)).toEqual(Array(10).fill(200));
   for (let i = 10; i < 20; i++) expect((await send(i)).status).toBe(200);
   expect((await send(20)).status).toBe(429);
-  await withWorkspace(w, async (tx) => {
-    const r = await tx.execute(sql`select count(*)::int as n from items i join actions a on a.id = i.action_id and a.workspace_id = i.workspace_id where a.state = 'needs_approval'`);
+  const check = await appClient();
+  try {
+    await check.query("begin");
+    await check.query("select set_config('app.workspace_id', $1, true)", [w]);
+    const r = await check.query("select count(*)::int as n from items i join actions a on a.id = i.action_id and a.workspace_id = i.workspace_id where a.state = 'needs_approval'");
     expect(r.rows[0]).toEqual({ n: 20 });
-  });
+    await check.query("commit");
+  } finally {
+    await check.end();
+  }
 }, 30_000);

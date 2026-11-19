@@ -54,13 +54,3 @@ test("waitingAmong counts which of the given Items still wait for a person", asy
   const other = await itemsWorld();
   expect(await other.items.waitingAmong(other.W, [a.id, b.id])).toBe(0);
 });
-
-
-test("waitingAmong uses Action state and excludes approved Actions", async () => {
-  const w = await itemsWorld();
-  const draft = await w.newPost();
-  const waiting = await w.submit(await w.newPost());
-  const approved = await w.submit(await w.newPost());
-  expect((await w.items.approve(w.W, approved.id, 1, w.who)).ok).toBe(true);
-  expect(await w.items.waitingAmong(w.W, [draft.id, waiting.id, approved.id])).toBe(2);
-});

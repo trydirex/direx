@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Campaigns over HTTP, with real sessions and each role going through the real flow.
 import { expect, test, vi } from "vitest";
+import { appClient } from "../../../../../test/db";
 import { createFacts, factKinds } from "../facts/index";
 import { itemsApp } from "../items/fixtures/items";
 import { createOutreach } from "../outreach/index";
@@ -107,6 +108,59 @@ test("a Viewer can't change anything, and a Contributor can", async () => {
 
   expect((await send("POST", url(`/campaigns/${id}/people`), roles.contributor, { csv: "email\na@acme.test" })).status).toBe(200);
   expect((await send("PUT", url(`/campaigns/${id}/steps/first`), roles.contributor, STEP)).status).toBe(200);
+});
+
+test("meetings and deals are marked and undone over HTTP by someone who can edit; a Viewer gets 403 on both", async () => {
+  const id = await newCampaign();
+  const added = (await (await send("POST", url(`/campaigns/${id}/people`), owner, { csv: "email\nmark@acme.test\nkim@acme.test" })).json()) as { results: { personId: string }[] };
+  const [sam, kim] = added.results.map((r) => r.personId) as [string, string];
+  const mark = (cookie: string, body: unknown, campaign = id) => send("POST", url(`/campaigns/${campaign}/outcomes`), cookie, body);
+  const undo = (cookie: string, markId: string, campaign = id) => send("POST", url(`/campaigns/${campaign}/outcomes/${markId}/undo`), cookie);
+  const outcomesOf = async (personId: string) => (await read<{ people: { personId: string; outcomes: unknown[] }[] }>(url(`/campaigns/${id}/people`), roles.viewer)).people.find((p) => p.personId === personId)!.outcomes;
+  const rows = async () => {
+    const db = await appClient();
+    await db.query("select set_config('app.workspace_id', $1, false)", [W]);
+    const { rows } = await db.query<{ id: string; voids: string | null }>("select id, voids from campaign_outcomes where campaign_id = $1", [id]);
+    await db.end();
+    return rows;
+  };
+
+  expect((await mark(roles.viewer, { personId: sam, kind: "meeting", on: "2026-11-01" })).status).toBe(403);
+  const r = await mark(roles.contributor, { personId: sam, kind: "meeting", on: "2026-11-02" });
+  const meeting = (await r.json()) as { id: string };
+  expect([r.status, meeting]).toEqual([200, { id: expect.any(String), kind: "meeting", on: "2026-11-02" }]);
+  const deal = await (await mark(owner, { personId: sam, kind: "deal", on: "2026-11-03" })).json();
+  expect(await outcomesOf(sam)).toEqual([meeting, deal]);
+  expect(await outcomesOf(kim)).toEqual([]);
+
+  // Refused: a future day, a Person not in the Campaign, an unknown Campaign, and a body that isn't the shape.
+  expect([(await mark(owner, { personId: kim, kind: "meeting", on: "2999-01-01" })).status, await (await mark(owner, { personId: kim, kind: "meeting", on: "2999-01-01" })).json()]).toEqual([400, { error: "future_date" }]);
+  expect(await (await mark(owner, { personId: crypto.randomUUID(), kind: "meeting", on: "2026-11-01" })).json()).toEqual({ error: "not_in_campaign" });
+  expect(await (await mark(owner, { personId: kim, kind: "meeting", on: "2026-11-01" }, crypto.randomUUID())).json()).toEqual({ error: "not_found" });
+  expect((await mark(owner, { personId: kim, kind: "call", on: "2026-11-01" })).status).toBe(400);
+  expect((await mark(owner, { personId: kim, kind: "deal", on: "2026-11-01", extra: true })).status).toBe(400);
+
+  // An undo adds a row and deletes nothing; the mark stops showing. It can't be undone twice, nor can the undo row.
+  expect((await undo(roles.viewer, meeting.id)).status).toBe(403);
+  expect((await undo(roles.contributor, meeting.id)).status).toBe(200);
+  const after = await rows();
+  expect(after).toHaveLength(3);
+  expect(after.filter((x) => x.voids === meeting.id)).toHaveLength(1);
+  expect(await outcomesOf(sam)).toEqual([deal]);
+  const second = await undo(owner, meeting.id);
+  expect([second.status, await second.json()]).toEqual([409, { error: "already_undone" }]);
+  expect(await (await undo(owner, after.find((x) => x.voids === meeting.id)!.id)).json()).toEqual({ error: "mark_not_found" });
+  expect((await undo(owner, crypto.randomUUID())).status).toBe(404);
+  expect(await (await undo(owner, meeting.id, crypto.randomUUID())).json()).toEqual({ error: "not_found" });
+  expect(await rows()).toHaveLength(3);
+
+  // Another Workspace's members never see the mark and can't undo or add to it.
+  const other = (await createOrg(owner)).workspace.id;
+  const elsewhere = `/api/w/${other}/campaigns/${id}`;
+  expect(await read(`${elsewhere}/people`)).toEqual({ people: [], next: null });
+  expect((await send("POST", `${elsewhere}/outcomes/${(deal as { id: string }).id}/undo`, owner)).status).toBe(404);
+  expect((await send("POST", `${elsewhere}/outcomes`, owner, { personId: sam, kind: "deal", on: "2026-11-01" })).status).toBe(404);
+  expect(await outcomesOf(sam)).toEqual([deal]);
 });
 
 test("a manual step's URL is recorded over HTTP, by someone who can edit, with its refusals", async () => {

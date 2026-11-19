@@ -57,8 +57,8 @@ const campaign: Loaded = {
   ],
 };
 const people = [
-  { personId: "00000000-0000-4000-8000-000000000001", status: "active", firstName: "Kim", company: "<b>Acme</b>", website: null, email: "kim@acme.test", blocked: "no basis recorded", country: null, warnings: [], lastEmailAt: null, conflict: { itemId: "c", revision: 1 } },
-  { personId: "00000000-0000-4000-8000-000000000002", status: "active", firstName: "Lena", company: "GmbH", website: null, email: "lena@gmbh.test", blocked: null, country: "DE", warnings: ["consent_likely_needed" as const, "sender_country_missing" as const], lastEmailAt: "2026-11-03T10:00:00.000Z", conflict: null },
+  { personId: "00000000-0000-4000-8000-000000000001", status: "active", firstName: "Kim", company: "<b>Acme</b>", website: null, email: "kim@acme.test", blocked: "no basis recorded", country: null, warnings: [], lastEmailAt: null, conflict: { itemId: "c", revision: 1 }, outcomes: [] },
+  { personId: "00000000-0000-4000-8000-000000000002", status: "active", firstName: "Lena", company: "GmbH", website: null, email: "lena@gmbh.test", blocked: null, country: "DE", warnings: ["consent_likely_needed" as const, "sender_country_missing" as const], lastEmailAt: "2026-11-03T10:00:00.000Z", conflict: null, outcomes: [] },
 ];
 const pageEl = (role: "owner" | "viewer", tab: string) => withQueries(createElement(Campaign, { workspaceId: W, id: ID, role, tab, initial: { campaign, boxes: [{ id: "b", name: "Sam's mailbox" }], people } }));
 const page = (role: "owner" | "viewer", tab: string) => renderToString(pageEl(role, tab));

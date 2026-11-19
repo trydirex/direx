@@ -2,12 +2,13 @@
 import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
 import { actionEvents, actions, credentials, items, personKeys } from "@direx/db/schema";
 import { agentRuns } from "@direx/db/schema-agents";
-import { campaignActions, campaignDms, campaignPeople, campaignPlanChanges, campaigns, campaignSettlements, campaignStepMailboxes, campaignStepOutputs, campaignSteps, clipStepRuns } from "@direx/db/schema-campaigns";
+import { campaignActions, campaignDms, campaignOutcomes, campaignPeople, campaignPlanChanges, campaigns, campaignSettlements, campaignStepMailboxes, campaignStepOutputs, campaignSteps, clipStepRuns } from "@direx/db/schema-campaigns";
 import { replySignals } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
 import { socialPosts } from "@direx/db/schema-social";
 import type { VisibleState } from "../../items";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQLWrapper } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 /** Marks these records replied in every campaign they're still active in, whichever channel the reply came on. */
 export function markRepliedEverywhere(tx: CampaignsTx, personIds: readonly string[], status: "replied" | "removed" = "replied") {
@@ -408,6 +409,32 @@ export async function stillWaiting(tx: CampaignsTx, campaignId: string): Promise
 
 export const personRow = async (tx: CampaignsTx, campaignId: string, personId: string) =>
   (await tx.select().from(campaignPeople).where(and(eq(campaignPeople.campaignId, campaignId), eq(campaignPeople.personId, personId))))[0];
+
+export type OutcomeRow = typeof campaignOutcomes.$inferSelect;
+// The table's check holds kind to these two.
+export type OutcomeKind = "meeting" | "deal";
+
+/** A mark or an undo. An undo of a mark already undone adds nothing and returns undefined. */
+export const insertOutcome = async (tx: CampaignsTx, row: typeof campaignOutcomes.$inferInsert): Promise<OutcomeRow | undefined> =>
+  (await tx.insert(campaignOutcomes).values(row).onConflictDoNothing({ target: campaignOutcomes.voids }).returning())[0];
+
+export const readOutcome = async (tx: CampaignsTx, campaignId: string, id: string): Promise<OutcomeRow | undefined> =>
+  (await tx.select().from(campaignOutcomes).where(and(eq(campaignOutcomes.campaignId, campaignId), eq(campaignOutcomes.id, id))))[0];
+
+const undo = alias(campaignOutcomes, "undo");
+/** Each Person's live marks, oldest first: marks no undo row voids. */
+export async function liveOutcomes(tx: CampaignsTx, campaignId: string, personIds: readonly string[]): Promise<Map<string, { id: string; kind: OutcomeKind; on: string }[]>> {
+  const live = new Map<string, { id: string; kind: OutcomeKind; on: string }[]>();
+  if (!personIds.length) return live;
+  const rows = await tx
+    .select({ id: campaignOutcomes.id, personId: campaignOutcomes.personId, kind: campaignOutcomes.kind, on: campaignOutcomes.occurredOn })
+    .from(campaignOutcomes)
+    .leftJoin(undo, eq(undo.voids, campaignOutcomes.id))
+    .where(and(eq(campaignOutcomes.campaignId, campaignId), inArray(campaignOutcomes.personId, [...personIds]), isNull(campaignOutcomes.voids), isNull(undo.id)))
+    .orderBy(campaignOutcomes.occurredOn, campaignOutcomes.at);
+  for (const r of rows) live.set(r.personId, [...(live.get(r.personId) ?? []), { id: r.id, kind: r.kind as OutcomeKind, on: r.on! }]);
+  return live;
+}
 
 export async function markConflict(tx: CampaignsTx, campaignId: string, personId: string, itemId: string) {
   await tx.update(campaignPeople).set({ status: "conflict", conflictItemId: itemId }).where(and(eq(campaignPeople.campaignId, campaignId), eq(campaignPeople.personId, personId)));

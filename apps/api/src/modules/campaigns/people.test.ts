@@ -61,7 +61,7 @@ test("a CSV adds Persons with one result per row, and records why they may be co
   const [row] = await results(id, `${HEAD}\n${a},Sam,Acme,acme.test,us,consent,Signed up on the form`);
   expect(row).toMatchObject({ row: 1, ok: true, missing: [] });
 
-  expect((await campaigns.people(W, id)).people).toEqual([{ personId: expect.any(String), status: "active", firstName: "Sam", company: "Acme", website: "https://acme.test/", email: a, blocked: null, country: "US", warnings: expect.any(Array), lastEmailAt: null, conflict: null }]);
+  expect((await campaigns.people(W, id)).people).toEqual([{ personId: expect.any(String), status: "active", firstName: "Sam", company: "Acme", website: "https://acme.test/", email: a, blocked: null, country: "US", warnings: expect.any(Array), lastEmailAt: null, conflict: null, outcomes: [] }]);
   expect((await outreach.overview(W)).people.find((p) => p.email === a)).toMatchObject({ country: "US", basis: "consent" });
 });
 

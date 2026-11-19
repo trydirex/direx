@@ -5,7 +5,8 @@ import type { Items } from "../../items";
 import { sentTo } from "../../ledger";
 import { BASES, ENTITY_TYPES, OPTED_OUT, whyNot, type Basis, type Confidence, type EntityType, type Outreach } from "../../outreach";
 import { emailsOfGroup, normaliseKey, personIdWithEmail } from "../../people";
-import { activeActions, joinCampaign, lastSentAt, liveElsewhere, markConflict, peoplePage, personRow, requireApproved, inWorkspace, setPersonStatus } from "../adapters/repo";
+import { activeActions, insertOutcome, joinCampaign, lastSentAt, liveElsewhere, liveOutcomes, markConflict, peoplePage, personRow, readCampaign, readOutcome, requireApproved, inWorkspace, setPersonStatus, type OutcomeKind } from "../adapters/repo";
+import { mailboxDay, timeZoneOf } from "../../schedule";
 import { CONFLICT_KIND } from "./coordination";
 import { parseCsv } from "../domain/csv";
 import { MAX_EVIDENCE, readRow, type PersonRow, type RowRefusal } from "../domain/rows";
@@ -164,12 +165,39 @@ export function campaignPeople({ outreach, items, now, keptEligibility }: { outr
       return { ok: true, results } as const;
     },
 
+    // Meetings and deals a person marks on a Campaign Person. A mark is never changed or removed: an undo
+    // is a new row that voids it, so the readings built on marks can always be traced back.
+    /** `on` is the day it happened, an ISO date no later than today in the Workspace's time zone. */
+    async markOutcome(workspaceId: string, campaignId: string, a: { personId: string; kind: OutcomeKind; on: string; userId: string }) {
+      // ISO dates compare as strings.
+      if (a.on > mailboxDay(now(), await timeZoneOf(workspaceId))) return { ok: false, reason: "future_date" } as const;
+      return inWorkspace(workspaceId, async (tx) => {
+        if (!(await readCampaign(tx, campaignId))) return { ok: false, reason: "not_found" } as const;
+        if (!(await personRow(tx, campaignId, a.personId))) return { ok: false, reason: "not_in_campaign" } as const;
+        const mark = (await insertOutcome(tx, { workspaceId, campaignId, personId: a.personId, kind: a.kind, occurredOn: a.on, actorUserId: a.userId, at: now() }))!;
+        return { ok: true, outcome: { id: mark.id, kind: a.kind, on: a.on } } as const;
+      });
+    },
+
+    /** Voids a mark with a new row. An undo row can't be undone; that would bring its mark back unseen. */
+    async undoOutcome(workspaceId: string, campaignId: string, a: { markId: string; userId: string }) {
+      return inWorkspace(workspaceId, async (tx) => {
+        if (!(await readCampaign(tx, campaignId))) return { ok: false, reason: "not_found" } as const;
+        const mark = await readOutcome(tx, campaignId, a.markId);
+        if (!mark || mark.voids) return { ok: false, reason: "mark_not_found" } as const;
+        // One undo per mark; a second, or one racing it, conflicts on voids and writes nothing.
+        const undone = await insertOutcome(tx, { workspaceId, campaignId, personId: mark.personId, kind: mark.kind, occurredOn: null, voids: mark.id, actorUserId: a.userId, at: now() });
+        return undone ? ({ ok: true } as const) : ({ ok: false, reason: "already_undone" } as const);
+      });
+    },
+
     /** One page, each Person saying why they can't be emailed if they can't, and the cursor for the next. */
     async people(workspaceId: string, campaignId: string, cursor?: string) {
-      const { rows, page, lastSent } = await inWorkspace(workspaceId, async (tx) => {
+      const { rows, page, lastSent, outcomes } = await inWorkspace(workspaceId, async (tx) => {
         const rows = await peoplePage(tx, campaignId, cursor, PAGE + 1);
         const page = rows.slice(0, PAGE);
-        return { rows, page, lastSent: await lastSentAt(tx, campaignId, page.map((p) => p.personId)) };
+        const ids = page.map((p) => p.personId);
+        return { rows, page, lastSent: await lastSentAt(tx, campaignId, ids), outcomes: await liveOutcomes(tx, campaignId, ids) };
       });
       const blocked = await outreach().whyNot(workspaceId, page.map((p) => p.personId), "cold");
       const records = await outreach().records(workspaceId, page.map((p) => p.personId));
@@ -184,6 +212,7 @@ export function campaignPeople({ outreach, items, now, keptEligibility }: { outr
           country: records.get(p.personId)?.country ?? null,
           warnings: records.get(p.personId)?.warnings ?? [],
           lastEmailAt: lastSent.get(p.personId)?.toISOString() ?? null,
+          outcomes: outcomes.get(p.personId) ?? [],
           conflict: conflictItemId ? { itemId: conflictItemId, revision: conflicts.get(conflictItemId) ?? 0 } : null })),
         next: rows.length > PAGE ? rows[PAGE - 1]!.personId : null,
       };

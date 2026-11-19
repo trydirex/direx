@@ -126,7 +126,16 @@ export const recentRequests = (tx: WorkspaceTx, tokenId: string, limit: number) 
  * a cap or both use one idempotency key (ADR 0032 rule 006).
  */
 // ponytail: one lock per Workspace serialises its proposals (200 a day at most); per-token locks if that ever queues.
-export const lockProposals = (tx: WorkspaceTx, workspaceId: string) => tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`door:proposals:${workspaceId}`}, 0))`);
+// Never wait for a lock while occupying a pool connection. Drafts open their own
+// transactions, so only one draft may hold an outer connection across Workspaces.
+export async function tryLockProposals(tx: WorkspaceTx, workspaceId: string, draft: boolean): Promise<boolean> {
+  const attempt = async (key: string) => {
+    const r = await tx.execute<{ locked: boolean }>(sql`select pg_try_advisory_xact_lock(hashtextextended(${key}, 0)) as locked`);
+    return r.rows[0]!.locked;
+  };
+  if (!await attempt(`door:proposals:${workspaceId}`)) return false;
+  return !draft || attempt("door:proposal-draft");
+}
 
 /** What a token already proposed under this idempotency key, if anything. */
 export async function findProposal(tx: WorkspaceTx, tokenId: string, idempotencyKey: string) {

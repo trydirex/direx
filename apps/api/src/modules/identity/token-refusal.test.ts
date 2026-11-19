@@ -65,7 +65,7 @@ test("the scheme's case doesn't matter, and the door's own tree is left to the d
 });
 
 test("the door is mounted, and every one of its routes refuses a request without a token, a session alone included", async () => {
-  expect(doorRoutes.sort()).toEqual(["mcp", "read_campaign", "read_changes", "read_needs_you", "read_schedule"].map((r) => `${DOOR_BASE}/w/:workspaceId/${r}`));
+  expect(doorRoutes.sort()).toEqual(["draft", "fact_proposal", "mcp", "read_campaign", "read_changes", "read_needs_you", "read_schedule"].map((r) => `${DOOR_BASE}/w/:workspaceId/${r}`));
   for (const path of doorRoutes) {
     for (const headers of [{}, { cookie }] as Record<string, string>[]) {
       const res = await app.request(pathFor(path), { method: "POST", headers: { "content-type": "application/json", ...headers }, body: "{}" });
@@ -76,7 +76,7 @@ test("the door is mounted, and every one of its routes refuses a request without
 
 test("the door's document lists its readers and MCP, and the web app's document lists none of them", async () => {
   const paths = async (url: string) => Object.keys(((await (await app.request(url)).json()) as { paths: Record<string, unknown> }).paths);
-  expect((await paths(`${DOOR_BASE}/openapi.json`)).sort()).toEqual(["mcp", "read_campaign", "read_changes", "read_needs_you", "read_schedule"].map((r) => `${DOOR_BASE}/w/{workspaceId}/${r}`));
+  expect((await paths(`${DOOR_BASE}/openapi.json`)).sort()).toEqual(["draft", "fact_proposal", "mcp", "read_campaign", "read_changes", "read_needs_you", "read_schedule"].map((r) => `${DOOR_BASE}/w/{workspaceId}/${r}`));
   expect((await paths("/openapi.json")).filter(inDoor)).toEqual([]);
 });
 

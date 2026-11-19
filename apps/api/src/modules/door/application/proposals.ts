@@ -56,7 +56,7 @@ export type FactProposal = {
 export type DraftProposal = { connection: string; credentialId: string | null; networkId: string | null; text: string; followUps: string[]; at: Date };
 /** What an owning module answers: the Item it made (null when there was nothing to make), or its refusal. */
 export type Made = { ok: true; itemId: string | null } | { ok: false; reason: string; itemId?: string };
-/** Owners must perform all reads and writes on this transaction; never open another connection. */
+/** Facts use this transaction; Calendar drafts retain their existing separate transactions. */
 export type ProposalEntries = {
   fact: (tx: repo.ProposalTx, workspaceId: string, p: FactProposal) => Promise<Made>;
   draft: (tx: repo.ProposalTx, workspaceId: string, p: DraftProposal, actor: ProposalActor, warnings: readonly Warning[]) => Promise<Made>;
@@ -109,25 +109,30 @@ export function createProposals(d: {
       const actor = { system: `external_token:${caller.tokenId}` };
       const warnings = [warn("untrusted_source", `Sent through the External token "${caller.name}". Direx hasn't checked it.`)];
 
-      return repo.inWorkspace(workspaceId, async (tx): Promise<ProposalResult> => {
-        await repo.lockProposals(tx, workspaceId);
-        const seen = await repo.findProposal(tx, caller.tokenId, idempotencyKey);
-        if (seen) return seen.bodyDigest === digest && seen.kind === kind ? { ok: true, itemId: seen.itemId } : { ok: false, reason: "idempotency_conflict" };
-        if (await overCap(tx, caller.tokenId)) return { ok: false, reason: "proposal_cap" };
+      for (;;) {
+        const result = await repo.inWorkspace(workspaceId, async (tx): Promise<ProposalResult | null> => {
+          if (!await repo.tryLockProposals(tx, workspaceId, kind === "draft")) return null;
+          const seen = await repo.findProposal(tx, caller.tokenId, idempotencyKey);
+          if (seen) return seen.bodyDigest === digest && seen.kind === kind ? { ok: true, itemId: seen.itemId } : { ok: false, reason: "idempotency_conflict" };
+          if (await overCap(tx, caller.tokenId)) return { ok: false, reason: "proposal_cap" };
 
-        let made: Made;
-        if (kind === "fact_proposal") {
-          const f = body as Omit<z.infer<typeof FactInput>, "idempotencyKey">;
-          made = await d.entries.fact(tx, workspaceId, { ...f, source: { kind: "document", label: `External token "${caller.name}"` }, actor, warnings, takeOver: false });
-        } else {
-          const p = body as Omit<z.infer<typeof DraftInput>, "idempotencyKey">;
-          made = await d.entries.draft(tx, workspaceId, { connection: p.connection, credentialId: p.credentialId ?? null, networkId: p.networkId ?? null, text: p.text, followUps: p.followUps ?? [], at: new Date(p.at) }, actor, warnings);
-        }
-        if (!made.ok) return made.reason === "already_waiting" ? { ok: false, reason: "already_waiting", ...(made.itemId && { itemId: made.itemId }) } : { ok: false, reason: "refused", code: made.reason };
-        // Owner effects and every successful result commit together, including a no-Item result.
-        await repo.insertProposal(tx, { workspaceId, tokenId: caller.tokenId, idempotencyKey, bodyDigest: digest, kind, itemId: made.itemId, createdAt: now() });
-        return { ok: true, itemId: made.itemId };
-      });
+          let made: Made;
+          if (kind === "fact_proposal") {
+            const f = body as Omit<z.infer<typeof FactInput>, "idempotencyKey">;
+            made = await d.entries.fact(tx, workspaceId, { ...f, source: { kind: "document", label: `External token "${caller.name}"` }, actor, warnings, takeOver: false });
+          } else {
+            const p = body as Omit<z.infer<typeof DraftInput>, "idempotencyKey">;
+            made = await d.entries.draft(tx, workspaceId, { connection: p.connection, credentialId: p.credentialId ?? null, networkId: p.networkId ?? null, text: p.text, followUps: p.followUps ?? [], at: new Date(p.at) }, actor, warnings);
+          }
+          if (!made.ok) return made.reason === "already_waiting" ? { ok: false, reason: "already_waiting", ...(made.itemId && { itemId: made.itemId }) } : { ok: false, reason: "refused", code: made.reason };
+          // Record every successful result, including a no-Item result.
+          await repo.insertProposal(tx, { workspaceId, tokenId: caller.tokenId, idempotencyKey, bodyDigest: digest, kind, itemId: made.itemId, createdAt: now() });
+          return { ok: true, itemId: made.itemId };
+        });
+        if (result) return result;
+        // The transaction and its connection have been released before backing off.
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
     },
   };
 }

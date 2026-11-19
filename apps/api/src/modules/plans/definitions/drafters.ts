@@ -24,6 +24,7 @@ const PLAN_PROMPT = `You draft one campaign's marketing plan from what a person 
 
 Set a goal, the audience for this campaign, about 30 days of dated steps starting after today, the measures it will be judged on, and a budget. In the budget, list only costs you can name, with amountCents null when there is no separate cost. billedBy is "your_account" unless Direx itself bills it. Use the Strategy's channel keys for channelKey, and leave it out for a step on no channel.
 A step's title says what happens in a few words, under 60 characters, such as "Send the first email".
+Give each measure a source, saying where its number will come from. Direx counts four itself: "replies" (people who replied to this campaign's emails), "interested_replies" (people whose reply was labelled interested), "meetings" and "deals" (people marked as having booked a meeting or opened a deal). Use "external" for anything Direx can't count, such as revenue, sign-ups or site visits; someone enters those by hand.
 
 For each step on a channel that sends email, going by the channel's label, write the email it sends under template, once for everyone in the audience. Approving the plan approves these words, so write them to be sent:
 - A subject under 70 characters, and plain text of 50 to 150 words in the first person, from the sender.
@@ -56,7 +57,7 @@ export const strategyDrafter = defineAgent({
 export const planDrafter = defineAgent({
   id: "plan_drafter",
   version: 2,
-  promptRevision: "2026-11-15.2",
+  promptRevision: "2026-11-19",
   prompt: PLAN_PROMPT,
   purposes: ["plan_draft"],
   tools: [],

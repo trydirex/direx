@@ -10,4 +10,4 @@ export { planDefinitions, planDrafter, strategyDrafter } from "./definitions/dra
 export { planRoutes } from "./routes";
 export { draftRuns, type DraftRuns, type StartDraft } from "./application/draft-runs";
 export { planAskStarts } from "./application/ask-starts";
-export type { Basis, PlanBody, StrategyBody } from "./domain/types";
+export { measureSource, type Basis, type MeasureSource, type PlanBody, type StrategyBody } from "./domain/types";

@@ -1,10 +1,10 @@
 {
   "agent": "plan_drafter",
   "definitionVersion": 2,
-  "promptDigest": "e837229c144a4862fe8e729ba8b758b99df5e3e8c41f0e672f91c17c6567e1f6",
+  "promptDigest": "d0e69c10f7aad1db288b9a17a8997fb2fa887e84c22a6e7844718bfe0a438d86",
   "provider": "claude_code",
   "model": "claude-haiku-5-5",
-  "at": "2026-11-15T21:02:43.543Z",
+  "at": "2026-11-19T17:28:20.455Z",
   "runs": 3,
   "passed": true,
   "cases": [

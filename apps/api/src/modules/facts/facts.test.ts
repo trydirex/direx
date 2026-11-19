@@ -3,6 +3,7 @@
 import { expect, test } from "vitest";
 import { itemsWorld, person } from "../items/fixtures/items";
 import { warn } from "../items/index";
+import { inWorkspace } from "./adapters/repo";
 import { createFacts, factKinds } from "./index";
 
 const world = await itemsWorld({ kinds: factKinds() });
@@ -251,4 +252,24 @@ test("extra warnings land on the Item with their own codes", async () => {
   const note = warn("untrusted_source", 'Sent through the External token "Zapier". Direx hasn\'t checked it.');
   const r = ok(await facts.propose(W, { field: "claim", subject: "door claim", value: "Ships in a day", source: { kind: "document", label: 'External token "Zapier"' }, confidence: "medium", actor: { system: "external_token:x" }, warnings: [note] }));
   expect(r.item!.warnings).toContainEqual(note);
+});
+
+test("proposeIn makes its Item in the caller's transaction: a rollback leaves none, a commit keeps it, and it answers by id", async () => {
+  const proposal = { field: "who_buys" as const, value: "Agencies in Lisbon", source: { kind: "document" as const, label: 'External token "Zapier"' }, confidence: "medium" as const, actor: { system: "external_token:00000000-0000-4000-8000-000000000002" }, takeOver: false as const };
+  let undone: string | null = null;
+  await expect(
+    inWorkspace(W, async (tx) => {
+      const r = await facts.proposeIn(tx, W, proposal);
+      if (r.ok) undone = r.itemId;
+      throw new Error("the caller's record failed");
+    }),
+  ).rejects.toThrow("the caller's record failed");
+  expect(undone).toEqual(expect.any(String));
+  expect(await items.view(W, undone!)).toBeFalsy();
+
+  const kept = await inWorkspace(W, (tx) => facts.proposeIn(tx, W, proposal));
+  expect(kept).toEqual({ ok: true, itemId: expect.any(String) });
+  const itemId = kept.ok ? kept.itemId! : "";
+  expect((await items.view(W, itemId))!.state).toBe("needs_approval");
+  expect(await inWorkspace(W, (tx) => facts.proposeIn(tx, W, proposal))).toEqual({ ok: false, reason: "already_waiting", itemId });
 });

@@ -88,52 +88,84 @@ const LABEL: Record<Field, string> = {
   competitor: "Competitors",
 };
 
+/** What `propose` answers: the Item waiting for a person, null when Brand already says it, or why not. */
+export type ProposeResult =
+  | { ok: true; item: NonNullable<Awaited<ReturnType<Items["view"]>>> | null }
+  | { ok: false; reason: "blank_value" | "value_too_long"; itemId?: undefined }
+  | { ok: false; reason: "already_waiting"; itemId: string };
+
 export function proposals({ items }: { items: () => Items }) {
+  /**
+   * What one proposal should do, given what its slot holds: answer at once, or make an Item (or take a
+   * waiting one over). `propose` and `proposeIn` share it and differ only in whose transaction it reads in.
+   */
+  async function decide(read: <T>(fn: (tx: FactsTx) => Promise<T>) => Promise<T>, a: ProposeInput) {
+    const value = a.value.trim();
+    if (!value) return { to: "refuse", answer: { ok: false, reason: "blank_value" } } as const;
+    // What Direx reads is capped by its own definitions; a competitor's page quote can run longer.
+    if (a.source.kind === "person" && value.length > MAX_FACT_CHARS) return { to: "refuse", answer: { ok: false, reason: "value_too_long" } } as const;
+    const subject = subjectOf(a.field, a.subject, value);
+    const seen = await read(async (tx) => ({
+      current: await liveInSlot(tx, a.field, subject),
+      waiting: await openProposals(tx, a.field, subject),
+    }));
+    const first = seen.waiting[0];
+    if (a.takeOver === false && first) return { to: "refuse", answer: { ok: false, reason: "already_waiting", itemId: first.id } } as const;
+    // A person's new words are a real edit. Only what Direx read can be a mere rewording.
+    const same = (other: string) => (a.source.kind === "person" ? sameWords(other, value) : saysTheSame(a.field, other, value));
+    if (seen.current && same(seen.current.value)) return { to: "unchanged" } as const;
+    // One decision per slot at a time: another read that words it differently takes over the one
+    // waiting, so the person is asked once and sees the latest finding.
+    const kind = seen.current ? "fact_conflict" : "fact_proposal";
+    const sameWaiting = seen.waiting.find((w) => same(w.value));
+    if (sameWaiting) return { to: "same", itemId: sameWaiting.id } as const;
+    const waiting = a.source.kind === "person" ? undefined : seen.waiting.find((w) => w.kind === kind);
+
+    const warnings: string[] = [];
+    if (a.confidence === "low") warnings.push("low confidence");
+    if (a.untrustedInput) warnings.push("came from content Direx doesn't trust");
+    const payload: Payload = {
+      field: a.field,
+      subject,
+      value,
+      source: a.source,
+      confidence: a.confidence,
+      ...(seen.current && { factId: seen.current.id, baseVersion: seen.current.currentVersion }),
+    };
+    const c = seen.current;
+    if (c) warnings.push(`Two values don't match: "${c.value}" from ${c.source.label}, and "${value}" from ${a.source.label}`);
+    const details = { title: c ? `${LABEL[a.field]}: needs a decision` : `Add to ${LABEL[a.field]}${a.subject ? ` (${a.subject})` : ""}: "${value}"${a.source.kind === "person" ? "" : `, from ${a.source.label}`}`, workArea: "Brand", warnings: [...warnings.map((w) => warn("unspecified", w)), ...(a.warnings ?? [])] };
+    return { to: "make", make: { kind, payload, details }, waiting: waiting?.id } as const;
+  }
+
   return {
     /** The Item waiting for a person, or null when Brand already says this. */
-    async propose(workspaceId: string, a: ProposeInput) {
-      const value = a.value.trim();
-      if (!value) return { ok: false, reason: "blank_value" } as const;
-      // What Direx reads is capped by its own definitions; a competitor's page quote can run longer.
-      if (a.source.kind === "person" && value.length > MAX_FACT_CHARS) return { ok: false, reason: "value_too_long" } as const;
-      const subject = subjectOf(a.field, a.subject, value);
-      const seen = await inWorkspace(workspaceId, async (tx) => ({
-        current: await liveInSlot(tx, a.field, subject),
-        waiting: await openProposals(tx, a.field, subject),
-      }));
-      const first = seen.waiting[0];
-      if (a.takeOver === false && first) return { ok: false, reason: "already_waiting", itemId: first.id } as const;
-      // A person's new words are a real edit. Only what Direx read can be a mere rewording.
-      const same = (other: string) => (a.source.kind === "person" ? sameWords(other, value) : saysTheSame(a.field, other, value));
-      if (seen.current && same(seen.current.value)) return { ok: true, item: null } as const;
-      // One decision per slot at a time: another read that words it differently takes over the one
-      // waiting, so the person is asked once and sees the latest finding.
-      const kind = seen.current ? "fact_conflict" : "fact_proposal";
-      const sameWaiting = seen.waiting.find((w) => same(w.value));
-      if (sameWaiting) return { ok: true, item: (await items().view(workspaceId, sameWaiting.id))! } as const;
-      const waiting = a.source.kind === "person" ? undefined : seen.waiting.find((w) => w.kind === kind);
-
-      const warnings: string[] = [];
-      if (a.confidence === "low") warnings.push("low confidence");
-      if (a.untrustedInput) warnings.push("came from content Direx doesn't trust");
-      const payload: Payload = {
-        field: a.field,
-        subject,
-        value,
-        source: a.source,
-        confidence: a.confidence,
-        ...(seen.current && { factId: seen.current.id, baseVersion: seen.current.currentVersion }),
-      };
-      const c = seen.current;
-      if (c) warnings.push(`Two values don't match: "${c.value}" from ${c.source.label}, and "${value}" from ${a.source.label}`);
-      const details = { title: c ? `${LABEL[a.field]}: needs a decision` : `Add to ${LABEL[a.field]}${a.subject ? ` (${a.subject})` : ""}: "${value}"${a.source.kind === "person" ? "" : `, from ${a.source.label}`}`, workArea: "Brand", warnings: [...warnings.map((w) => warn("unspecified", w)), ...(a.warnings ?? [])] };
-      if (waiting) {
-        const revised = await items().reviseOwnItem(workspaceId, waiting.id, { payload, details, actor: a.actor });
-        if (revised.ok) return { ok: true, item: (await items().view(workspaceId, waiting.id))! } as const;
+    async propose(workspaceId: string, a: ProposeInput): Promise<ProposeResult> {
+      const d = await decide((fn) => inWorkspace(workspaceId, fn), a);
+      if (d.to === "refuse") return d.answer;
+      if (d.to === "unchanged") return { ok: true, item: null } as const;
+      if (d.to === "same") return { ok: true, item: (await items().view(workspaceId, d.itemId))! } as const;
+      if (d.waiting) {
+        const revised = await items().reviseOwnItem(workspaceId, d.waiting, { ...d.make, actor: a.actor });
+        if (revised.ok) return { ok: true, item: (await items().view(workspaceId, d.waiting))! } as const;
       }
-      const r = await items().createItem(workspaceId, { kind, payload, actor: a.actor, details });
+      const r = await items().createItem(workspaceId, { ...d.make, actor: a.actor });
       if (!r.ok) throw new Error(`facts: ${r.reason}: the item kinds aren't registered`);
       return { ok: true, item: r.item } as const;
+    },
+
+    /**
+     * `propose` inside the caller's transaction, for a caller that records the Item with something of its
+     * own, as the door does (ADR 0032 rule 004). It never takes a waiting proposal over. Returns the Item's id.
+     */
+    async proposeIn(tx: FactsTx, workspaceId: string, a: ProposeInput & { takeOver: false }) {
+      const d = await decide((fn) => fn(tx), a);
+      if (d.to === "refuse") return d.answer;
+      if (d.to === "unchanged") return { ok: true, itemId: null } as const;
+      if (d.to === "same") return { ok: true, itemId: d.itemId } as const;
+      const r = await items().createItemIn(tx, workspaceId, { ...d.make, actor: a.actor });
+      if (!r.ok) throw new Error(`facts: ${r.reason}: the item kinds aren't registered`);
+      return { ok: true, itemId: r.itemId } as const;
     },
   };
 }

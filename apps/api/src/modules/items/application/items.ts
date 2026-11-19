@@ -105,7 +105,21 @@ async function writtenFrom(workspaceId: string, item: ItemRow): Promise<WrittenF
 
 type SettleGroup = { kind: string; groupKey: string; actor: Actor; next: { payload: unknown; details: Omit<NewDetails, "groupKey">; decideBy?: Date } | null };
 
+/** A non-Action Item to make: its kind, starting state, payload, who made it and how it shows. */
+type NewItem = { kind: string; state?: "draft" | "needs_approval"; payload: unknown; actor: Actor; details: NewDetails; replace?: boolean };
+
 export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, recipient, appearance }: ItemsDeps) {
+  async function createItemIn(tx: ItemsTx, workspaceId: string, a: NewItem, also?: (tx: ItemsTx, itemId: string) => Promise<void>) {
+    if (!kinds[a.kind]) return { ok: false, reason: "unknown_kind" } as const;
+    if (a.replace && !a.details.groupKey) return { ok: false, reason: "group_key_required" } as const;
+    const live = a.replace ? await lockLiveGroup(tx, workspaceId, a.kind, a.details.groupKey!) : [];
+    if (kinds[a.kind]!.canCreate && !(await kinds[a.kind]!.canCreate!(tx, a.payload))) return { ok: false, reason: "superseded" } as const;
+    for (const old of live) await moveOwnState(tx, old, "cancelled", a.actor, now());
+    const made = await insertOwnItem(tx, workspaceId, { kind: a.kind, state: a.state ?? "needs_approval", payload: a.payload, ...a.details }, a.actor, now());
+    if (also) await also(tx, made.id);
+    return { ok: true, itemId: made.id } as const;
+  }
+
   async function settleGroupIn(tx: ItemsTx, workspaceId: string, a: SettleGroup) {
     if (!kinds[a.kind]) throw new Error(`items: unknown kind ${a.kind}`);
     const live = await lockLiveGroup(tx, workspaceId, a.kind, a.groupKey);
@@ -233,20 +247,14 @@ export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, rec
     },
 
     /** A non-Action Item of a registered kind. With `replace`, it cancels any still waiting in its group first, so one stays. */
-    async createItem(workspaceId: string, a: { kind: string; state?: "draft" | "needs_approval"; payload: unknown; actor: Actor; details: NewDetails; replace?: boolean }, also?: (tx: ItemsTx, itemId: string) => Promise<void>) {
-      if (!kinds[a.kind]) return { ok: false, reason: "unknown_kind" } as const;
-      if (a.replace && !a.details.groupKey) return { ok: false, reason: "group_key_required" } as const;
-      const row = await inWorkspace(workspaceId, async (tx) => {
-        const live = a.replace ? await lockLiveGroup(tx, workspaceId, a.kind, a.details.groupKey!) : [];
-        if (kinds[a.kind]!.canCreate && !(await kinds[a.kind]!.canCreate!(tx, a.payload))) return null;
-        for (const old of live) await moveOwnState(tx, old, "cancelled", a.actor, now());
-        const made = await insertOwnItem(tx, workspaceId, { kind: a.kind, state: a.state ?? "needs_approval", payload: a.payload, ...a.details }, a.actor, now());
-        if (also) await also(tx, made.id);
-        return made;
-      });
-      if (!row) return { ok: false, reason: "superseded" } as const;
-      return { ok: true, item: (await view(workspaceId, row.id))! } as const;
+    async createItem(workspaceId: string, a: NewItem, also?: (tx: ItemsTx, itemId: string) => Promise<void>) {
+      const r = await inWorkspace(workspaceId, (tx) => createItemIn(tx, workspaceId, a, also));
+      if (!r.ok) return r;
+      return { ok: true, item: (await view(workspaceId, r.itemId))! } as const;
     },
+
+    /** `createItem` inside the caller's transaction, for a caller that records the Item with something of its own. Returns its id. */
+    createItemIn,
 
     /**
      * Keeps at most one waiting Item in a group: `next`, or none. A waiting one with the same title is

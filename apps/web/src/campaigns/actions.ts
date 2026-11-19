@@ -195,6 +195,7 @@ export const CAMPAIGN_MESSAGES: Record<string, string> = {
   drafting_mode_locked: "This step already has writing in it, so how it's written can't change.",
   no_email_step: "This campaign has no email step to draft yet.",
   step_cancelled: "This step was cancelled.",
+  step_has_results: "This step has already sent work, so its type cannot change.",
   date_in_past: "Pick a launch date from today on.",
   same_anchor: "That's already the launch date.",
   not_output_step: "Only a manual step, or a post step that names the account whose post counts, can set the launch.",

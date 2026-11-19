@@ -7,6 +7,8 @@ import { join } from "node:path";
 import { PgBoss } from "pg-boss";
 import { afterAll, expect, test, vi } from "vitest";
 import { runServer } from "../main";
+import { createTokens, DOOR_BASE } from "../modules/door/index";
+import { seedWorkspace } from "../modules/door/fixtures/members";
 
 process.env.DIREX_MASTER_KEY = "11".repeat(32);
 const FIXTURE = join(import.meta.dirname, "fixtures", "queues.json");
@@ -48,4 +50,18 @@ test("a token lifetime the server can't allow stops the start, naming the variab
   } finally {
     delete process.env.DIREX_EXTERNAL_TOKEN_MAX_DAYS;
   }
+});
+
+test("the server takes a token's proposals: a fact waits for a person, and a draft for an account that isn't connected is refused", async () => {
+  const w = crypto.randomUUID();
+  const owner = crypto.randomUUID();
+  await seedWorkspace(w, owner);
+  const t = await createTokens({ maxDays: null }).create(w, { name: "Script", days: 7, readers: [], kinds: ["fact_proposal", "draft"] }, owner);
+  if (!t.ok) throw new Error(t.reason);
+  const send = (kind: string, body: unknown) => worker.app.request(`${DOOR_BASE}/w/${w}/${kind}`, { method: "POST", headers: { authorization: `Bearer ${t.token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+  const fact = await send("fact_proposal", { idempotencyKey: "f1", field: "what_you_sell", value: "Marketing software" });
+  expect([fact.status, await fact.json()]).toEqual([200, { itemId: expect.any(String) }]);
+  const draft = await send("draft", { idempotencyKey: "d1", connection: "nowhere", text: "Hello", at: new Date(Date.now() + 86_400_000).toISOString() });
+  expect(draft.status).toBe(422);
+  expect(await draft.json()).toMatchObject({ error: "refused" });
 });

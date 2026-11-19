@@ -72,6 +72,8 @@ const OUTSIDE = [
   "POST /api/door/v1/w/:workspaceId/read_needs_you",
   "POST /api/door/v1/w/:workspaceId/read_schedule",
   "POST /api/door/v1/w/:workspaceId/read_campaign",
+  "POST /api/door/v1/w/:workspaceId/fact_proposal",
+  "POST /api/door/v1/w/:workspaceId/draft",
   "POST /api/door/v1/w/:workspaceId/mcp",
   "GET /api/door/v1/w/:workspaceId/mcp",
   "DELETE /api/door/v1/w/:workspaceId/mcp",

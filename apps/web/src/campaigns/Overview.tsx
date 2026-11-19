@@ -124,11 +124,11 @@ export function Measures(p: { tracking: Tracking | undefined; emailSent?: boolea
   );
 }
 
-/** A number Direx can't give: a plain dash, with words for a screen reader. */
-const Missing = (p: { label: string }) => (
+/** A number Direx can't give: a dash with an accessible label, optionally shown as a note. */
+const Missing = (p: { label: string; visible?: boolean }) => (
   <>
     <span aria-hidden>-</span>
-    <span className="sr-only">{p.label}</span>
+    <span className={p.visible ? "block text-xs text-muted-foreground" : "sr-only"}>{p.label}</span>
   </>
 );
 
@@ -151,7 +151,7 @@ function ByStep(p: { steps: Results["steps"] | undefined }) {
         </>
       ) : (
         // An email step has replies to count once one email on it goes out; other steps never do.
-        <Missing label={row.kind === "email" ? "Not counted until an email on this step goes out" : "Direx can't count this on this step"} />
+        <Missing visible label={row.kind === "email" ? "Not counted until an email on this step goes out" : "Direx can't count this on this step"} />
       )}
     </TableCell>
   );

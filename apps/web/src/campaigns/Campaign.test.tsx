@@ -359,6 +359,13 @@ test("a Campaign opens on its Overview: status, numbers, measures against target
     ["Follow-up", "1marked sent by a person", "-Direx can't count this on this step", "-Direx can't count this on this step"],
   ]);
   for (const dash of byStep.getAllByText("-")) expect(dash.getAttribute("aria-hidden")).toBe("true");
+  for (const label of ["Not counted until an email on this step goes out", "Direx can't count this on this step"]) {
+    const explanations = byStep.getAllByText(label);
+    expect(explanations).toHaveLength(2);
+    for (const explanation of explanations) {
+      expect(explanation.closest(".sr-only, [hidden], [aria-hidden='true']")).toBeNull();
+    }
+  }
   const did = await screen.findByRole("complementary", { name: "What Direx did" });
   expect(within(did).getAllByRole("listitem")).toHaveLength(5);
   expect(within(did).getByRole("link", { name: "See all on Content" }).getAttribute("href")).toBe(`/w/${W}/campaigns/${ID}?tab=drafts`);

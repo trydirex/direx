@@ -72,7 +72,7 @@ test("a new address is added with its country, basis and evidence recorded", asy
   const r = row({ basis: "legitimate_interest" });
   const [result] = await results(id, [r]);
   expect(result).toEqual({ status: "added", personId: expect.any(String), missing: [] });
-  expect((await campaigns.people(W, id)).people).toEqual([{ personId: expect.any(String), status: "active", firstName: "Jane", company: "Acme", website: "https://acme.test/", email: r.email, blocked: null, country: expect.any(String), warnings: expect.any(Array), lastEmailAt: null, conflict: null }]);
+  expect((await campaigns.people(W, id)).people).toEqual([{ personId: expect.any(String), status: "active", firstName: "Jane", company: "Acme", website: "https://acme.test/", email: r.email, blocked: null, country: expect.any(String), warnings: expect.any(Array), lastEmailAt: null, conflict: null, outcomes: [] }]);
   expect(await recorded(r.email)).toMatchObject({ country: "CA", basis: "legitimate_interest" });
 });
 

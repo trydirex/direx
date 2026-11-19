@@ -5,7 +5,7 @@ import { applyVersion, planCitations, stepsOffStrategy, strategyCitations } from
 import { tracking, type Reading } from "./domain/tracking";
 import { scoreStrategyRun, STRATEGY_CASES, strategyFactId } from "./evals";
 import { MERGE_FIELDS } from "../campaigns";
-import { TEMPLATE_FIELDS, type PlanBody, type StrategyBody } from "./domain/types";
+import { measureSource, TEMPLATE_FIELDS, type PlanBody, type StrategyBody } from "./domain/types";
 
 const factId = "7f1c3a52-3f0e-4a8e-9b1d-0c2d4e6f8a10";
 const channel = (key: string, timing: "now" | "later" = "now") => ({ key, label: key, timing, reason: "Ops leads read email", basis: { kind: "assumption" as const } });
@@ -43,6 +43,12 @@ test("a channel reason or measure target needs a basis, and any of the three kin
   for (const basis of [{ kind: "assumption" }, { kind: "source", label: "/about" }, { kind: "fact", factId, version: 1 }] as const) {
     expect(ok(planBody, plan({ measures: [{ ...measure("m"), basis }] }))).toBe(true);
   }
+});
+
+test("a measure may name where its number comes from; none, as in plans approved before, is external", () => {
+  const parsed = planBody.safeParse(plan({ measures: [measure("old"), { ...measure("m"), source: "interested_replies" }] }));
+  expect(parsed.success && parsed.data.measures.map(measureSource)).toEqual(["external", "interested_replies"]);
+  expect(ok(planBody, plan({ measures: [{ ...measure("m"), source: "clicks" as never }] }))).toBe(false);
 });
 
 test("a source link must be http or https", () => {

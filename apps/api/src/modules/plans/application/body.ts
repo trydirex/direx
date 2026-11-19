@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // What a Strategy and a marketing plan must contain before they can be submitted.
 import { z } from "zod";
-import { TEMPLATE_FIELDS, type PlanBody, type StrategyBody } from "../domain/types";
+import { MEASURE_SOURCES, TEMPLATE_FIELDS, type PlanBody, type StrategyBody } from "../domain/types";
 
 const MAX_NOW_CHANNELS = 3;
 const MAX_PLAN_DAYS = 45;
@@ -63,7 +63,7 @@ export const planBody: z.ZodType<PlanBody> = z
     startsOn: isoDate,
     endsOn: isoDate,
     steps: z.array(z.strictObject({ key, on: isoDate, channelKey: key.optional(), title: words, template: template.optional() })).max(60),
-    measures: z.array(z.strictObject({ key, label: words, target: words, basis })).max(10),
+    measures: z.array(z.strictObject({ key, label: words, target: words, basis, source: z.enum(MEASURE_SOURCES).optional() })).max(10),
     budget: z
       .array(
         z.strictObject({

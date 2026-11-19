@@ -18,7 +18,7 @@ const step = { key: "first", on: "2026-11-03", title: "First email", inPlan: tru
 /** A day `n` days from today, as the API sends days, so a running campaign stays running. */
 const inDays = (n: number) => new Date(Date.now() + n * 86_400_000).toLocaleDateString("en-CA");
 const campaign = { id: ID, planId: "p", title: "Q4 push", ownerUserId: "u", draftingMode: null, paused: false, status: "running", changesWaiting: false, createdBy: null, outsideContentAllowed: false, advance: "offer", advanceSetBy: null, advanceUpToCents: 0, notes: "", notesRevision: 0, notesUpdatedBy: null, notesUpdatedAt: null, goal: "4 meetings", startsOn: inDays(-10), anchor: { on: "2026-11-01", stepKey: null }, endsOn: inDays(20), planned: 1, done: 0, skipped: 0, sent: 3, replied: 1, steps: [step] } as unknown as Loaded;
-const person = { personId: "00000000-0000-4000-8000-000000000001", status: "active", firstName: "Kim", company: "Acme", website: null, email: "kim@acme.test", blocked: null, country: "US", warnings: [], lastEmailAt: null, conflict: null };
+const person = { personId: "00000000-0000-4000-8000-000000000001", status: "active", firstName: "Kim", company: "Acme", website: null, email: "kim@acme.test", blocked: null, country: "US", warnings: [], lastEmailAt: null, conflict: null, outcomes: [] };
 
 afterEach(() => {
   cleanup();

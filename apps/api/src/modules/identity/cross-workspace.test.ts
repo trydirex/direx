@@ -407,6 +407,8 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "GET /api/w/:workspaceId/campaigns/:id/people": { path: `/api/w/${w2}/campaigns/${anyItem}/people` },
   "GET /api/w/:workspaceId/campaigns/:id/plan-impact": { path: `/api/w/${w2}/campaigns/${anyItem}/plan-impact` },
   "POST /api/w/:workspaceId/campaigns/:id/people": { path: `/api/w/${w2}/campaigns/${anyItem}/people`, body: { csv: "email\nkim@example.com" } },
+  "POST /api/w/:workspaceId/campaigns/:id/outcomes": { path: `/api/w/${w2}/campaigns/${anyItem}/outcomes`, body: { personId: anyItem, kind: "meeting", on: "2026-11-01" } },
+  "POST /api/w/:workspaceId/campaigns/:id/outcomes/:markId/undo": { path: `/api/w/${w2}/campaigns/${anyItem}/outcomes/${anyItem}/undo` },
   "DELETE /api/w/:workspaceId/campaigns/:id/people/:personId": { path: `/api/w/${w2}/campaigns/${anyItem}/people/${anyItem}` },
   "PUT /api/w/:workspaceId/campaigns/:id/steps/:key": { path: `/api/w/${w2}/campaigns/${anyItem}/steps/first`, body: { type: "manual", touchClass: "cold", mailboxCredentialId: null, audience: "everyone" } },
   "POST /api/w/:workspaceId/media": { path: `/api/w/${w2}/media?kind=source`, body: { not: "a video" } },

@@ -111,8 +111,10 @@ const Detail = Summary.extend({
   notesUpdatedBy: z.uuid().nullable(),
   notesUpdatedAt: z.iso.datetime().nullable(),
 }).openapi("Campaign");
+// A meeting or deal a person marked, with the day it happened. Only live marks are shown: an undone one is gone.
+const Outcome = z.object({ id: z.uuid(), kind: z.enum(["meeting", "deal"]), on: z.iso.date() }).openapi("CampaignOutcome");
 const Person = z
-  .object({ personId: z.uuid(), status: z.string(), firstName: z.string().nullable(), company: z.string().nullable(), website: z.string().nullable(), email: z.string().nullable(), blocked: z.string().nullable(), country: z.string().nullable(), warnings: z.array(z.enum(WARNINGS)), lastEmailAt: z.iso.datetime().nullable(), conflict: z.object({ itemId: z.uuid(), revision: z.number() }).nullable() })
+  .object({ personId: z.uuid(), status: z.string(), firstName: z.string().nullable(), company: z.string().nullable(), website: z.string().nullable(), email: z.string().nullable(), blocked: z.string().nullable(), country: z.string().nullable(), warnings: z.array(z.enum(WARNINGS)), lastEmailAt: z.iso.datetime().nullable(), conflict: z.object({ itemId: z.uuid(), revision: z.number() }).nullable(), outcomes: z.array(Outcome) })
   .openapi("CampaignPerson");
 const RowResult = z
   .object({ row: z.number(), ok: z.boolean(), personId: z.uuid().optional(), missing: z.array(z.string()).optional(), reason: z.string().optional() })
@@ -404,6 +406,22 @@ const markDmSentRoute = createRoute({
   middleware: [requirePermission("item.edit")],
   request: { params: dmParams },
   responses: { 200: json(Dm, "Recorded as sent, and logged as a touch"), ...errors },
+});
+const markOutcomeRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/campaigns/{id}/outcomes",
+  middleware: [requirePermission("item.edit")],
+  description: "Marks a meeting booked or a deal opened for a Person in the Campaign, on a day no later than today in the Workspace's time zone.",
+  request: { params: one, ...body(z.strictObject({ personId: z.uuid(), kind: z.enum(["meeting", "deal"]), on: z.iso.date() })) },
+  responses: { 200: json(Outcome, "Marked"), ...errors },
+});
+const undoOutcomeRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/campaigns/{id}/outcomes/{markId}/undo",
+  middleware: [requirePermission("item.edit")],
+  description: "Undoes a mark by adding a row that voids it; nothing is deleted. A mark is undone once.",
+  request: { params: one.extend({ markId: z.uuid() }) },
+  responses: { 200: json(Ok, "Undone"), ...errors },
 });
 const previewRoute = createRoute({
   method: "get",
@@ -860,6 +878,18 @@ export function campaignRoutes(deps: { campaigns: () => Campaigns }) {
   app.openapi(peopleRoute, async (c) => {
     const { workspaceId, id } = c.req.valid("param");
     return c.json(await deps.campaigns().people(workspaceId, id, c.req.valid("query").cursor), 200);
+  });
+  app.openapi(markOutcomeRoute, async (c) => {
+    const { workspaceId, id } = c.req.valid("param");
+    const r = await deps.campaigns().markOutcome(workspaceId, id, { ...c.req.valid("json"), userId: c.get("member").userId });
+    if (r.ok) return c.json(r.outcome, 200);
+    return c.json({ error: r.reason }, r.reason === "future_date" ? 400 : 404);
+  });
+  app.openapi(undoOutcomeRoute, async (c) => {
+    const { workspaceId, id, markId } = c.req.valid("param");
+    const r = await deps.campaigns().undoOutcome(workspaceId, id, { markId, userId: c.get("member").userId });
+    if (r.ok) return c.json({ ok: true as const }, 200);
+    return c.json({ error: r.reason }, r.reason === "already_undone" ? 409 : 404);
   });
   app.openapi(addRoute, async (c) => {
     const { workspaceId, id } = c.req.valid("param");

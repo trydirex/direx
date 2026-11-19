@@ -19,6 +19,11 @@
   },
   {
     "kind": "queue",
+    "name": "campaigns.readings_sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
     "name": "campaigns.settle_sweep",
     "options": null
   },
@@ -215,6 +220,14 @@
   },
   {
     "kind": "schedule",
+    "name": "campaigns.readings_sweep",
+    "cron": "0 6 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
     "name": "campaigns.settle_sweep",
     "cron": "*/5 * * * *",
     "options": {
@@ -379,6 +392,11 @@
       "pollingIntervalSeconds": 1,
       "includeMetadata": true
     }
+  },
+  {
+    "kind": "work",
+    "name": "campaigns.readings_sweep",
+    "options": null
   },
   {
     "kind": "work",

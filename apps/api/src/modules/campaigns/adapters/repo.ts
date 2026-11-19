@@ -445,6 +445,15 @@ export async function liveOutcomes(tx: CampaignsTx, campaignId: string, personId
   return live;
 }
 
+/** Per kind ever marked on the Campaign, the People with a live mark of it. A kind whose marks were all undone stays, at 0. */
+export const outcomeCounts = (tx: CampaignsTx, campaignId: string) =>
+  tx
+    .select({ kind: campaignOutcomes.kind, people: sql<number>`count(distinct ${campaignOutcomes.personId}) filter (where ${campaignOutcomes.voids} is null and ${undo.id} is null)::int` })
+    .from(campaignOutcomes)
+    .leftJoin(undo, eq(undo.voids, campaignOutcomes.id))
+    .where(eq(campaignOutcomes.campaignId, campaignId))
+    .groupBy(campaignOutcomes.kind);
+
 export async function markConflict(tx: CampaignsTx, campaignId: string, personId: string, itemId: string) {
   await tx.update(campaignPeople).set({ status: "conflict", conflictItemId: itemId }).where(and(eq(campaignPeople.campaignId, campaignId), eq(campaignPeople.personId, personId)));
 }
@@ -795,6 +804,12 @@ export async function retrySettlements(tx: CampaignsTx, campaignId: string) {
 export async function unsettledCampaigns(): Promise<{ workspaceId: string; campaignId: string }[]> {
   const { rows } = await withSystem((tx) => tx.execute(sql`select workspace_id, campaign_id from system.unsettled_campaigns()`));
   return rows.map((r) => ({ workspaceId: r.workspace_id as string, campaignId: r.campaign_id as string }));
+}
+
+/** Campaigns whose plan has an approved version that ended at most 30 days ago, across Workspaces, for the readings sweep. */
+export async function campaignsToCount(): Promise<{ workspaceId: string; campaignId: string; planId: string }[]> {
+  const { rows } = await withSystem((tx) => tx.execute(sql`select workspace_id, campaign_id, plan_id from system.campaigns_to_count()`));
+  return rows.map((r) => ({ workspaceId: r.workspace_id as string, campaignId: r.campaign_id as string, planId: r.plan_id as string }));
 }
 
 /** What a Campaign's activity is made of, newest first: its draft Actions' state changes grouped by step,

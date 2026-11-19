@@ -17,6 +17,7 @@ import { importDrafting } from "./import-drafting";
 import { makeDrafting } from "./make-drafts";
 import { campaignPeople } from "./people";
 import { personDrafting, type AddressLabelsFor, type RunCaps, type SignalsFor } from "./person-drafts";
+import { campaignReadings } from "./readings";
 import { stepOutputs } from "./step-links";
 
 export function createCampaigns(deps: { plans: Plans; facts: Facts; items: () => Items; outreach: () => Outreach; startDraft: () => StartDraft; posts?: () => PostPort; clips?: () => ClipPort | undefined; briefs?: () => BriefPort | undefined; now?: () => Date; signalsFor?: SignalsFor; addressLabelsFor?: AddressLabelsFor; keptEligibility?: KeptEligibility; onOutsideContentChanged?: OnOutsideContentChanged; outsideTouches?: () => Pick<OutsideTouches, "log">; onTemplateSaved?: OnTemplateSaved; onSetupChanged?: OnSetupChanged; runCaps?: RunCaps }) {
@@ -57,6 +58,7 @@ export function createCampaigns(deps: { plans: Plans; facts: Facts; items: () =>
     ...timing,
     ...anchor,
     ...changes,
+    ...campaignReadings({ plans: deps.plans, now }),
   };
   return {
     ...api,

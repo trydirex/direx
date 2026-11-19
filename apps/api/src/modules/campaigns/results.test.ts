@@ -130,6 +130,9 @@ test("DMs a person marked sent and published posts are counted on their step, an
   expect(r.sent).toEqual([{ kind: "post", channel: "linkedin", n: 1 }, { kind: "dm", channel: "linkedin", n: 1 }]);
   expect(r.steps.find((s) => s.stepKey === "dm")).toMatchObject({ sent: { n: 1, source: "person" }, replied: null });
   expect(r.steps.find((s) => s.stepKey === "post")).toMatchObject({ sent: { n: 1, source: "direx" }, replied: null });
+  for (const key of ["dm", "post"]) {
+    expect(await campaigns.setupStep(W, id, key, { type: "manual", touchClass: "cold", audience: "everyone" })).toEqual({ ok: false, reason: "step_has_results" });
+  }
 });
 
 test("replies count People once, opt-outs included; interested counts a label later replaced", async () => {
@@ -183,4 +186,34 @@ test("another Workspace's rows never count, even an Item that names this Workspa
   );
   expect(await row(id, "first")).toMatchObject({ replied: { n: 0, source: "direx" }, interested: { n: 0, source: "direx" } });
   expect(await campaigns.outcomes(other, id)).toBeUndefined();
+});
+
+test("a sent email keeps its type and reply results when a DM setup is requested", async () => {
+  const id = await newCampaign();
+  const p = await join(id);
+  const action = await email(id, p);
+  await label(p, action, await reply(p, action), "interested");
+  expect(await campaigns.setupStep(W, id, "first", { type: "dm", touchClass: "cold", audience: "everyone", dmChannel: "linkedin" })).toEqual({ ok: false, reason: "step_has_results" });
+  ok(await campaigns.setupStep(W, id, "first", { type: "email", touchClass: "cold", audience: "everyone" }));
+  expect(await row(id, "first")).toMatchObject({ kind: "email", sent: { n: 1 }, replied: { n: 1 }, interested: { n: 1 } });
+});
+
+test("an unsent step can change type", async () => {
+  const id = await newCampaign();
+  ok(await campaigns.setupStep(W, id, "first", { type: "dm", touchClass: "cold", audience: "everyone", dmChannel: "linkedin" }));
+  expect(await row(id, "first")).toMatchObject({ kind: "dm", sent: { n: 0, source: "person" } });
+});
+
+test("a removed step keeps its latest historical title and recorded results", async () => {
+  const id = await newCampaign();
+  await email(id, await join(id));
+  const planId = (await campaigns.campaign(W, id))!.planId;
+  for (const steps of [body.steps.map((s) => s.key === "first" ? { ...s, title: "Renamed email" } : s), body.steps.filter((s) => s.key !== "first")]) {
+    const plan = (await plans.plan(W, planId))!;
+    const { revision } = ok(await plans.savePlanDraft(W, planId, { revision: plan.draftRevision, body: { ...body, steps } }));
+    const { item } = ok(await plans.submitPlan(W, planId, { revision, actor }));
+    ok(await items.approve(W, item.id, item.revision, who));
+  }
+  expect(await row(id, "first")).toMatchObject({ title: "Renamed email", kind: "email", sent: { n: 1 } });
+  expect((await campaigns.campaign(W, id))!.steps.find((s) => s.key === "first")).toMatchObject({ title: "Renamed email", inPlan: false });
 });

@@ -5,6 +5,7 @@ import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
 import { stepHasEmailWork, activityRows, allPeople, campaignMailboxes, deleteDraftRows, interestedPeople, postCounts, repliedCount, repliedPeople, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { dmsOf } from "../adapters/dms-repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
 import { stepFunnel, sumBy, tally } from "../domain/counts";
@@ -364,6 +365,8 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
           const sentPost = (await postCounts(tx, campaignId)).some((c) => c.stepKey === stepKey && c.state === "sent" && c.n > 0);
           const sentDm = (await resultCounts(tx, campaignId)).dms.some((c) => c.stepKey === stepKey && c.n > 0);
           if ((typeChanged && (sentEmail || sentPost)) || sentDm) return { ok: false, reason: "step_has_results" } as const;
+          // DMs keep their original text and network, even before a person marks them sent.
+          if ((await dmsOf(tx, campaignId, stepKey)).length) return { ok: false, reason: "step_has_dms" } as const;
         }
         // Include sent here too: an Action may finish between the result reads and this query.
         if (typeChanged && await stepHasEmailWork(tx, campaignId, stepKey)) return { ok: false, reason: "step_has_email_work" } as const;

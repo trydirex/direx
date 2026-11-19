@@ -196,6 +196,7 @@ export const CAMPAIGN_MESSAGES: Record<string, string> = {
   no_email_step: "This campaign has no email step to draft yet.",
   step_cancelled: "This step was cancelled.",
   step_has_email_work: "This step has email work that can still send, so its type cannot change.",
+  step_has_dms: "This step already has DM drafts, so its type and DM channel cannot change.",
   step_has_results: "This step has already sent work, so its type and DM channel cannot change.",
   date_in_past: "Pick a launch date from today on.",
   same_anchor: "That's already the launch date.",

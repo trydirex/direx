@@ -154,6 +154,23 @@ test("an unapproved plan and a Campaign more than 30 days past its end are never
   expect(await readings(justOver.planId)).toMatchObject({ meetings: ["1 system"] });
 });
 
+test("readings follow the moved run end, including the 30-day boundary in either launch direction", async () => {
+  const delayed = await newCampaign(-40);
+  const delayedBoundary = await newCampaign(-40);
+  const delayedExpired = await newCampaign(-40);
+  const advanced = await newCampaign(10);
+  // Each plan lasts 20 days: a launch today ends in 20 days, -50 ends at -30,
+  // and -51 ends at -31, regardless of the original plan dates.
+  for (const [c, launchIn] of [[delayed, 0], [delayedBoundary, -50], [delayedExpired, -51], [advanced, -51]] as const) {
+    await q("update campaigns set anchor_on = $1 where id = $2", [day(launchIn), c.id]);
+    await mark(c.id, await join(c.id));
+  }
+  expect((await campaigns.list(W)).find((c) => c.id === delayed.id)).toMatchObject({ status: "running" });
+  await campaigns.countReadings();
+  for (const c of [delayed, delayedBoundary]) expect(await readings(c.planId)).toMatchObject({ meetings: ["1 system"] });
+  for (const c of [delayedExpired, advanced]) expect(await readings(c.planId)).toMatchObject({ meetings: [] });
+});
+
 test("one Campaign failing is logged and the next is still counted", async () => {
   const broken = await newCampaign();
   const fine = await newCampaign();

@@ -1100,6 +1100,13 @@
       "when": 1795108990245,
       "tag": "0156_campaigns_to_count",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1795108990246,
+      "tag": "0157_campaign_readings_run_end",
+      "breakpoints": true
     }
   ]
 }

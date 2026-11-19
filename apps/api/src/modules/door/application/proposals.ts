@@ -78,6 +78,8 @@ export function createProposals(d: {
   maxFactChars: number;
   caps?: ProposalCaps;
   now?: () => Date;
+  /** How long to keep retrying for the Workspace's lock before answering proposal_cap; 5 s unless a test asks. */
+  lockWaitMs?: number;
 }) {
   const caps = d.caps ?? PROPOSAL_CAPS;
   const now = d.now ?? (() => new Date());
@@ -109,6 +111,8 @@ export function createProposals(d: {
       const actor = { system: `external_token:${caller.tokenId}` };
       const warnings = [warn("untrusted_source", `Sent through the External token "${caller.name}". Direx hasn't checked it.`)];
 
+      // A caller that can't get the lock in time is told to come back (429), never kept waiting without end.
+      const until = Date.now() + (d.lockWaitMs ?? 5_000);
       for (;;) {
         const result = await repo.inWorkspace(workspaceId, async (tx): Promise<ProposalResult | null> => {
           if (!await repo.tryLockProposals(tx, workspaceId, kind === "draft")) return null;
@@ -130,6 +134,7 @@ export function createProposals(d: {
           return { ok: true, itemId: made.itemId };
         });
         if (result) return result;
+        if (Date.now() >= until) return { ok: false, reason: "proposal_cap" };
         // The transaction and its connection have been released before backing off.
         await new Promise((resolve) => setTimeout(resolve, 10));
       }

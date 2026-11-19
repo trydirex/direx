@@ -219,3 +219,35 @@ test("waitingAmong uses Action state and excludes approved Actions", async () =>
   expect((await w.items.approve(w.W, approved.id, 1, w.who)).ok).toBe(true);
   expect(await w.items.waitingAmong(w.W, [draft.id, waiting.id, approved.id])).toBe(2);
 });
+
+test("a proposal that can't get the Workspace's lock in time answers proposal_cap instead of waiting without end", async () => {
+  const { w, caller } = await space();
+  const c = await caller();
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let entered!: () => void;
+  const inside = new Promise<void>((r) => (entered = r));
+  const proposals = createProposals({
+    entries: {
+      fact: async (tx) => {
+        entered();
+        await held;
+        return { ok: true, itemId: await seedItemIn(tx, w) };
+      },
+      draft: async () => ({ ok: false, reason: "unused" }),
+    },
+    waiting: async () => 0,
+    maxFactChars: 1000,
+    lockWaitMs: 50,
+  });
+  const first = proposals.propose(c, "fact_proposal", fact("l1", "One"));
+  await inside;
+  try {
+    expect(await proposals.propose(c, "fact_proposal", fact("l2", "Two"))).toEqual({ ok: false, reason: "proposal_cap" });
+  } finally {
+    release();
+    await first;
+  }
+  expect((await first).ok).toBe(true);
+});
+

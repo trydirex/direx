@@ -164,6 +164,50 @@ test("an editor adds people from a CSV, then starts their drafts", async () => {
   expect(await screen.findByText("Made 2 drafts. They wait on Home.")).toBeTruthy();
 });
 
+test("an editor marks a meeting on a Person and undoes it; each change reads the People again", async () => {
+  let outcomes: { id: string; kind: string; on: string }[] = [];
+  const { post } = serve(undefined, () => ({ people: [{ ...person, outcomes }], next: null }));
+  const today = inDays(0);
+  post.mockImplementation(((path: string) => {
+    if (path.endsWith("/undo")) outcomes = [];
+    else outcomes = [{ id: "m1", kind: "meeting", on: today }];
+    return reply(200, path.endsWith("/undo") ? { ok: true } : outcomes[0]);
+  }) as never);
+  render(withQueries(<Campaign workspaceId={W} id={ID} role="owner" tab="people" />));
+  await userEvent.click(await screen.findByText("Mark a meeting or deal"));
+  const day = screen.getByLabelText("Day for kim@acme.test") as HTMLInputElement;
+  expect([day.value, day.max]).toEqual([today, today]);
+  await userEvent.click(screen.getByRole("button", { name: "Meeting booked" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/campaigns/{id}/outcomes", { ...at, body: { personId: person.personId, kind: "meeting", on: today } });
+  expect(await screen.findByText(`Meeting booked ${dayWords(today)}`)).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: `Undo meeting booked ${dayWords(today)} for kim@acme.test` }));
+  expect(post).toHaveBeenLastCalledWith("/api/w/{workspaceId}/campaigns/{id}/outcomes/{markId}/undo", { params: { path: { workspaceId: W, id: ID, markId: "m1" } } });
+  await vi.waitFor(() => expect(screen.queryByText(`Meeting booked ${dayWords(today)}`)).toBeNull());
+});
+
+test("a later day is refused before it is sent, and the API's refusal is said in words", async () => {
+  const { post } = serve();
+  post.mockImplementation((() => reply(404, { error: "not_in_campaign" })) as never);
+  render(withQueries(<Campaign workspaceId={W} id={ID} role="owner" tab="people" />));
+  await userEvent.click(await screen.findByText("Mark a meeting or deal"));
+  fireEvent.change(screen.getByLabelText("Day for kim@acme.test"), { target: { value: "2999-01-01" } });
+  await userEvent.click(screen.getByRole("button", { name: "Deal opened" }));
+  expect(post).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toContain("Pick today or an earlier day.");
+  fireEvent.change(screen.getByLabelText("Day for kim@acme.test"), { target: { value: inDays(-1) } });
+  await userEvent.click(screen.getByRole("button", { name: "Deal opened" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/campaigns/{id}/outcomes", { ...at, body: { personId: person.personId, kind: "deal", on: inDays(-1) } });
+  await vi.waitFor(() => expect(screen.getByRole("alert").textContent).toContain("That person isn't in this campaign."));
+});
+
+test("a Viewer sees a Person's marks but no way to mark or undo them", async () => {
+  serve(undefined, () => ({ people: [{ ...person, outcomes: [{ id: "m1", kind: "deal", on: "2026-11-10" }] }], next: null }));
+  render(withQueries(<Campaign workspaceId={W} id={ID} role="viewer" tab="people" />));
+  expect(await screen.findByText(`Deal opened ${dayWords("2026-11-10")}`)).toBeTruthy();
+  expect(screen.queryByText("Mark a meeting or deal")).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Undo/ })).toBeNull();
+});
+
 test("an editor imports a list, matching its columns, with one reason for everyone on it; or adds one person", async () => {
   const { post } = serve();
   render(withQueries(<Campaign workspaceId={W} id={ID} role="owner" tab="people" />));

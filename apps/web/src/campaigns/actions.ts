@@ -68,6 +68,11 @@ export async function addPeople(workspaceId: string, id: string, csv: string): P
 }
 export const removePerson = async (workspaceId: string, id: string, personId: string) =>
   code(await api.DELETE("/api/w/{workspaceId}/campaigns/{id}/people/{personId}", { params: { path: { workspaceId, id, personId } } }));
+/** A meeting booked or a deal opened with a Person in the Campaign, on a day no later than today. */
+export const markOutcome = async (workspaceId: string, id: string, body: { personId: string; kind: "meeting" | "deal"; on: string }) =>
+  code(await api.POST("/api/w/{workspaceId}/campaigns/{id}/outcomes", { ...inC(workspaceId, id), body }));
+export const undoOutcome = async (workspaceId: string, id: string, markId: string) =>
+  code(await api.POST("/api/w/{workspaceId}/campaigns/{id}/outcomes/{markId}/undo", { params: { path: { workspaceId, id, markId } } }));
 export const saveStep = async (workspaceId: string, id: string, key: string, body: StepSetup) =>
   code(await api.PUT("/api/w/{workspaceId}/campaigns/{id}/steps/{key}", { params: { path: { workspaceId, id, key } }, body }));
 /** A manual step's URL, such as the page other steps link to. Each change is a new version. */
@@ -233,6 +238,10 @@ export const CAMPAIGN_MESSAGES: Record<string, string> = {
   not_a_mailbox: "That isn't a connected mail account.",
   revision_moved: "Someone saved these notes while you were editing. Reload the page.",
   no_writer_notes: "Save writer notes for this step first.",
+  not_in_campaign: "That person isn't in this campaign.",
+  future_date: "Pick today or an earlier day.",
+  mark_not_found: "That mark is gone. Reload the page.",
+  already_undone: "That mark was already undone. Reload the page.",
 };
 export const say = (error: string) => messageForCode(error, CAMPAIGN_MESSAGES);
 

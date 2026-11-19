@@ -18,7 +18,7 @@ import { BASIS_WORDS, type Basis } from "../outreach/actions";
 import { toast } from "@/components/toast";
 import { useAction } from "../components/useAction";
 import { SENDER_COUNTRY_NOTE, warningWords } from "../outreach/actions";
-import { addPeople, CAMPAIGN_MESSAGES, confirmDrafting, dayWords, draftingPreview, peoplePage, peopleQuery, removePerson, say, sayRow, settleConflict, type DraftingPreview, type Person, type RowResult } from "./actions";
+import { addPeople, CAMPAIGN_MESSAGES, confirmDrafting, dayWords, draftingPreview, markOutcome, peoplePage, peopleQuery, removePerson, say, sayRow, settleConflict, undoOutcome, type DraftingPreview, type Person, type RowResult } from "./actions";
 
 /** Direx's columns a list's own columns can be matched to. Email is the only one required. */
 export const FIELDS = [
@@ -108,6 +108,8 @@ export function mapCsv(rows: string[][], map: Mapping, all?: { basis: Basis; evi
 
 /** A person's place in the campaign, in words. */
 const STATUS_WORDS: Record<string, string> = { active: "In the campaign", replied: "Replied", removed: "Removed", conflict: "In another campaign" };
+/** A meeting or deal marked by hand: the only source the Campaign's meetings and deals Measures count from. */
+const OUTCOME_WORDS = { meeting: "Meeting booked", deal: "Deal opened" } as const;
 
 export function People(p: { workspaceId: string; id: string; edit: boolean; initial?: Person[] }) {
   const client = useQueryClient();
@@ -241,6 +243,8 @@ export function People(p: { workspaceId: string; id: string; edit: boolean; init
         {(page) => {
           const people = [...page.people, ...(more?.people ?? [])];
           const next = more ? more.next : page.next;
+          // Today in this browser; the API refuses a later day in the Workspace's time zone.
+          const today = new Date().toLocaleDateString("en-CA");
           return (
             <div className="flex flex-col gap-4 rounded-card border border-border bg-card p-6">
               {people.some((x) => x.warnings.includes("sender_country_missing")) && <p className="text-muted-foreground">{SENDER_COUNTRY_NOTE}</p>}
@@ -280,6 +284,42 @@ export function People(p: { workspaceId: string; id: string; edit: boolean; init
                                     {w}
                                   </small>
                                 ))}
+                              {x.outcomes.map((o) => (
+                                <span key={o.id} className="flex flex-wrap items-center gap-2 text-sm">
+                                  {`${OUTCOME_WORDS[o.kind]} ${dayWords(o.on)}`}
+                                  {p.edit && (
+                                    <Button type="button" size="sm" variant="outline" aria-label={`Undo ${OUTCOME_WORDS[o.kind].toLowerCase()} ${dayWords(o.on)} for ${x.email}`} {...busy(`${o.id}:undo`)} onClick={() => change(`${o.id}:undo`, () => undoOutcome(p.workspaceId, p.id, o.id))}>
+                                      Undo
+                                    </Button>
+                                  )}
+                                </span>
+                              ))}
+                              {p.edit && (
+                                <details>
+                                  <summary className="cursor-pointer py-1 text-sm text-muted-foreground">
+                                    Mark a meeting or deal<span className="sr-only">{` for ${x.email}`}</span>
+                                  </summary>
+                                  <form
+                                    className="flex flex-wrap items-center gap-2 pt-1"
+                                    onSubmit={(e) => {
+                                      e.preventDefault();
+                                      const kind = (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") as keyof typeof OUTCOME_WORDS;
+                                      const on = String(new FormData(e.currentTarget).get("on"));
+                                      // max already greys out later days; a typed one still lands here.
+                                      if (on > today) return setError(say("future_date"));
+                                      change(`${x.personId}:${kind}`, () => markOutcome(p.workspaceId, p.id, { personId: x.personId, kind, on }));
+                                    }}
+                                  >
+                                    {/* Native, as on the Calendar: a bare date fits the row. */}
+                                    <input type="date" name="on" required max={today} defaultValue={today} aria-label={`Day for ${x.email}`} className="rounded-control border border-input bg-card px-2 py-1" />
+                                    {(["meeting", "deal"] as const).map((kind) => (
+                                      <Button key={kind} type="submit" value={kind} size="sm" variant="outline" {...busy(`${x.personId}:${kind}`)}>
+                                        {OUTCOME_WORDS[kind]}
+                                      </Button>
+                                    ))}
+                                  </form>
+                                </details>
+                              )}
                               {p.edit && x.conflict && (
                                 <div className="flex flex-wrap items-center gap-2 pt-1">
                                   {(["skip", "add_after"] as const).map((choice) => (

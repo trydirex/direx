@@ -774,6 +774,11 @@ test("a campaign's results say what it sent and what came back on its email, and
     sent: [{ kind: "email", channel: "email", n: 1 }],
     email: { replied: 0, bounced: 1, optedOut: 1 },
     measures: [{ key: "m", label: "Meetings", target: "4", value: "3", observedOn: "2026-11-05" }],
+    // Both replies count: an opt-out is still a reply.
+    steps: [
+      { stepKey: "first", title: "First", kind: "email", channel: "email", sent: { n: 1, source: "direx" }, replied: { n: 1, source: "direx" }, interested: { n: 0, source: "direx" } },
+      { stepKey: "second", title: "Second", kind: "manual", channel: null, sent: null, replied: null, interested: null },
+    ],
   });
   // The list row carries the same measure and the channels its steps use.
   expect((await campaigns.list(W)).find((x) => x.id === id)).toMatchObject({ measure: { label: "Meetings", target: "4", value: "3" }, channels: ["email"] });

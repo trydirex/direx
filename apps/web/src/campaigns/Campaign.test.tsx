@@ -420,7 +420,7 @@ test("Content opens on the first step that needs approval, and another step open
 
 test("a number Direx doesn't record has no tile: no email sent means no email numbers", () => {
   expect(resultTiles(undefined)).toEqual([]);
-  expect(resultTiles({ sent: [{ kind: "post", channel: "mastodon2", n: 4 }], email: null, measures: [] })).toEqual([[4, "mastodon2 posts"]]);
+  expect(resultTiles({ sent: [{ kind: "post", channel: "mastodon2", n: 4 }], email: null, measures: [], steps: [] })).toEqual([[4, "mastodon2 posts"]]);
 });
 
 test("the status is the server's: upcoming, running, paused, ended and the Draft states, with changes waiting marked", async () => {

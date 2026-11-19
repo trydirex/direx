@@ -580,11 +580,14 @@ const progressRoute = createRoute({
 });
 
 // What is known of how a Campaign went. Only numbers Direx records; opens and clicks are not among them.
+const StepCount = z.object({ n: z.number().int(), source: z.enum(["direx", "person"]) }).nullable();
 const Results = z
   .object({
     sent: z.array(z.object({ kind: z.enum(["email", "post", "dm"]), channel: z.string(), n: z.number().int() })),
     email: z.object({ replied: z.number().int(), bounced: z.number().int(), optedOut: z.number().int() }).nullable(),
     measures: z.array(z.object({ key: z.string(), label: z.string(), target: z.string(), value: z.string().nullable(), observedOn: z.string().nullable() })),
+    // Null where Direx can't see the number, such as replies to a DM, never a zero.
+    steps: z.array(z.object({ stepKey: z.string(), title: z.string().nullable(), kind: z.string(), channel: z.string().nullable(), sent: StepCount, replied: StepCount, interested: StepCount })),
   })
   .openapi("CampaignResults");
 const resultsRoute = createRoute({
@@ -592,7 +595,7 @@ const resultsRoute = createRoute({
   path: "/api/w/{workspaceId}/campaigns/{id}/results",
   middleware: [requirePermission("workspace.read")],
   request: { params: one },
-  responses: { 200: json(Results, "Sends by channel, what came back on email, and each measure against its target"), ...errors },
+  responses: { 200: json(Results, "Sends by channel, what came back on email, each measure against its target, and each step's funnel"), ...errors },
 });
 
 // What Direx did for one Campaign, newest first.

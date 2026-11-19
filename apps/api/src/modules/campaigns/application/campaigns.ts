@@ -4,9 +4,10 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activityRows, allPeople, campaignMailboxes, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { activityRows, allPeople, campaignMailboxes, deleteDraftRows, interestedPeople, postCounts, repliedCount, repliedPeople, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
+import { stepFunnel, sumBy, tally } from "../domain/counts";
 import { timeZoneOf } from "../../schedule";
 import type { HoldKind } from "../domain/plan-diff";
 import { defaultModes, type StepMode } from "../domain/timing";
@@ -169,27 +170,32 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
     },
 
     /**
-     * What is known of how the campaign went: sends by channel, what came back on its email, and each
-     * plan measure against its target. Opens and clicks are not recorded for campaign email, so they are absent.
+     * What is known of how the campaign went: sends by channel, what came back on its email, each plan
+     * measure against its target, and each step's funnel. Opens and clicks are not recorded for campaign
+     * email, so they are absent.
      */
     async outcomes(workspaceId: string, id: string) {
       const read = await inWorkspace(workspaceId, async (tx) => {
         const row = await readCampaign(tx, id);
         if (!row) return row;
-        const counts = await stepCounts(tx, id);
-        return { row, replied: await repliedCount(tx, id), emails: counts.filter((c) => c.state === "sent").reduce((n, c) => n + c.n, 0), ...(await resultCounts(tx, id)) };
+        const sent = (await stepCounts(tx, id)).filter((c) => c.state === "sent");
+        const stepPosts = (await postCounts(tx, id)).filter((c) => c.state === "sent");
+        const people = { replied: tally(await repliedPeople(tx, id)), interested: tally(await interestedPeople(tx, id)) };
+        return { row, steps: await stepsOf(tx, id), sent, stepPosts, people, replied: await repliedCount(tx, id), emails: sent.reduce((n, c) => n + c.n, 0), ...(await resultCounts(tx, id)) };
       });
       if (!read) return undefined;
       const plan = await plans.plan(workspaceId, read.row.planId);
+      const steps = stepsView(plan?.current?.steps ?? [], read.steps).map((s) => ({ stepKey: s.key, title: s.title, type: s.type, dmChannel: s.dmChannel }));
       return {
         sent: [
           ...(read.emails ? [{ kind: "email" as const, channel: "email", n: read.emails }] : []),
           ...read.posts.map((p) => ({ kind: "post" as const, ...p })),
-          ...read.dms.map((d) => ({ kind: "dm" as const, ...d })),
+          ...[...sumBy(read.dms, "channel")].map(([channel, n]) => ({ kind: "dm" as const, channel, n })),
         ],
         // Nothing comes back on email that was never sent.
         email: read.emails ? { replied: read.replied, bounced: read.bounced, optedOut: read.optedOut } : null,
         measures: (plan?.tracking?.measures ?? []).map((m) => ({ key: m.key, label: m.label, target: m.target, value: m.latest?.value ?? null, observedOn: m.latest?.observedOn ?? null })),
+        steps: stepFunnel(steps, { emails: sumBy(read.sent, "stepKey"), dms: sumBy(read.dms, "stepKey"), posts: sumBy(read.stepPosts, "stepKey"), replied: read.people.replied.byStep, interested: read.people.interested.byStep }),
       };
     },
 

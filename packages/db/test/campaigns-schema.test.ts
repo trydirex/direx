@@ -3,12 +3,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import type pg from "pg";
 import { withWorkspace } from "../src/index";
 import { organizations, workspaces } from "../src/schema";
 import { campaignOutcomes } from "../src/schema-campaigns";
-import { appClient, insertAuthUser } from "../../../test/db";
+import { appClient, insertAuthUser, ownerClient } from "../../../test/db";
 
 let c: pg.Client;
 const W = crypto.randomUUID();
@@ -201,7 +202,44 @@ test("a meeting or deal mark is undone once by a row of the same Person and kind
 
 test("the schema declares campaign_outcomes' keys and checks as migration 0154 made them", async () => {
   const t = getTableConfig(campaignOutcomes);
-  const declared = [...t.uniqueConstraints.map((u) => u.getName()), ...t.foreignKeys.map((f) => f.getName()), ...t.checks.map((ch) => ch.name)].sort();
-  const migrated = (await c.query("select conname from pg_constraint where conrelid = 'campaign_outcomes'::regclass and contype not in ('n', 'p') order by conname")).rows.map((r) => r.conname as string);
-  expect(declared).toEqual(migrated);
+  const dialect = new PgDialect();
+  const columns = (cols: { name: string }[]) => sql.join(cols.map((col) => sql.identifier(col.name)), sql`, `);
+  const definitions = [
+    ...t.uniqueConstraints.map((u) => sql`constraint ${sql.identifier(u.getName()!)} unique ${sql.raw(u.nullsNotDistinct ? "nulls not distinct " : "")}(${columns(u.columns)})`),
+    ...t.foreignKeys.map((f) => {
+      const ref = f.reference();
+      const target = getTableConfig(ref.foreignTable);
+      return sql`constraint ${sql.identifier(f.getName())} foreign key (${columns(ref.columns)}) references ${sql.identifier(target.schema ?? "public")}.${sql.identifier(target.name)} (${columns(ref.foreignColumns)}) on update ${sql.raw(f.onUpdate ?? "no action")} on delete ${sql.raw(f.onDelete ?? "no action")}`;
+    }),
+    ...t.checks.map((ch) => {
+      // The expression belongs to the isolated copy, so strip only its source table qualifier.
+      const expression = dialect.sqlToQuery(ch.value).sql.replaceAll('"campaign_outcomes".', "");
+      return sql`constraint ${sql.identifier(ch.name)} check (${sql.raw(expression)})`;
+    }),
+  ];
+  const owner = await ownerClient();
+  try {
+    // LIKE copies column types without copying keys or checks. PostgreSQL then normalizes the
+    // independently declared constraints, avoiding a text normalizer that could hide differences.
+    await owner.query("begin");
+    await owner.query("create schema campaign_outcomes_declared");
+    await owner.query("create table campaign_outcomes_declared.outcomes (like public.campaign_outcomes)");
+    for (const definition of definitions) {
+      await owner.query(dialect.sqlToQuery(sql`alter table campaign_outcomes_declared.outcomes add ${definition}`).sql);
+    }
+    const constraints = async (table: string) => (await owner.query(
+      "select conname, pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = $1::regclass and contype in ('u', 'f', 'c') order by conname",
+      [table],
+    )).rows;
+    const declared = await constraints("campaign_outcomes_declared.outcomes");
+    const migrated = await constraints("public.campaign_outcomes");
+    expect(declared).toEqual(migrated);
+  } finally {
+    // Roll back the isolated schema even when adding a constraint or comparing it fails.
+    try {
+      await owner.query("rollback");
+    } finally {
+      await owner.end();
+    }
+  }
 });

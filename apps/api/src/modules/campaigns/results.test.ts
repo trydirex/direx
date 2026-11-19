@@ -79,7 +79,7 @@ async function join(id: string, personId?: string) {
 /** An email Action of the step to this Person, sent unless said otherwise. */
 async function email(id: string, personId: string, state = "sent") {
   const actionId = await actionIdOf(W, (await newTouch(personId, null)).id);
-  await q("update actions set state = $1 where id = $2", [state, actionId]);
+  await q("update actions set state = $1, hold_reason = case when $1 = 'held' then 'outcome_unknown' else null end, block_reason = case when $1 = 'blocked' then 'provider_refused_permanently' else null end where id = $2", [state, actionId]);
   await q("insert into campaign_actions (workspace_id, campaign_id, step_key, person_id, action_id) values ($1, $2, 'first', $3, $4)", [W, id, personId, actionId]);
   return actionId;
 }
@@ -216,4 +216,29 @@ test("a removed step keeps its latest historical title and recorded results", as
   }
   expect(await row(id, "first")).toMatchObject({ title: "Renamed email", kind: "email", sent: { n: 1 } });
   expect((await campaigns.campaign(W, id))!.steps.find((s) => s.key === "first")).toMatchObject({ title: "Renamed email", inPlan: false });
+});
+
+test("a DM channel can change before sends but stays with its historical sends", async () => {
+  const id = await newCampaign();
+  const setup = { type: "dm", touchClass: "cold", audience: "everyone", dmChannel: "x" } as const;
+  ok(await campaigns.setupStep(W, id, "dm", setup));
+  const p = await join(id);
+  await q("insert into campaign_dms (workspace_id, campaign_id, step_key, person_id, channel, profile_url, text, template_revision, created_at, sent_at, sent_by) values ($1, $2, 'dm', $3, 'x', 'https://x.com/test', 'Hi', 1, now(), now(), $4)", [W, id, p, person.userId]);
+  expect(await campaigns.setupStep(W, id, "dm", { ...setup, dmChannel: "linkedin" })).toEqual({ ok: false, reason: "step_has_results" });
+  ok(await campaigns.setupStep(W, id, "dm", setup));
+  expect(await row(id, "dm")).toMatchObject({ channel: "x", sent: { n: 1 } });
+});
+
+test.each(["draft", "needs_approval", "scheduled", "claimed", "dispatching", "held"])("an email Action in %s prevents changing its step type", async (state) => {
+  const id = await newCampaign();
+  await email(id, await join(id), state);
+  expect(await campaigns.setupStep(W, id, "first", { type: "dm", touchClass: "cold", audience: "everyone", dmChannel: "linkedin" })).toEqual({ ok: false, reason: "step_has_email_work" });
+  expect(await row(id, "first")).toMatchObject({ kind: "email" });
+});
+
+test.each(["blocked", "cancelled"])("an email Action in %s allows changing its step type", async (state) => {
+  const id = await newCampaign();
+  await email(id, await join(id), state);
+  ok(await campaigns.setupStep(W, id, "first", { type: "dm", touchClass: "cold", audience: "everyone", dmChannel: "linkedin" }));
+  expect(await row(id, "first")).toMatchObject({ kind: "dm" });
 });

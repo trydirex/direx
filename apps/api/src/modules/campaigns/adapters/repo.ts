@@ -352,6 +352,15 @@ export async function campaignStepForRule(tx: CampaignsTx, campaignId: string, s
   return row ?? null;
 }
 
+/** Sent or unfinished emails keep their step's kind; blocked and cancelled Actions cannot send. */
+export async function stepHasEmailWork(tx: CampaignsTx, campaignId: string, stepKey: string): Promise<boolean> {
+  const rows = await tx.select({ id: actions.id }).from(campaignActions)
+    .innerJoin(actions, eq(actions.id, campaignActions.actionId))
+    .where(and(eq(campaignActions.campaignId, campaignId), eq(campaignActions.stepKey, stepKey), notInArray(actions.state, ["blocked", "cancelled"])))
+    .limit(1);
+  return rows.length > 0;
+}
+
 export const stepActionIds = async (tx: CampaignsTx, campaignId: string, stepKey: string) =>
   (await tx.select({ id: campaignActions.actionId }).from(campaignActions).where(and(eq(campaignActions.campaignId, campaignId), eq(campaignActions.stepKey, stepKey)))).map((r) => r.id);
 

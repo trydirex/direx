@@ -4,7 +4,7 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activityRows, allPeople, campaignMailboxes, deleteDraftRows, interestedPeople, postCounts, repliedCount, repliedPeople, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { stepHasEmailWork, activityRows, allPeople, campaignMailboxes, deleteDraftRows, interestedPeople, postCounts, repliedCount, repliedPeople, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
 import { stepFunnel, sumBy, tally } from "../domain/counts";
@@ -356,13 +356,17 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
         // Serialize settings saves before reading the mailbox order, including a step's first setup.
         await ensureStep(tx, { workspaceId, campaignId, stepKey, now: at });
         const step = await lockStep(tx, campaignId, stepKey);
-        // Results have one kind per step. Keep that kind once work has actually been sent.
-        if (step?.type !== setup.type) {
+        // Results have one kind and DM channel per step. Keep them once work has been sent.
+        const typeChanged = step?.type !== setup.type;
+        const dmChannelChanged = step?.type === "dm" && setup.type === "dm" && step.dmChannel !== setup.dmChannel;
+        if (typeChanged || dmChannelChanged) {
           const sentEmail = (await stepCounts(tx, campaignId)).some((c) => c.stepKey === stepKey && c.state === "sent" && c.n > 0);
           const sentPost = (await postCounts(tx, campaignId)).some((c) => c.stepKey === stepKey && c.state === "sent" && c.n > 0);
           const sentDm = (await resultCounts(tx, campaignId)).dms.some((c) => c.stepKey === stepKey && c.n > 0);
-          if (sentEmail || sentPost || sentDm) return { ok: false, reason: "step_has_results" } as const;
+          if ((typeChanged && (sentEmail || sentPost)) || sentDm) return { ok: false, reason: "step_has_results" } as const;
         }
+        // Include sent here too: an Action may finish between the result reads and this query.
+        if (typeChanged && await stepHasEmailWork(tx, campaignId, stepKey)) return { ok: false, reason: "step_has_email_work" } as const;
         // A Mailbox already on the step keeps its place, so the first of those stays the step's first Mailbox.
         const existing = await stepMailboxes(tx, campaignId, stepKey);
         // The legacy settings form only knows the primary. Resubmitting it keeps the full set;

@@ -8,7 +8,7 @@ import { firstPartyPlugins, GOOGLE_PROVIDER, GOOGLE_SEARCH_CONSOLE_PROVIDER, mai
 import { join } from "node:path";
 import { serveWeb } from "./web";
 import { credentialRoutes, dataDir, vaultFromEnv, type Vault } from "./modules/credentials/index";
-import { createFacts, factRoutes, voiceCheck } from "./modules/facts/index";
+import { createFacts, factRoutes, MAX_FACT_CHARS, voiceCheck } from "./modules/facts/index";
 import { createMedia, diskStore, MEDIA_MAX_BYTES, mediaRoutes, parseS3Url, s3Store, type Store } from "./modules/media/index";
 import { clipAskStarts, clipRoutes } from "./modules/clips/index";
 import { adminEmails, approverFromMember, authConfigFromEnv, can, createIdentity, isDevOrTest, pickAdmission, refuseExternalTokens, type Admission, type AuthConfig, type Permission } from "./modules/identity/index";
@@ -23,7 +23,7 @@ import { createPluginWebhooks, docsProviders, HOST_VERSION, keyConnections, news
 import { createNewsletter, issueDesk, newsletterRoutes } from "./modules/newsletter/index";
 import { createBriefs, createPageReader, createSeo, pagesWorthABrief, seoAskStarts, seoRoutes } from "./modules/seo/index";
 import { createDocs, createWriteBackGrants, docsRoutes, docsWriteBackRoutes } from "./modules/docs/index";
-import { createRequests, createStops, createTokens, DOOR_BASE, doorApp, maxDaysFromEnv, registerReaders, tokenRoutes } from "./modules/door/index";
+import { createProposals, createRequests, createStops, createTokens, DOOR_BASE, doorApp, maxDaysFromEnv, registerProposals, registerReaders, tokenRoutes } from "./modules/door/index";
 import { doorReads } from "./modules/core-reads/index";
 import { competitorRoutes, createCompetitors, createLabels, createSnapshots } from "./modules/competitors/index";
 import { createPosts, createSocial, socialRoutes } from "./modules/social/index";
@@ -447,7 +447,21 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
   // The door (ADR 0032 rule 002): its own app and document under /api/door/v1, reading through the
   // same rows Ask reads. Wrapped in a plain Hono so its routes mount without joining the web app's
   // document; registerReaders stops the start on a catalogue name with nothing registered.
-  const door = doorApp({ tokens, requests: doorRequests, registrations: registerReaders(doorReads({ items, campaigns: () => campaigns })) });
+  // What a token may suggest (ADR 0032 rule 004). A fact is made in the door's transaction with its record.
+  // A draft is made by posts.writeAs in its own transactions under the door's lock (founder, 2026-11-19),
+  // so a crash between the post and its record could leave one duplicate draft waiting after a retry.
+  const doorProposals = createProposals({
+    entries: {
+      fact: (tx, workspaceId, p) => facts.proposeIn(tx, workspaceId, p),
+      draft: async (_tx, workspaceId, p, actor, warnings) => {
+        const r = await posts.writeAs(workspaceId, p, actor, warnings);
+        return r.ok ? { ok: true, itemId: r.itemId ?? null } : { ok: false, reason: r.reason ?? "refused" };
+      },
+    },
+    waiting: (tx, itemIds) => items().waitingAmongIn(tx, itemIds),
+    maxFactChars: MAX_FACT_CHARS,
+  });
+  const door = doorApp({ tokens, requests: doorRequests, registrations: registerReaders(doorReads({ items, campaigns: () => campaigns })), proposals: registerProposals(doorProposals) });
   app.route("/", new Hono().route("/", door));
 
   app.doc31("/openapi.json", openApiConfig);

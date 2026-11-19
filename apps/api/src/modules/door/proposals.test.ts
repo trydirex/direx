@@ -189,3 +189,33 @@ test.each(["record", "after_record"])("owner writes roll back on %s failure and 
   expect(await proposals.propose(c, "fact_proposal", fact("retry"))).toEqual(retried);
   expect(await proposalItemCount(w)).toBe(1);
 });
+
+test("lock contention returns without waiting, including drafts in different Workspaces", async () => {
+  const a = await space();
+  const b = await space();
+  await repo.inWorkspace(a.w, async (tx) => {
+    expect(await repo.tryLockProposals(tx, a.w, true)).toBe(true);
+    await repo.inWorkspace(a.w, async (other) => {
+      expect(await repo.tryLockProposals(other, a.w, false)).toBe(false);
+    });
+    await repo.inWorkspace(b.w, async (other) => {
+      expect(await repo.tryLockProposals(other, b.w, true)).toBe(false);
+    });
+    await repo.inWorkspace(b.w, async (other) => {
+      expect(await repo.tryLockProposals(other, b.w, false)).toBe(true);
+    });
+  });
+  await repo.inWorkspace(b.w, async (tx) => {
+    expect(await repo.tryLockProposals(tx, b.w, true)).toBe(true);
+  });
+});
+
+
+test("waitingAmong uses Action state and excludes approved Actions", async () => {
+  const w = await itemsWorld();
+  const draft = await w.newPost();
+  const waiting = await w.submit(await w.newPost());
+  const approved = await w.submit(await w.newPost());
+  expect((await w.items.approve(w.W, approved.id, 1, w.who)).ok).toBe(true);
+  expect(await w.items.waitingAmong(w.W, [draft.id, waiting.id, approved.id])).toBe(2);
+});

@@ -4,9 +4,13 @@
 // drop or reconfigure one. DIREX_RECORD_QUEUES=1 rewrites the list; review that diff like code.
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { appClient } from "../../../../test/db";
 import { PgBoss } from "pg-boss";
 import { afterAll, expect, test, vi } from "vitest";
 import { runServer } from "../main";
+import { createTokens, DOOR_BASE } from "../modules/door/index";
+import { createVault, rootKeyFromEnv } from "../modules/credentials/index";
+import { seedWorkspace } from "../modules/door/fixtures/members";
 
 process.env.DIREX_MASTER_KEY = "11".repeat(32);
 const FIXTURE = join(import.meta.dirname, "fixtures", "queues.json");
@@ -49,3 +53,55 @@ test("a token lifetime the server can't allow stops the start, naming the variab
     delete process.env.DIREX_EXTERNAL_TOKEN_MAX_DAYS;
   }
 });
+
+test("the server takes a token's proposals: a fact waits for a person, and a draft for an account that isn't connected is refused", async () => {
+  const w = crypto.randomUUID();
+  const owner = crypto.randomUUID();
+  await seedWorkspace(w, owner);
+  const t = await createTokens({ maxDays: null }).create(w, { name: "Script", days: 7, readers: [], kinds: ["fact_proposal", "draft"] }, owner);
+  if (!t.ok) throw new Error(t.reason);
+  const send = (kind: string, body: unknown) => worker.app.request(`${DOOR_BASE}/w/${w}/${kind}`, { method: "POST", headers: { authorization: `Bearer ${t.token}`, "content-type": "application/json" }, body: JSON.stringify(body) });
+  const fact = await send("fact_proposal", { idempotencyKey: "f1", field: "what_you_sell", value: "Marketing software" });
+  expect([fact.status, await fact.json()]).toEqual([200, { itemId: expect.any(String) }]);
+  const draft = await send("draft", { idempotencyKey: "d1", connection: "nowhere", text: "Hello", at: new Date(Date.now() + 86_400_000).toISOString() });
+  expect(draft.status).toBe(422);
+  expect(await draft.json()).toMatchObject({ error: "refused" });
+});
+
+
+test("mounted drafts with Actions count toward waiting caps and a pool-sized burst completes", async () => {
+  const w = crypto.randomUUID();
+  const owner = crypto.randomUUID();
+  await seedWorkspace(w, owner);
+  const vault = createVault({ rootKey: rootKeyFromEnv({ DIREX_MASTER_KEY: process.env.DIREX_MASTER_KEY! })!, now: () => new Date() });
+  const credential = await vault.create({ workspaceId: w, actorUserId: owner, scope: "workspace", kind: "api_key", key: "test-account", name: "Test account", meta: {}, value: { key: "synthetic" } });
+  if (!credential.ok) throw new Error(credential.reason);
+  const credentialId = credential.credential.id;
+  const db = await appClient();
+  try {
+    await db.query("begin");
+    await db.query("select set_config('app.workspace_id', $1, true)", [w]);
+    await db.query(`update credentials set kind = 'oauth2', scope = 'user', owner_user_id = $1, connection = 'linkedin', meta = '{"scopes":["w_member_social"]}' where id = $2`, [owner, credentialId]);
+    await db.query("insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values ($1, $2, 'linkedin', 'member', 'test-member', 'Test account')", [w, credentialId]);
+    await db.query("commit");
+  } finally {
+    await db.end();
+  }
+  const token = await createTokens({ maxDays: null }).create(w, { name: "Drafts", days: 7, readers: [], kinds: ["draft"] }, owner);
+  if (!token.ok) throw new Error(token.reason);
+  const send = (i: number) => worker.app.request(`${DOOR_BASE}/w/${w}/draft`, { method: "POST", headers: { authorization: `Bearer ${token.token}`, "content-type": "application/json" }, body: JSON.stringify({ idempotencyKey: `draft-${i}`, connection: "linkedin", credentialId, networkId: "test-member", text: "Hello", at: new Date(Date.now() + 86_400_000).toISOString() }) });
+  const burst = await Promise.all(Array.from({ length: 10 }, (_, i) => send(i)));
+  expect(burst.map((r) => r.status)).toEqual(Array(10).fill(200));
+  for (let i = 10; i < 20; i++) expect((await send(i)).status).toBe(200);
+  expect((await send(20)).status).toBe(429);
+  const check = await appClient();
+  try {
+    await check.query("begin");
+    await check.query("select set_config('app.workspace_id', $1, true)", [w]);
+    const r = await check.query("select count(*)::int as n from items i join actions a on a.id = i.action_id and a.workspace_id = i.workspace_id where a.state = 'needs_approval'");
+    expect(r.rows[0]).toEqual({ n: 20 });
+    await check.query("commit");
+  } finally {
+    await check.end();
+  }
+}, 30_000);

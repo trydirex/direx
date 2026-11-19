@@ -327,6 +327,17 @@ test("a Viewer reads a plan that isn't approved yet, with nothing to change", as
   expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
 });
 
+test("a Measure Direx counts says so beside it, in the draft and in the editor", async () => {
+  const counted = { ...body, measures: [{ ...body.measures[0], source: "meetings" }] };
+  serve(() => reply(200, plan({ current: null, currentVersion: null, tracking: null, draft: counted })));
+  show({ role: "viewer" });
+  const draft = within(await screen.findByRole("region", { name: "Draft plan" }));
+  expect(draft.getByText("Meetings: 4, counted by Direx from meetings marked on People")).toBeTruthy();
+  cleanup();
+  show();
+  expect(await screen.findByText("Counted by Direx from meetings marked on People")).toBeTruthy();
+});
+
 test("a draft that ran on the subscription says so under Cost, not $0.00, and a run that never reached a model gives no untested warning", async () => {
   vi.spyOn(api, "GET").mockImplementation(((path: string) => {
     if (path === "/api/w/{workspaceId}/plans/{id}") return reply(200, plan());

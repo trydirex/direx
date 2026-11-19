@@ -19,11 +19,17 @@ export type Basis = { kind: "fact"; factId: string; version: number } | { kind: 
 export type Channel = { key: string; label: string; timing: "now" | "later"; reason: string; basis: Basis };
 export type StrategyBody = { schemaVersion: 1; whoFor: string; personas: { name: string; notes?: string }[]; positioning: string; channels: Channel[]; assumptions: { text: string }[] };
 export type Step = { key: string; on: string; channelKey?: string; title: string; template?: { subject: string; text: string; citations: { factId: string; version: number }[] } };
-export type Measure = { key: string; label: string; target: string; basis: Basis };
+export type MeasureSource = "replies" | "interested_replies" | "meetings" | "deals" | "external";
+// No source is a plan from before sources, which reads as `external`: a person enters its readings.
+export type Measure = { key: string; label: string; target: string; basis: Basis; source?: MeasureSource };
 export type BudgetLine = { label: string; amountCents: number | null; currency: string; billedBy: "direx" | "your_account" };
 export type PlanBody = { schemaVersion: 1; goal: string; audience: string; startsOn: string; endsOn: string; steps: Step[]; measures: Measure[]; budget: BudgetLine[]; assumptions: { text: string }[] };
-export type Reading = { value: string; observedOn: string; source: "person" | "system" };
-export type Tracking = { planned: number; done: number; skipped: number; steps: (Step & { status: "open" | "done" | "skipped" })[]; measures: (Measure & { latest: Reading | null })[] };
+export type Reading = { value: string; observedOn: string; source: "person" | "system"; at?: string };
+export type Tracking = { planned: number; done: number; skipped: number; steps: (Step & { status: "open" | "done" | "skipped" })[]; measures: (Measure & { latest: Reading | null; readings?: Reading[] })[] };
+
+const COUNTED_FROM: Record<Exclude<MeasureSource, "external">, string> = { replies: "email replies", interested_replies: "replies labelled interested", meetings: "meetings marked on People", deals: "deals marked on People" };
+/** What Direx counts a Measure from, such as "email replies"; null when a person enters its readings. */
+export const countedFrom = (source: MeasureSource | undefined) => (source && source !== "external" ? COUNTED_FROM[source] : null);
 
 export const emptyStrategy = (): StrategyBody => ({ schemaVersion: 1, whoFor: "", personas: [], positioning: "", channels: [], assumptions: [] });
 export const emptyPlan = (): PlanBody => ({ schemaVersion: 1, goal: "", audience: "", startsOn: "", endsOn: "", steps: [], measures: [], budget: [], assumptions: [] });

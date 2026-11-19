@@ -327,3 +327,36 @@ export const campaignStepOutputs = pgTable(
     check("campaign_step_outputs_source_matches_actor_check", sql`(${t.source} = 'person') = (${t.actorUserId} is not null)`),
   ],
 );
+
+// A person's mark that a Campaign Person booked a meeting or opened a deal, on the day they say, or
+// an undo row naming the mark it voids. A mark is live while no row voids it. Rows are never changed
+// or deleted.
+export const campaignOutcomes = pgTable(
+  "campaign_outcomes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    campaignId: uuid("campaign_id").notNull(),
+    personId: uuid("person_id").notNull(),
+    kind: text("kind").notNull(),
+    occurredOn: date("occurred_on"),
+    voids: uuid("voids"),
+    actorUserId: uuid("actor_user_id")
+      .notNull()
+      .references(() => user.id),
+    at: tz("at").notNull(),
+  },
+  (t) => [
+    // The undo FK's target; it also serves reading a Campaign's marks.
+    unique("campaign_outcomes_mark_key").on(t.workspaceId, t.campaignId, t.personId, t.kind, t.id),
+    // One undo per mark.
+    unique("campaign_outcomes_voids_key").on(t.voids),
+    foreignKey({ name: "campaign_outcomes_person_fk", columns: [t.workspaceId, t.campaignId, t.personId], foreignColumns: [campaignPeople.workspaceId, campaignPeople.campaignId, campaignPeople.personId] }),
+    // The FK matches Workspace, Campaign, Person and kind; migration 0155
+    // adds the insert trigger that restricts the target to a mark (voids is null).
+    foreignKey({ name: "campaign_outcomes_voids_fk", columns: [t.workspaceId, t.campaignId, t.personId, t.kind, t.voids], foreignColumns: [t.workspaceId, t.campaignId, t.personId, t.kind, t.id] }),
+    check("campaign_outcomes_kind_check", sql`${t.kind} in ('meeting', 'deal')`),
+    check("campaign_outcomes_occurred_on_check", sql`(${t.voids} is null) = (${t.occurredOn} is not null)`),
+    check("campaign_outcomes_voids_self_check", sql`${t.voids} is distinct from ${t.id}`),
+  ],
+);

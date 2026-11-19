@@ -3,10 +3,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { sql } from "drizzle-orm";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import type pg from "pg";
 import { withWorkspace } from "../src/index";
 import { organizations, workspaces } from "../src/schema";
-import { appClient, insertAuthUser } from "../../../test/db";
+import { campaignOutcomes } from "../src/schema-campaigns";
+import { appClient, insertAuthUser, ownerClient } from "../../../test/db";
 
 let c: pg.Client;
 const W = crypto.randomUUID();
@@ -164,5 +167,106 @@ test("the backfill gives each plan without a Campaign one, owned by its latest s
     expect(rows.find((r) => r.plan_id === submitted).created_at).toEqual(made);
   } finally {
     await c.query("drop table pg_temp.marketing_plans, pg_temp.marketing_plan_versions, pg_temp.workspace_members, pg_temp.campaigns");
+  }
+});
+
+test("a meeting or deal mark is undone once by a row of the same Person and kind, never changed or deleted, and hidden from other Workspaces", async () => {
+  const campaignPerson = async (workspace: string) => {
+    const plan = await newPlan(workspace);
+    await c.query("select set_config('app.workspace_id', $1, false)", [workspace]);
+    const campaign = (await c.query(`insert into campaigns (workspace_id, plan_id, owner_user_id, created_at, updated_at) values ($1, $2, $3, now(), now()) returning id`, [workspace, plan, U])).rows[0].id as string;
+    const person = crypto.randomUUID();
+    await c.query("insert into people (id, workspace_id, coordination_id, created_at) values ($1, $2, $1, now())", [person, workspace]);
+    await c.query("insert into campaign_people (workspace_id, campaign_id, person_id, added_by, at) values ($1, $2, $3, $4, now())", [workspace, campaign, person, U]);
+    return { workspace, campaign, person };
+  };
+  const mark = async (p: { workspace: string; campaign: string; person: string }, kind: string, on: string | null, voids: string | null = null) =>
+    (await c.query("insert into campaign_outcomes (workspace_id, campaign_id, person_id, kind, occurred_on, voids, actor_user_id, at) values ($1, $2, $3, $4, $5, $6, $7, now()) returning id", [p.workspace, p.campaign, p.person, kind, on, voids, U])).rows[0].id as string;
+
+  const theirs = await campaignPerson(OTHER);
+  const hidden = await mark(theirs, "deal", "2026-11-18");
+  const p = await campaignPerson(W);
+  expect((await c.query("select id from campaign_outcomes where id = $1", [hidden])).rows).toEqual([]);
+
+  const meeting = await mark(p, "meeting", "2026-11-18");
+  await expect(mark(p, "call", "2026-11-18")).rejects.toThrow(/campaign_outcomes_kind_check/);
+  await expect(mark(p, "deal", null)).rejects.toThrow(/campaign_outcomes_occurred_on_check/);
+  await expect(mark(p, "meeting", "2026-11-18", meeting)).rejects.toThrow(/campaign_outcomes_occurred_on_check/);
+  await expect(mark({ ...p, person: crypto.randomUUID() }, "meeting", "2026-11-18")).rejects.toThrow(/campaign_outcomes_person_fk/);
+  await expect(mark(p, "deal", null, meeting)).rejects.toThrow(/campaign_outcomes_voids_fk/);
+  const undo = await mark(p, "meeting", null, meeting);
+  await expect(mark(p, "meeting", null, undo)).rejects.toThrow(/campaign_outcomes_mark_only/);
+
+  // A forward reference in one statement must not evade the mark-only trigger.
+  const nextMeeting = await mark(p, "meeting", "2026-11-19");
+  const nextUndo = crypto.randomUUID();
+  await expect(c.query(
+    "insert into campaign_outcomes (id, workspace_id, campaign_id, person_id, kind, voids, actor_user_id, at) values ($1, $3, $4, $5, 'meeting', $2, $7, now()), ($2, $3, $4, $5, 'meeting', $6, $7, now())",
+    [crypto.randomUUID(), nextUndo, p.workspace, p.campaign, p.person, nextMeeting, U],
+  )).rejects.toThrow(/campaign_outcomes_mark_only/);
+  // The refused statement rolls back both rows, leaving the mark available for a valid undo.
+  await mark(p, "meeting", null, nextMeeting);
+  await expect(mark(p, "meeting", null, meeting)).rejects.toThrow(/campaign_outcomes_voids_key/);
+  await expect(c.query("update campaign_outcomes set kind = 'deal' where id = $1", [meeting])).rejects.toThrow(/permission denied/);
+  await expect(c.query("delete from campaign_outcomes where id = $1", [meeting])).rejects.toThrow(/permission denied/);
+
+  // An upgrade refuses preexisting chains rather than rewriting append-only audit rows.
+  const owner = await ownerClient();
+  try {
+    await owner.query("begin");
+    await owner.query("drop trigger campaign_outcomes_mark_only on public.campaign_outcomes");
+    await owner.query("insert into campaign_outcomes (workspace_id, campaign_id, person_id, kind, voids, actor_user_id, at) values ($1, $2, $3, 'meeting', $4, $5, now())", [p.workspace, p.campaign, p.person, undo, U]);
+    const preflight = readFileSync(join(import.meta.dirname, "../migrations/0155_campaign_outcomes_mark_only.sql"), "utf8").split("--> statement-breakpoint")[0]!;
+    await expect(owner.query(preflight)).rejects.toThrow(/campaign_outcomes_mark_only/);
+  } finally {
+    try {
+      await owner.query("rollback");
+    } finally {
+      await owner.end();
+    }
+  }
+});
+
+test("the schema declares campaign_outcomes' keys and checks as migration 0154 made them", async () => {
+  const t = getTableConfig(campaignOutcomes);
+  const dialect = new PgDialect();
+  const columns = (cols: { name: string }[]) => sql.join(cols.map((col) => sql.identifier(col.name)), sql`, `);
+  const definitions = [
+    ...t.uniqueConstraints.map((u) => sql`constraint ${sql.identifier(u.getName()!)} unique ${sql.raw(u.nullsNotDistinct ? "nulls not distinct " : "")}(${columns(u.columns)})`),
+    ...t.foreignKeys.map((f) => {
+      const ref = f.reference();
+      const target = getTableConfig(ref.foreignTable);
+      return sql`constraint ${sql.identifier(f.getName())} foreign key (${columns(ref.columns)}) references ${sql.identifier(target.schema ?? "public")}.${sql.identifier(target.name)} (${columns(ref.foreignColumns)}) on update ${sql.raw(f.onUpdate ?? "no action")} on delete ${sql.raw(f.onDelete ?? "no action")}`;
+    }),
+    ...t.checks.map((ch) => {
+      // The expression belongs to the isolated copy, so strip only its source table qualifier.
+      const expression = dialect.sqlToQuery(ch.value).sql.replaceAll('"campaign_outcomes".', "");
+      return sql`constraint ${sql.identifier(ch.name)} check (${sql.raw(expression)})`;
+    }),
+  ];
+  const owner = await ownerClient();
+  try {
+    // LIKE copies column types without copying keys or checks. PostgreSQL then normalizes the
+    // independently declared constraints, avoiding a text normalizer that could hide differences.
+    await owner.query("begin");
+    await owner.query("create schema campaign_outcomes_declared");
+    await owner.query("create table campaign_outcomes_declared.outcomes (like public.campaign_outcomes)");
+    for (const definition of definitions) {
+      await owner.query(dialect.sqlToQuery(sql`alter table campaign_outcomes_declared.outcomes add ${definition}`).sql);
+    }
+    const constraints = async (table: string) => (await owner.query(
+      "select conname, pg_get_constraintdef(oid) as definition from pg_constraint where conrelid = $1::regclass and contype in ('u', 'f', 'c') order by conname",
+      [table],
+    )).rows;
+    const declared = await constraints("campaign_outcomes_declared.outcomes");
+    const migrated = await constraints("public.campaign_outcomes");
+    expect(declared).toEqual(migrated);
+  } finally {
+    // Roll back the isolated schema even when adding a constraint or comparing it fails.
+    try {
+      await owner.query("rollback");
+    } finally {
+      await owner.end();
+    }
   }
 });

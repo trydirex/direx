@@ -6,6 +6,7 @@ import { createFacts, factKinds } from "../facts/index";
 import { itemsApp } from "../items/fixtures/items";
 import { createOutreach } from "../outreach/index";
 import { createPlans, planKinds, planRoutes } from "../plans/index";
+import { setTimeZone } from "../schedule/index";
 import { campaignOnPlanApproved, campaignOnPlanCreated, campaignRoutes, createCampaigns } from "./index";
 
 const { routes, call, signIn, createOrg, addMember, items } = await itemsApp({ kinds: { ...factKinds(), ...planKinds({ onPlanApproved: campaignOnPlanApproved({ items: () => items }) }) } });
@@ -16,7 +17,9 @@ const noSend = () => {
 };
 const outreach = createOutreach({ items: () => items, send: noSend, baseUrl: () => "http://direx.test" });
 const started: { agent: string }[] = [];
+const now = vi.fn(() => new Date());
 const campaigns = createCampaigns({
+  now,
   plans,
   facts,
   items: () => items,
@@ -161,6 +164,24 @@ test("meetings and deals are marked and undone over HTTP by someone who can edit
   expect((await send("POST", `${elsewhere}/outcomes/${(deal as { id: string }).id}/undo`, owner)).status).toBe(404);
   expect((await send("POST", `${elsewhere}/outcomes`, owner, { personId: sam, kind: "deal", on: "2026-11-01" })).status).toBe(404);
   expect(await outcomesOf(sam)).toEqual([deal]);
+});
+
+test("outcomes accept today and refuse tomorrow in the Workspace's time zone at the UTC date boundary", async () => {
+  const id = await newCampaign();
+  const added = await (await send("POST", url(`/campaigns/${id}/people`), owner, { csv: "email\nboundary@acme.test" })).json() as { results: { personId: string }[] };
+  const personId = added.results[0]!.personId;
+  await setTimeZone(W, "America/Los_Angeles");
+  // UTC is November 3, but Los Angeles is still on November 2.
+  now.mockReturnValue(new Date("2026-11-03T01:00:00Z"));
+  try {
+    const today = await send("POST", url(`/campaigns/${id}/outcomes`), owner, { personId, kind: "meeting", on: "2026-11-02" });
+    expect([today.status, await today.json()]).toEqual([200, { id: expect.any(String), kind: "meeting", on: "2026-11-02" }]);
+    const tomorrow = await send("POST", url(`/campaigns/${id}/outcomes`), owner, { personId, kind: "deal", on: "2026-11-03" });
+    expect([tomorrow.status, await tomorrow.json()]).toEqual([400, { error: "future_date" }]);
+  } finally {
+    now.mockImplementation(() => new Date());
+    await setTimeZone(W, "UTC");
+  }
 });
 
 test("a manual step's URL is recorded over HTTP, by someone who can edit, with its refusals", async () => {

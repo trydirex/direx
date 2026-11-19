@@ -109,6 +109,14 @@ type SettleGroup = { kind: string; groupKey: string; actor: Actor; next: { paylo
 type NewItem = { kind: string; state?: "draft" | "needs_approval"; payload: unknown; actor: Actor; details: NewDetails; replace?: boolean };
 
 export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, recipient, appearance }: ItemsDeps) {
+  async function reviseOwnItemIn(tx: ItemsTx, itemId: string, a: { payload: unknown; details: NewDetails; actor: Actor }) {
+    const own = await lockOwnItem(tx, itemId);
+    if (!own || own.state === "applied" || own.state === "cancelled") return { ok: false, reason: "wrong_state" } as const;
+    await reviseOwnContent(tx, itemId, a.payload, a.details, now());
+    const next = await moveOwnState(tx, { ...own, payload: a.payload }, "needs_approval", a.actor, now());
+    return next === "stale" ? ({ ok: false, reason: "stale" } as const) : ({ ok: true, item: toView({ item: next, action: null }) } as const);
+  }
+
   async function createItemIn(tx: ItemsTx, workspaceId: string, a: NewItem, also?: (tx: ItemsTx, itemId: string) => Promise<void>) {
     if (!kinds[a.kind]) return { ok: false, reason: "unknown_kind" } as const;
     if (a.replace && !a.details.groupKey) return { ok: false, reason: "group_key_required" } as const;
@@ -224,14 +232,9 @@ export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, rec
     itemIdForAction: (workspaceId: string, actionId: string) => inWorkspace(workspaceId, (tx) => itemIdByAction(tx, actionId)),
 
     /** New content for a non-Action Item not yet finished. An approval it had is void, as for an Action. */
+    reviseOwnItemIn,
     async reviseOwnItem(workspaceId: string, itemId: string, a: { payload: unknown; details: NewDetails; actor: Actor }) {
-      return inWorkspace(workspaceId, async (tx) => {
-        const own = await lockOwnItem(tx, itemId);
-        if (!own || own.state === "applied" || own.state === "cancelled") return { ok: false, reason: "wrong_state" } as const;
-        await reviseOwnContent(tx, itemId, a.payload, a.details, now());
-        const next = await moveOwnState(tx, { ...own, payload: a.payload }, "needs_approval", a.actor, now());
-        return next === "stale" ? ({ ok: false, reason: "stale" } as const) : ({ ok: true, item: toView({ item: next, action: null }) } as const);
-      });
+      return inWorkspace(workspaceId, (tx) => reviseOwnItemIn(tx, itemId, a));
     },
 
     /** A person did by hand what an approved non-Action Item was waiting for. */

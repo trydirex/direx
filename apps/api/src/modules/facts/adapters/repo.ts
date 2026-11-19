@@ -83,6 +83,11 @@ export async function contestedIds(tx: FactsTx): Promise<Set<string>> {
   return new Set(rows.map((r) => r.id));
 }
 
+/** Serialize proposal decisions through commit, even when the slot has no Fact or Item yet. */
+export async function lockProposalSlot(tx: FactsTx, workspaceId: string, field: Field, subject: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["fact-proposal", workspaceId, field, subject])}, 0))`);
+}
+
 /** A proposal already waiting with these words for this slot, so asking twice creates one Item. */
 export async function openProposals(tx: FactsTx, field: Field, subject: string): Promise<{ id: string; kind: string; value: string }[]> {
   return tx

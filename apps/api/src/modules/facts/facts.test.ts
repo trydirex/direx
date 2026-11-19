@@ -273,3 +273,27 @@ test("proposeIn makes its Item in the caller's transaction: a rollback leaves no
   expect((await items.view(W, itemId))!.state).toBe("needs_approval");
   expect(await inWorkspace(W, (tx) => facts.proposeIn(tx, W, proposal))).toEqual({ ok: false, reason: "already_waiting", itemId });
 });
+
+test.each(["propose", "proposeIn", "mixed"] as const)("concurrent %s calls with takeOver off name the single committed proposal", async (mode) => {
+  const subject = `concurrent-${mode}`;
+  const results = await Promise.all(Array.from({ length: 6 }, (_, n) => {
+    const input = { field: "price" as const, subject, value: `$${n}`, source: site, confidence: "high" as const, actor: { system: "test" }, takeOver: false as const };
+    return mode === "proposeIn" || (mode === "mixed" && n % 2 === 0)
+      ? inWorkspace(W, (tx) => facts.proposeIn(tx, W, input))
+      : facts.propose(W, input).then((r) => r.ok ? { ok: true as const, itemId: r.item?.id } : r);
+  }));
+  const made = results.filter((r) => r.ok);
+  expect(made).toHaveLength(1);
+  const itemId = ok(made[0]!).itemId;
+  expect(itemId).toEqual(expect.any(String));
+  for (const refused of results.filter((r) => !r.ok)) {
+    expect(refused).toEqual({ ok: false, reason: "already_waiting", itemId });
+  }
+  expect((await items.view(W, itemId!))!.state).toBe("needs_approval");
+});
+
+test("concurrent default proposals reuse one Item while taking over its content", async () => {
+  const results = await Promise.all(Array.from({ length: 6 }, (_, n) => propose("price", `$${n}`, "concurrent-takeover")));
+  expect(new Set(results.map((r) => r.id)).size).toBe(1);
+  expect((await items.view(W, results[0]!.id))!.revision).toBe(6);
+});

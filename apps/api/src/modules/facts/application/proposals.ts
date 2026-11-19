@@ -3,7 +3,7 @@
 // approves it, and only against the version it was made for.
 import type { Actor } from "../../ledger";
 import { warn, type ItemKind, type Items, type Warning } from "../../items";
-import { inWorkspace, liveInSlot, lockFact, lockLiveInSlot, openProposals, retireFact, type FactsTx } from "../adapters/repo";
+import { inWorkspace, liveInSlot, lockFact, lockLiveInSlot, lockProposalSlot, openProposals, retireFact, type FactsTx } from "../adapters/repo";
 import { MAX_FACT_CHARS, sameWords, saysTheSame, subjectOf, type Confidence, type Field, type Source } from "../domain/slots";
 import { addVersion, byOf, fillSlot, type NewValue } from "./facts";
 
@@ -97,18 +97,19 @@ export type ProposeResult =
 export function proposals({ items }: { items: () => Items }) {
   /**
    * What one proposal should do, given what its slot holds: answer at once, or make an Item (or take a
-   * waiting one over). `propose` and `proposeIn` share it and differ only in whose transaction it reads in.
+   * waiting one over). `propose` and `proposeIn` hold the same slot lock through their Item write and commit.
    */
-  async function decide(read: <T>(fn: (tx: FactsTx) => Promise<T>) => Promise<T>, a: ProposeInput) {
+  async function decide(tx: FactsTx, workspaceId: string, a: ProposeInput) {
     const value = a.value.trim();
     if (!value) return { to: "refuse", answer: { ok: false, reason: "blank_value" } } as const;
     // What Direx reads is capped by its own definitions; a competitor's page quote can run longer.
     if (a.source.kind === "person" && value.length > MAX_FACT_CHARS) return { to: "refuse", answer: { ok: false, reason: "value_too_long" } } as const;
     const subject = subjectOf(a.field, a.subject, value);
-    const seen = await read(async (tx) => ({
+    await lockProposalSlot(tx, workspaceId, a.field, subject);
+    const seen = {
       current: await liveInSlot(tx, a.field, subject),
       waiting: await openProposals(tx, a.field, subject),
-    }));
+    };
     const first = seen.waiting[0];
     if (a.takeOver === false && first) return { to: "refuse", answer: { ok: false, reason: "already_waiting", itemId: first.id } } as const;
     // A person's new words are a real edit. Only what Direx read can be a mere rewording.
@@ -141,17 +142,21 @@ export function proposals({ items }: { items: () => Items }) {
   return {
     /** The Item waiting for a person, or null when Brand already says this. */
     async propose(workspaceId: string, a: ProposeInput): Promise<ProposeResult> {
-      const d = await decide((fn) => inWorkspace(workspaceId, fn), a);
-      if (d.to === "refuse") return d.answer;
-      if (d.to === "unchanged") return { ok: true, item: null } as const;
-      if (d.to === "same") return { ok: true, item: (await items().view(workspaceId, d.itemId))! } as const;
-      if (d.waiting) {
-        const revised = await items().reviseOwnItem(workspaceId, d.waiting, { ...d.make, actor: a.actor });
-        if (revised.ok) return { ok: true, item: (await items().view(workspaceId, d.waiting))! } as const;
-      }
-      const r = await items().createItem(workspaceId, { ...d.make, actor: a.actor });
-      if (!r.ok) throw new Error(`facts: ${r.reason}: the item kinds aren't registered`);
-      return { ok: true, item: r.item } as const;
+      const r = await inWorkspace(workspaceId, async (tx) => {
+        const d = await decide(tx, workspaceId, a);
+        if (d.to === "refuse") return d.answer;
+        if (d.to === "unchanged") return { ok: true, itemId: null } as const;
+        if (d.to === "same") return { ok: true, itemId: d.itemId } as const;
+        if (d.waiting) {
+          const revised = await items().reviseOwnItemIn(tx, d.waiting, { ...d.make, actor: a.actor });
+          if (revised.ok) return { ok: true, itemId: d.waiting } as const;
+        }
+        const made = await items().createItemIn(tx, workspaceId, { ...d.make, actor: a.actor });
+        if (!made.ok) throw new Error(`facts: ${made.reason}: the item kinds aren't registered`);
+        return made;
+      });
+      if (!r.ok) return r;
+      return { ok: true, item: r.itemId === null ? null : (await items().view(workspaceId, r.itemId))! } as const;
     },
 
     /**
@@ -159,7 +164,7 @@ export function proposals({ items }: { items: () => Items }) {
      * own, as the door does (ADR 0032 rule 004). It never takes a waiting proposal over. Returns the Item's id.
      */
     async proposeIn(tx: FactsTx, workspaceId: string, a: ProposeInput & { takeOver: false }) {
-      const d = await decide((fn) => fn(tx), a);
+      const d = await decide(tx, workspaceId, a);
       if (d.to === "refuse") return d.answer;
       if (d.to === "unchanged") return { ok: true, itemId: null } as const;
       if (d.to === "same") return { ok: true, itemId: d.itemId } as const;

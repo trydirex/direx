@@ -4,7 +4,7 @@
 import { createGmailPlugin } from "@direx/extensions";
 import { startFakeGmail } from "@direx/extensions/gmail/fake";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { appClient, ownerClient } from "../../../../../test/db";
 import { createVault, credentialLabel, credentialReady, rootKeyFromEnv } from "../credentials/index";
 import { reserveTouch } from "../schedule/index";
@@ -629,6 +629,9 @@ test("a DM step drafts one message per Person with a profile, with no approval, 
   expect(of(noProfile!)).toMatchObject({ ok: false, reason: "no_profile" });
   expect(of(optedOut!)).toMatchObject({ ok: false, leftOut: { reason: "not_eligible" } });
   expect(ok(await campaigns.makeDms(W, id, "second")).results.find((r) => r.personId === kim)).toMatchObject({ already: true });
+  expect(await campaigns.setupStep(W, id, "second", { ...dmStep, dmChannel: "x" })).toEqual({ ok: false, reason: "step_has_dms" });
+  expect(await campaigns.setupStep(W, id, "second", { ...dmStep, type: "manual" })).toEqual({ ok: false, reason: "step_has_dms" });
+  ok(await campaigns.setupStep(W, id, "second", { ...dmStep, dmChannel: "linkedin" }));
   const [dm] = await campaigns.dms(W, id, "second");
   expect(dm).toMatchObject({ personId: kim, channel: "linkedin", profileUrl: "https://www.linkedin.com/in/kim-lee", text: "Hi Kim, saw Acme.", copiedAt: null, sentAt: null });
   // Nothing went to the ledger or the approval queue.
@@ -774,6 +777,11 @@ test("a campaign's results say what it sent and what came back on its email, and
     sent: [{ kind: "email", channel: "email", n: 1 }],
     email: { replied: 0, bounced: 1, optedOut: 1 },
     measures: [{ key: "m", label: "Meetings", target: "4", value: "3", observedOn: "2026-11-05" }],
+    // Both replies count: an opt-out is still a reply.
+    steps: [
+      { stepKey: "first", title: "First", kind: "email", channel: "email", sent: { n: 1, source: "direx" }, replied: { n: 1, source: "direx" }, interested: { n: 0, source: "direx" } },
+      { stepKey: "second", title: "Second", kind: "manual", channel: null, sent: null, replied: null, interested: null },
+    ],
   });
   // The list row carries the same measure and the channels its steps use.
   expect((await campaigns.list(W)).find((x) => x.id === id)).toMatchObject({ measure: { label: "Meetings", target: "4", value: "3" }, channels: ["email"] });
@@ -975,4 +983,24 @@ test("a step shares its drafts across its Mailboxes, a Person's next step keeps 
   const second = ok(await campaigns.makeDrafts(W, id, "second", { timeZone: "UTC", userId: owner })).results;
   expect(second.map((r) => r.personId).sort()).toEqual([...people].sort());
   for (const r of second) expect(await senderOf(r.itemId!)).toBe(first.get(r.personId));
+});
+
+
+test.each(["channel", "type"])("DM drafting refuses a concurrent step %s change", async (change) => {
+  const id = await ready();
+  const setup = { type: "dm", touchClass: "cold", audience: "everyone", dmChannel: "linkedin" } as const;
+  ok(await campaigns.setupStep(W, id, "second", setup));
+  ok(await campaigns.saveDmText(W, id, "second", { revision: 0, text: "Hi {{firstName}}" }));
+  const [kim] = await addPeople(id, [person({ first: "Kim" })]);
+  ok(await touches.addProfile(W, kim!, "linkedin", "linkedin.com/in/Kim-Lee"));
+  const sender = vi.spyOn(outreach, "senderName").mockImplementationOnce(async () => {
+    ok(await campaigns.setupStep(W, id, "second", change === "channel" ? { ...setup, dmChannel: "x" } : { ...setup, type: "manual" }));
+    return "Sender";
+  });
+  try {
+    expect(await campaigns.makeDms(W, id, "second")).toEqual({ ok: false, reason: "target_changed" });
+    expect(await campaigns.dms(W, id, "second")).toEqual([]);
+  } finally {
+    sender.mockRestore();
+  }
 });

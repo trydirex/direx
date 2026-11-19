@@ -95,8 +95,13 @@ test("a plan's link finds its Campaign for anyone in the Workspace, a Draft's to
 test("anyone in the Workspace reads a campaign's results, which hold only what is recorded", async () => {
   const id = await newCampaign();
   for (const cookie of [roles.viewer, roles.contributor, roles.marketer, owner]) expect((await call(url(`/campaigns/${id}/results`), cookie)).status).toBe(200);
-  // Nothing sent: no email numbers, and the measure has no reading yet.
-  expect(await read(url(`/campaigns/${id}/results`), roles.viewer)).toEqual({ sent: [], email: null, measures: [{ key: "m", label: "M", target: "4", value: null, observedOn: null }] });
+  // Nothing sent: no email numbers, the measure has no reading yet, and a step not set up counts nothing.
+  expect(await read(url(`/campaigns/${id}/results`), roles.viewer)).toEqual({
+    sent: [],
+    email: null,
+    measures: [{ key: "m", label: "M", target: "4", value: null, observedOn: null }],
+    steps: [{ stepKey: "first", title: "First", kind: "manual", channel: null, sent: null, replied: null, interested: null }],
+  });
   expect((await call(url("/campaigns/00000000-0000-4000-8000-000000000999/results"), owner)).status).toBe(404);
   const listed = (await read<{ campaigns: { id: string }[] }>(url("/campaigns"))).campaigns.find((c) => c.id === id);
   expect(listed).toMatchObject({ measure: { label: "M", target: "4", value: null }, channels: [] });

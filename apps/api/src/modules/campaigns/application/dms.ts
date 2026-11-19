@@ -64,7 +64,10 @@ export function dmSteps(d: Deps) {
       const blocked = await d.outreach().whyNot(workspaceId, read.people.map((p) => p.personId), "cold");
       const made = new Map(read.existing.map((x) => [x.personId, x.id]));
       const results: DraftResult[] = [];
-      await inWorkspace(workspaceId, async (tx) => {
+      const saved = await inWorkspace(workspaceId, async (tx) => {
+        // Settings saves take this same lock. Never insert drafts for an outdated kind or network.
+        const step = await lockStep(tx, campaignId, stepKey);
+        if (step?.type !== "dm" || step.dmChannel !== read.channel) return { ok: false, reason: "target_changed" } as const;
         for (const person of read.people) {
           const base = { personId: person.personId, email: person.email };
           const already = made.get(person.personId);
@@ -97,8 +100,9 @@ export function dmSteps(d: Deps) {
           const dm = await insertDm(tx, { workspaceId, campaignId, stepKey, personId: person.personId, channel: read.channel, profileUrl, text: merged.text, templateRevision: read.step.templateRevision, createdAt: d.now() });
           results.push({ ...base, ok: true, itemId: dm?.id, already: !dm });
         }
+        return { ok: true, results } as const;
       });
-      return { ok: true, results } as const;
+      return saved;
     },
 
     async dms(workspaceId: string, campaignId: string, stepKey: string): Promise<DmView[]> {

@@ -353,6 +353,15 @@ export async function campaignStepForRule(tx: CampaignsTx, campaignId: string, s
   return row ?? null;
 }
 
+/** Sent or unfinished emails keep their step's kind; blocked and cancelled Actions cannot send. */
+export async function stepHasEmailWork(tx: CampaignsTx, campaignId: string, stepKey: string): Promise<boolean> {
+  const rows = await tx.select({ id: actions.id }).from(campaignActions)
+    .innerJoin(actions, eq(actions.id, campaignActions.actionId))
+    .where(and(eq(campaignActions.campaignId, campaignId), eq(campaignActions.stepKey, stepKey), notInArray(actions.state, ["blocked", "cancelled"])))
+    .limit(1);
+  return rows.length > 0;
+}
+
 export const stepActionIds = async (tx: CampaignsTx, campaignId: string, stepKey: string) =>
   (await tx.select({ id: campaignActions.actionId }).from(campaignActions).where(and(eq(campaignActions.campaignId, campaignId), eq(campaignActions.stepKey, stepKey)))).map((r) => r.id);
 
@@ -522,10 +531,10 @@ export async function resultCounts(tx: CampaignsTx, campaignId: string) {
     .where(and(eq(socialPosts.campaignId, campaignId), eq(actions.state, "sent")))
     .groupBy(socialPosts.connection);
   const dms = await tx
-    .select({ channel: campaignDms.channel, n: sql<number>`count(*)::int` })
+    .select({ stepKey: campaignDms.stepKey, channel: campaignDms.channel, n: sql<number>`count(*)::int` })
     .from(campaignDms)
     .where(and(eq(campaignDms.campaignId, campaignId), isNotNull(campaignDms.sentAt)))
-    .groupBy(campaignDms.channel);
+    .groupBy(campaignDms.stepKey, campaignDms.channel);
   const [back] = await tx
     .select({
       bounced: sql<number>`count(*) filter (where ${replySignals.kind} = 'bounce')::int`,
@@ -535,6 +544,27 @@ export async function resultCounts(tx: CampaignsTx, campaignId: string) {
     .where(inArray(replySignals.actionId, ours));
   return { posts, dms, bounced: back!.bounced, optedOut: back!.optedOut };
 }
+
+/** People who replied to each step's email, opt-outs included. A reply with no Action belongs to no Campaign. */
+export const repliedPeople = (tx: CampaignsTx, campaignId: string) =>
+  tx
+    .selectDistinct({ stepKey: campaignActions.stepKey, personId: campaignActions.personId })
+    .from(replySignals)
+    .innerJoin(campaignActions, eq(campaignActions.actionId, replySignals.actionId))
+    .where(and(eq(campaignActions.campaignId, campaignId), eq(replySignals.kind, "reply")));
+
+/**
+ * People whose reply to each step's email was ever labelled interested. A replaced reply Item is cancelled
+ * but keeps its payload, so any state counts. The kind is the outreach reply desk's.
+ */
+// ponytail: reads reply Items' payload unindexed; an expression index on payload->>'actionId' if pilot volume makes it slow.
+export const interestedPeople = (tx: CampaignsTx, campaignId: string) =>
+  tx
+    .selectDistinct({ stepKey: campaignActions.stepKey, personId: campaignActions.personId })
+    .from(items)
+    // Compared as text: another kind's payload may hold an actionId that isn't a uuid.
+    .innerJoin(campaignActions, sql`${campaignActions.actionId}::text = ${items.payload}->>'actionId'`)
+    .where(and(eq(campaignActions.campaignId, campaignId), eq(items.kind, "reply"), sql`${items.payload}->>'label' = 'interested'`));
 
 export function stepCounts(tx: CampaignsTx, campaignId: string) {
   return tx

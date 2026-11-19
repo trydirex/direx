@@ -4,9 +4,11 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { activityRows, allPeople, campaignMailboxes, deleteDraftRows, repliedCount, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { stepHasEmailWork, activityRows, allPeople, campaignMailboxes, deleteDraftRows, interestedPeople, postCounts, repliedCount, repliedPeople, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { dmsOf } from "../adapters/dms-repo";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
+import { stepFunnel, sumBy, tally } from "../domain/counts";
 import { timeZoneOf } from "../../schedule";
 import type { HoldKind } from "../domain/plan-diff";
 import { defaultModes, type StepMode } from "../domain/timing";
@@ -102,6 +104,13 @@ const statusOf = (row: CampaignRow, plan: { currentVersion: number | null; waiti
   lifecycle({ endsOn: runEndsOn(row, plan.current), paused: row.pausedAt !== null, approved: plan.currentVersion !== null, waiting: plan.waiting !== null, launchOn: row.anchorOn ?? plan.current?.startsOn ?? null }, today);
 
 export function campaignStore({ plans, facts, items, outreach, posts, now, onSetupChanged }: { plans: Plans; facts: FactReads; items: () => Items; outreach: () => { canSendFrom: (workspaceId: string, credentialId: string) => Promise<boolean> }; posts?: (() => PostPort) | undefined; now: () => Date; onSetupChanged?: OnSetupChanged | undefined }) {
+  // Versions are oldest first, so the last title wins for a step no longer in the plan.
+  const pastTitlesOf = async (workspaceId: string, planId: string, rows: StepRow[], current: PlanBody | null | undefined) => {
+    const titles = new Map<string, string>();
+    if (rows.some((r) => !current?.steps.some((s) => s.key === r.stepKey)))
+      for (const v of await plans.planVersions(workspaceId, planId)) for (const s of (v.body as PlanBody).steps) titles.set(s.key, s.title);
+    return titles;
+  };
   return {
     /** One draft per account. A step's drafts go through the same Items and approvals as email. */
     async draftPosts(workspaceId: string, campaignId: string, stepKey: string, a: { plannedAt: Date; targets: readonly PostTarget[] }, userId: string) {
@@ -169,27 +178,33 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
     },
 
     /**
-     * What is known of how the campaign went: sends by channel, what came back on its email, and each
-     * plan measure against its target. Opens and clicks are not recorded for campaign email, so they are absent.
+     * What is known of how the campaign went: sends by channel, what came back on its email, each plan
+     * measure against its target, and each step's funnel. Opens and clicks are not recorded for campaign
+     * email, so they are absent.
      */
     async outcomes(workspaceId: string, id: string) {
       const read = await inWorkspace(workspaceId, async (tx) => {
         const row = await readCampaign(tx, id);
         if (!row) return row;
-        const counts = await stepCounts(tx, id);
-        return { row, replied: await repliedCount(tx, id), emails: counts.filter((c) => c.state === "sent").reduce((n, c) => n + c.n, 0), ...(await resultCounts(tx, id)) };
+        const sent = (await stepCounts(tx, id)).filter((c) => c.state === "sent");
+        const stepPosts = (await postCounts(tx, id)).filter((c) => c.state === "sent");
+        const people = { replied: tally(await repliedPeople(tx, id)), interested: tally(await interestedPeople(tx, id)) };
+        return { row, steps: await stepsOf(tx, id), sent, stepPosts, people, replied: await repliedCount(tx, id), emails: sent.reduce((n, c) => n + c.n, 0), ...(await resultCounts(tx, id)) };
       });
       if (!read) return undefined;
       const plan = await plans.plan(workspaceId, read.row.planId);
+      const pastTitles = await pastTitlesOf(workspaceId, read.row.planId, read.steps, plan?.current);
+      const steps = stepsView(plan?.current?.steps ?? [], read.steps, new Map(), pastTitles).map((s) => ({ stepKey: s.key, title: s.title, type: s.type, dmChannel: s.dmChannel }));
       return {
         sent: [
           ...(read.emails ? [{ kind: "email" as const, channel: "email", n: read.emails }] : []),
           ...read.posts.map((p) => ({ kind: "post" as const, ...p })),
-          ...read.dms.map((d) => ({ kind: "dm" as const, ...d })),
+          ...[...sumBy(read.dms, "channel")].map(([channel, n]) => ({ kind: "dm" as const, channel, n })),
         ],
         // Nothing comes back on email that was never sent.
         email: read.emails ? { replied: read.replied, bounced: read.bounced, optedOut: read.optedOut } : null,
         measures: (plan?.tracking?.measures ?? []).map((m) => ({ key: m.key, label: m.label, target: m.target, value: m.latest?.value ?? null, observedOn: m.latest?.observedOn ?? null })),
+        steps: stepFunnel(steps, { emails: sumBy(read.sent, "stepKey"), dms: sumBy(read.dms, "stepKey"), posts: sumBy(read.stepPosts, "stepKey"), replied: read.people.replied.byStep, interested: read.people.interested.byStep }),
       };
     },
 
@@ -213,9 +228,7 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
       const plan = await plans.plan(workspaceId, read.row.planId);
       if (!plan) return undefined;
       // A dropped step keeps the title from the last version that held it; versions are read only when one is dropped.
-      const pastTitles = new Map<string, string>();
-      if (read.steps.some((r) => !plan.current?.steps.some((s) => s.key === r.stepKey)))
-        for (const v of await plans.planVersions(workspaceId, read.row.planId)) for (const s of (v.body as PlanBody).steps) pastTitles.set(s.key, s.title);
+      const pastTitles = await pastTitlesOf(workspaceId, read.row.planId, read.steps, plan.current);
       // A step a plan version held carries what changed and the choice waiting on it.
       const steps = stepsView(plan.current ? datedSteps(plan.current, read.row.anchorOn) : [], read.steps, read.outputs, pastTitles, read.mailboxes).map((s) => {
         const c = read.changes.find((x) => x.stepKey === s.key);
@@ -343,7 +356,20 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
         if (setup.dependsOnStepKey) await ensureStep(tx, { workspaceId, campaignId, stepKey: setup.dependsOnStepKey, now: at });
         // Serialize settings saves before reading the mailbox order, including a step's first setup.
         await ensureStep(tx, { workspaceId, campaignId, stepKey, now: at });
-        await lockStep(tx, campaignId, stepKey);
+        const step = await lockStep(tx, campaignId, stepKey);
+        // Results have one kind and DM channel per step. Keep them once work has been sent.
+        const typeChanged = step?.type !== setup.type;
+        const dmChannelChanged = step?.type === "dm" && setup.type === "dm" && step.dmChannel !== setup.dmChannel;
+        if (typeChanged || dmChannelChanged) {
+          const sentEmail = (await stepCounts(tx, campaignId)).some((c) => c.stepKey === stepKey && c.state === "sent" && c.n > 0);
+          const sentPost = (await postCounts(tx, campaignId)).some((c) => c.stepKey === stepKey && c.state === "sent" && c.n > 0);
+          const sentDm = (await resultCounts(tx, campaignId)).dms.some((c) => c.stepKey === stepKey && c.n > 0);
+          if ((typeChanged && (sentEmail || sentPost)) || sentDm) return { ok: false, reason: "step_has_results" } as const;
+          // DMs keep their original text and network, even before a person marks them sent.
+          if ((await dmsOf(tx, campaignId, stepKey)).length) return { ok: false, reason: "step_has_dms" } as const;
+        }
+        // Include sent here too: an Action may finish between the result reads and this query.
+        if (typeChanged && await stepHasEmailWork(tx, campaignId, stepKey)) return { ok: false, reason: "step_has_email_work" } as const;
         // A Mailbox already on the step keeps its place, so the first of those stays the step's first Mailbox.
         const existing = await stepMailboxes(tx, campaignId, stepKey);
         // The legacy settings form only knows the primary. Resubmitting it keeps the full set;

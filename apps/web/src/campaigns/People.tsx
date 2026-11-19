@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { inWorkspace } from "../api/query";
+import { zoneQuery } from "../credentials/actions";
 import { EmptyState, Notice } from "../components/layout";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Button } from "@/components/Button";
@@ -18,7 +19,7 @@ import { BASIS_WORDS, type Basis } from "../outreach/actions";
 import { toast } from "@/components/toast";
 import { useAction } from "../components/useAction";
 import { SENDER_COUNTRY_NOTE, warningWords } from "../outreach/actions";
-import { addPeople, CAMPAIGN_MESSAGES, confirmDrafting, dayWords, draftingPreview, peoplePage, peopleQuery, removePerson, say, sayRow, settleConflict, type DraftingPreview, type Person, type RowResult } from "./actions";
+import { addPeople, CAMPAIGN_MESSAGES, confirmDrafting, dayWords, draftingPreview, markOutcome, peoplePage, peopleQuery, removePerson, say, sayRow, settleConflict, undoOutcome, type DraftingPreview, type Person, type RowResult } from "./actions";
 
 /** Direx's columns a list's own columns can be matched to. Email is the only one required. */
 export const FIELDS = [
@@ -108,9 +109,12 @@ export function mapCsv(rows: string[][], map: Mapping, all?: { basis: Basis; evi
 
 /** A person's place in the campaign, in words. */
 const STATUS_WORDS: Record<string, string> = { active: "In the campaign", replied: "Replied", removed: "Removed", conflict: "In another campaign" };
+/** A meeting or deal marked by hand: the only source the Campaign's meetings and deals Measures count from. */
+const OUTCOME_WORDS = { meeting: "Meeting booked", deal: "Deal opened" } as const;
 
 export function People(p: { workspaceId: string; id: string; edit: boolean; initial?: Person[] }) {
   const client = useQueryClient();
+  const zone = useQuery({ ...zoneQuery(p.workspaceId), enabled: p.edit });
   const first = useQuery({ ...peopleQuery(p.workspaceId, p.id), initialData: p.initial && { people: p.initial, next: null } });
   // Pages after the first, from Show more; a reload starts from the first page again.
   const [more, setMore] = useState<{ people: Person[]; next: string | null }>();
@@ -280,6 +284,50 @@ export function People(p: { workspaceId: string; id: string; edit: boolean; init
                                     {w}
                                   </small>
                                 ))}
+                              {x.outcomes.map((o) => (
+                                <span key={o.id} className="flex flex-wrap items-center gap-2 text-sm">
+                                  {`${OUTCOME_WORDS[o.kind]} ${dayWords(o.on)}`}
+                                  {p.edit && (
+                                    <Button type="button" size="sm" variant="outline" aria-label={`Undo ${OUTCOME_WORDS[o.kind].toLowerCase()} ${dayWords(o.on)} for ${x.email}`} {...busy(`${o.id}:undo`)} onClick={() => change(`${o.id}:undo`, () => undoOutcome(p.workspaceId, p.id, o.id))}>
+                                      Undo
+                                    </Button>
+                                  )}
+                                </span>
+                              ))}
+                              {p.edit && (
+                                <details>
+                                  <summary className="cursor-pointer py-1 text-sm text-muted-foreground">
+                                    Mark a meeting or deal<span className="sr-only">{` for ${x.email}`}</span>
+                                  </summary>
+                                  <QueryBoundary query={zone}>
+                                    {({ timeZone }) => {
+                                      // Use the same day as the API, regardless of the browser's zone.
+                                      const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+                                      return (
+                                        <form
+                                          className="flex flex-wrap items-center gap-2 pt-1"
+                                          onSubmit={(e) => {
+                                            e.preventDefault();
+                                            const kind = (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") as keyof typeof OUTCOME_WORDS;
+                                            const on = String(new FormData(e.currentTarget).get("on"));
+                                            // max already greys out later days; a typed one still lands here.
+                                            if (on > today) return setError(say("future_date"));
+                                            change(`${x.personId}:${kind}`, () => markOutcome(p.workspaceId, p.id, { personId: x.personId, kind, on }));
+                                          }}
+                                        >
+                                          {/* Native, as on the Calendar: a bare date fits the row. */}
+                                          <input type="date" name="on" required max={today} defaultValue={today} aria-label={`Day for ${x.email}`} className="rounded-control border border-input bg-card px-2 py-1" />
+                                          {(["meeting", "deal"] as const).map((kind) => (
+                                            <Button key={kind} type="submit" value={kind} size="sm" variant="outline" {...busy(`${x.personId}:${kind}`)}>
+                                              {OUTCOME_WORDS[kind]}
+                                            </Button>
+                                          ))}
+                                        </form>
+                                      );
+                                    }}
+                                  </QueryBoundary>
+                                </details>
+                              )}
                               {p.edit && x.conflict && (
                                 <div className="flex flex-wrap items-center gap-2 pt-1">
                                   {(["skip", "add_after"] as const).map((choice) => (

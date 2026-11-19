@@ -23,11 +23,13 @@ const person = { personId: "00000000-0000-4000-8000-000000000001", status: "acti
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 /** The campaign answers from `read`; its people, progress, Mailboxes and hook answer plainly. */
-function serve(read: () => Promise<unknown> = () => reply(200, campaign), people: (cursor?: string) => unknown = () => ({ people: [person], next: null })) {
+function serve(read: () => Promise<unknown> = () => reply(200, campaign), people: (cursor?: string) => unknown = () => ({ people: [person], next: null }), timeZone = "UTC") {
   vi.spyOn(api, "GET").mockImplementation(((path: string, o?: { params?: { query?: { cursor?: string } } }) => {
+    if (path === "/api/w/{workspaceId}/time-zone") return reply(200, { timeZone });
     if (path === "/api/w/{workspaceId}/campaigns/{id}") return read();
     if (path === "/api/w/{workspaceId}/campaigns/{id}/people") return reply(200, people(o?.params?.query?.cursor));
     if (path === "/api/w/{workspaceId}/items/{id}") return reply(200, { item: { id: "i1", revision: 3 } });
@@ -167,7 +169,7 @@ test("an editor adds people from a CSV, then starts their drafts", async () => {
 test("an editor marks a meeting on a Person and undoes it; each change reads the People again", async () => {
   let outcomes: { id: string; kind: string; on: string }[] = [];
   const { post } = serve(undefined, () => ({ people: [{ ...person, outcomes }], next: null }));
-  const today = inDays(0);
+  const today = new Date().toISOString().slice(0, 10);
   post.mockImplementation(((path: string) => {
     if (path.endsWith("/undo")) outcomes = [];
     else outcomes = [{ id: "m1", kind: "meeting", on: today }];
@@ -183,6 +185,27 @@ test("an editor marks a meeting on a Person and undoes it; each change reads the
   await userEvent.click(screen.getByRole("button", { name: `Undo meeting booked ${dayWords(today)} for kim@acme.test` }));
   expect(post).toHaveBeenLastCalledWith("/api/w/{workspaceId}/campaigns/{id}/outcomes/{markId}/undo", { params: { path: { workspaceId: W, id: ID, markId: "m1" } } });
   await vi.waitFor(() => expect(screen.queryByText(`Meeting booked ${dayWords(today)}`)).toBeNull());
+});
+
+test.each([
+  ["UTC", "2026-11-19T02:00:00Z", "2026-11-19"],
+  ["America/Los_Angeles", "2026-11-19T02:00:00Z", "2026-11-18"],
+  ["Asia/Tokyo", "2026-11-19T20:00:00Z", "2026-11-20"],
+])("outcome dates follow %s at %s", async (timeZone, atTime, today) => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(atTime));
+  const { post } = serve(undefined, undefined, timeZone);
+  render(withQueries(<Campaign workspaceId={W} id={ID} role="owner" tab="people" />));
+  await userEvent.click(await screen.findByText("Mark a meeting or deal"));
+  const day = await screen.findByLabelText("Day for kim@acme.test") as HTMLInputElement;
+  expect([day.value, day.max]).toEqual([today, today]);
+  await userEvent.click(screen.getByRole("button", { name: "Meeting booked" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/campaigns/{id}/outcomes", { ...at, body: { personId: person.personId, kind: "meeting", on: today } });
+  post.mockClear();
+  fireEvent.change(day, { target: { value: "2999-01-01" } });
+  await userEvent.click(screen.getByRole("button", { name: "Deal opened" }));
+  expect(post).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert").textContent).toContain("Pick today or an earlier day.");
 });
 
 test("a later day is refused before it is sent, and the API's refusal is said in words", async () => {

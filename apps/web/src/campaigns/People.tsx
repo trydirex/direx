@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { inWorkspace } from "../api/query";
+import { zoneQuery } from "../credentials/actions";
 import { EmptyState, Notice } from "../components/layout";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Button } from "@/components/Button";
@@ -113,6 +114,7 @@ const OUTCOME_WORDS = { meeting: "Meeting booked", deal: "Deal opened" } as cons
 
 export function People(p: { workspaceId: string; id: string; edit: boolean; initial?: Person[] }) {
   const client = useQueryClient();
+  const zone = useQuery({ ...zoneQuery(p.workspaceId), enabled: p.edit });
   const first = useQuery({ ...peopleQuery(p.workspaceId, p.id), initialData: p.initial && { people: p.initial, next: null } });
   // Pages after the first, from Show more; a reload starts from the first page again.
   const [more, setMore] = useState<{ people: Person[]; next: string | null }>();
@@ -243,8 +245,6 @@ export function People(p: { workspaceId: string; id: string; edit: boolean; init
         {(page) => {
           const people = [...page.people, ...(more?.people ?? [])];
           const next = more ? more.next : page.next;
-          // Today in this browser; the API refuses a later day in the Workspace's time zone.
-          const today = new Date().toLocaleDateString("en-CA");
           return (
             <div className="flex flex-col gap-4 rounded-card border border-border bg-card p-6">
               {people.some((x) => x.warnings.includes("sender_country_missing")) && <p className="text-muted-foreground">{SENDER_COUNTRY_NOTE}</p>}
@@ -299,25 +299,33 @@ export function People(p: { workspaceId: string; id: string; edit: boolean; init
                                   <summary className="cursor-pointer py-1 text-sm text-muted-foreground">
                                     Mark a meeting or deal<span className="sr-only">{` for ${x.email}`}</span>
                                   </summary>
-                                  <form
-                                    className="flex flex-wrap items-center gap-2 pt-1"
-                                    onSubmit={(e) => {
-                                      e.preventDefault();
-                                      const kind = (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") as keyof typeof OUTCOME_WORDS;
-                                      const on = String(new FormData(e.currentTarget).get("on"));
-                                      // max already greys out later days; a typed one still lands here.
-                                      if (on > today) return setError(say("future_date"));
-                                      change(`${x.personId}:${kind}`, () => markOutcome(p.workspaceId, p.id, { personId: x.personId, kind, on }));
+                                  <QueryBoundary query={zone}>
+                                    {({ timeZone }) => {
+                                      // Use the same day as the API, regardless of the browser's zone.
+                                      const today = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+                                      return (
+                                        <form
+                                          className="flex flex-wrap items-center gap-2 pt-1"
+                                          onSubmit={(e) => {
+                                            e.preventDefault();
+                                            const kind = (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") as keyof typeof OUTCOME_WORDS;
+                                            const on = String(new FormData(e.currentTarget).get("on"));
+                                            // max already greys out later days; a typed one still lands here.
+                                            if (on > today) return setError(say("future_date"));
+                                            change(`${x.personId}:${kind}`, () => markOutcome(p.workspaceId, p.id, { personId: x.personId, kind, on }));
+                                          }}
+                                        >
+                                          {/* Native, as on the Calendar: a bare date fits the row. */}
+                                          <input type="date" name="on" required max={today} defaultValue={today} aria-label={`Day for ${x.email}`} className="rounded-control border border-input bg-card px-2 py-1" />
+                                          {(["meeting", "deal"] as const).map((kind) => (
+                                            <Button key={kind} type="submit" value={kind} size="sm" variant="outline" {...busy(`${x.personId}:${kind}`)}>
+                                              {OUTCOME_WORDS[kind]}
+                                            </Button>
+                                          ))}
+                                        </form>
+                                      );
                                     }}
-                                  >
-                                    {/* Native, as on the Calendar: a bare date fits the row. */}
-                                    <input type="date" name="on" required max={today} defaultValue={today} aria-label={`Day for ${x.email}`} className="rounded-control border border-input bg-card px-2 py-1" />
-                                    {(["meeting", "deal"] as const).map((kind) => (
-                                      <Button key={kind} type="submit" value={kind} size="sm" variant="outline" {...busy(`${x.personId}:${kind}`)}>
-                                        {OUTCOME_WORDS[kind]}
-                                      </Button>
-                                    ))}
-                                  </form>
+                                  </QueryBoundary>
                                 </details>
                               )}
                               {p.edit && x.conflict && (

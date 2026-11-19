@@ -636,6 +636,10 @@
     "0154_campaign_outcomes.sql": {
       "sha256": "5e3300d35c735b81d09e1cc21d5b8edf5b0234d60b906257a9bec2374d1eb652",
       "description": "Add campaign_outcomes, a person's append-only marks of a meeting booked or a deal opened on a Campaign Person and the undo rows that void them, with forced RLS and no UPDATE or DELETE for direx_app"
+    },
+    "0155_campaign_outcomes_mark_only.sql": {
+      "sha256": "c3fac7166232c1a4abcaf3d88a122938fb586bcfd4fd4824307fc858be32b575",
+      "description": "Restrict campaign outcome undos to mark rows with an insert trigger, including multi-row inserts, and reject existing undo chains without rewriting audit history"
     }
   }
 }

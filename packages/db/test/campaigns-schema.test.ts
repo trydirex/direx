@@ -194,10 +194,37 @@ test("a meeting or deal mark is undone once by a row of the same Person and kind
   await expect(mark(p, "meeting", "2026-11-18", meeting)).rejects.toThrow(/campaign_outcomes_occurred_on_check/);
   await expect(mark({ ...p, person: crypto.randomUUID() }, "meeting", "2026-11-18")).rejects.toThrow(/campaign_outcomes_person_fk/);
   await expect(mark(p, "deal", null, meeting)).rejects.toThrow(/campaign_outcomes_voids_fk/);
-  await mark(p, "meeting", null, meeting);
+  const undo = await mark(p, "meeting", null, meeting);
+  await expect(mark(p, "meeting", null, undo)).rejects.toThrow(/campaign_outcomes_mark_only/);
+
+  // A forward reference in one statement must not evade the mark-only trigger.
+  const nextMeeting = await mark(p, "meeting", "2026-11-19");
+  const nextUndo = crypto.randomUUID();
+  await expect(c.query(
+    "insert into campaign_outcomes (id, workspace_id, campaign_id, person_id, kind, voids, actor_user_id, at) values ($1, $3, $4, $5, 'meeting', $2, $7, now()), ($2, $3, $4, $5, 'meeting', $6, $7, now())",
+    [crypto.randomUUID(), nextUndo, p.workspace, p.campaign, p.person, nextMeeting, U],
+  )).rejects.toThrow(/campaign_outcomes_mark_only/);
+  // The refused statement rolls back both rows, leaving the mark available for a valid undo.
+  await mark(p, "meeting", null, nextMeeting);
   await expect(mark(p, "meeting", null, meeting)).rejects.toThrow(/campaign_outcomes_voids_key/);
   await expect(c.query("update campaign_outcomes set kind = 'deal' where id = $1", [meeting])).rejects.toThrow(/permission denied/);
   await expect(c.query("delete from campaign_outcomes where id = $1", [meeting])).rejects.toThrow(/permission denied/);
+
+  // An upgrade refuses preexisting chains rather than rewriting append-only audit rows.
+  const owner = await ownerClient();
+  try {
+    await owner.query("begin");
+    await owner.query("drop trigger campaign_outcomes_mark_only on public.campaign_outcomes");
+    await owner.query("insert into campaign_outcomes (workspace_id, campaign_id, person_id, kind, voids, actor_user_id, at) values ($1, $2, $3, 'meeting', $4, $5, now())", [p.workspace, p.campaign, p.person, undo, U]);
+    const preflight = readFileSync(join(import.meta.dirname, "../migrations/0155_campaign_outcomes_mark_only.sql"), "utf8").split("--> statement-breakpoint")[0]!;
+    await expect(owner.query(preflight)).rejects.toThrow(/campaign_outcomes_mark_only/);
+  } finally {
+    try {
+      await owner.query("rollback");
+    } finally {
+      await owner.end();
+    }
+  }
 });
 
 test("the schema declares campaign_outcomes' keys and checks as migration 0154 made them", async () => {

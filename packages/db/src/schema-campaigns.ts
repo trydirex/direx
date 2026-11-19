@@ -352,7 +352,8 @@ export const campaignOutcomes = pgTable(
     // One undo per mark.
     unique("campaign_outcomes_voids_key").on(t.voids),
     foreignKey({ name: "campaign_outcomes_person_fk", columns: [t.workspaceId, t.campaignId, t.personId], foreignColumns: [campaignPeople.workspaceId, campaignPeople.campaignId, campaignPeople.personId] }),
-    // An undo voids a mark of the same Workspace, Campaign, Person and kind.
+    // The FK matches Workspace, Campaign, Person and kind; migration 0155
+    // adds the insert trigger that restricts the target to a mark (voids is null).
     foreignKey({ name: "campaign_outcomes_voids_fk", columns: [t.workspaceId, t.campaignId, t.personId, t.kind, t.voids], foreignColumns: [t.workspaceId, t.campaignId, t.personId, t.kind, t.id] }),
     check("campaign_outcomes_kind_check", sql`${t.kind} in ('meeting', 'deal')`),
     check("campaign_outcomes_occurred_on_check", sql`(${t.voids} is null) = (${t.occurredOn} is not null)`),

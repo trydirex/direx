@@ -242,8 +242,12 @@ test("a proposal that can't get the Workspace's lock in time answers proposal_ca
   });
   const first = proposals.propose(c, "fact_proposal", fact("l1", "One"));
   await inside;
-  expect(await proposals.propose(c, "fact_proposal", fact("l2", "Two"))).toEqual({ ok: false, reason: "proposal_cap" });
-  release();
+  try {
+    expect(await proposals.propose(c, "fact_proposal", fact("l2", "Two"))).toEqual({ ok: false, reason: "proposal_cap" });
+  } finally {
+    release();
+    await first;
+  }
   expect((await first).ok).toBe(true);
 });
 

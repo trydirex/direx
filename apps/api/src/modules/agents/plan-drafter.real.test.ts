@@ -95,13 +95,15 @@ function templateProblems(c: Case, plan: PlanBody): string[] {
       if (numbersIn(f).some((n) => numbersIn(all).includes(n)) && !t.citations.some((x) => x.factId === factId(i))) problems.push(`${t.key}: uses "${f}" without citing it`);
     });
   }
+  // Every new Measure says where its number comes from, so a counted one fills in by itself.
+  for (const m of plan.measures) if (!m.source) problems.push(`${m.key}: measure with no source`);
   const openers = templates.map((t) => t.text.split(/(?<=[.!?])\s/)[0]?.trim().toLowerCase());
   if (new Set(openers).size !== openers.length) problems.push("two templates open with the same sentence");
   return problems;
 }
 
 const sampleOf = (p: PlanBody) =>
-  [p.steps.map((s) => `- ${s.on} ${s.key} (${s.channelKey ?? "no channel"}): ${s.title}`).join("\n"), ...p.steps.flatMap((s) => (s.template ? [`### ${s.key}: ${s.template.subject}\n\n${s.template.text}\n\nCites: ${s.template.citations.map((x) => x.factId.slice(-2)).join(", ") || "nothing"}`] : []))].join("\n\n");
+  [p.steps.map((s) => `- ${s.on} ${s.key} (${s.channelKey ?? "no channel"}): ${s.title}`).join("\n"), p.measures.map((m) => `- measure ${m.label}: ${m.target} (${m.source ?? "no source"})`).join("\n"), ...p.steps.flatMap((s) => (s.template ? [`### ${s.key}: ${s.template.subject}\n\n${s.template.text}\n\nCites: ${s.template.citations.map((x) => x.factId.slice(-2)).join(", ") || "nothing"}`] : []))].join("\n\n");
 
 test("the plan drafter writes a usable template for every email step", { timeout: 3 * 3_600_000 }, async () => {
   if (provider !== "claude_code" || !secret || !(runs >= 1)) throw new Error("run through bun run eval --purpose plan_draft --provider claude_code --runs N");

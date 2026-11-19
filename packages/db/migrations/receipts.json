@@ -632,6 +632,10 @@
     "0153_door_proposal_no_item.sql": {
       "sha256": "15c6d326c2194d824bf63b6704994858338418a9880498bafddadc911c7f674e",
       "description": "Replay successful proposals without an Item"
+    },
+    "0154_campaign_outcomes.sql": {
+      "sha256": "5e3300d35c735b81d09e1cc21d5b8edf5b0234d60b906257a9bec2374d1eb652",
+      "description": "Add campaign_outcomes, a person's append-only marks of a meeting booked or a deal opened on a Campaign Person and the undo rows that void them, with forced RLS and no UPDATE or DELETE for direx_app"
     }
   }
 }

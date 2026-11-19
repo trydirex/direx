@@ -3,9 +3,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import type pg from "pg";
 import { withWorkspace } from "../src/index";
 import { organizations, workspaces } from "../src/schema";
+import { campaignOutcomes } from "../src/schema-campaigns";
 import { appClient, insertAuthUser } from "../../../test/db";
 
 let c: pg.Client;
@@ -165,4 +167,41 @@ test("the backfill gives each plan without a Campaign one, owned by its latest s
   } finally {
     await c.query("drop table pg_temp.marketing_plans, pg_temp.marketing_plan_versions, pg_temp.workspace_members, pg_temp.campaigns");
   }
+});
+
+test("a meeting or deal mark is undone once by a row of the same Person and kind, never changed or deleted, and hidden from other Workspaces", async () => {
+  const campaignPerson = async (workspace: string) => {
+    const plan = await newPlan(workspace);
+    await c.query("select set_config('app.workspace_id', $1, false)", [workspace]);
+    const campaign = (await c.query(`insert into campaigns (workspace_id, plan_id, owner_user_id, created_at, updated_at) values ($1, $2, $3, now(), now()) returning id`, [workspace, plan, U])).rows[0].id as string;
+    const person = crypto.randomUUID();
+    await c.query("insert into people (id, workspace_id, coordination_id, created_at) values ($1, $2, $1, now())", [person, workspace]);
+    await c.query("insert into campaign_people (workspace_id, campaign_id, person_id, added_by, at) values ($1, $2, $3, $4, now())", [workspace, campaign, person, U]);
+    return { workspace, campaign, person };
+  };
+  const mark = async (p: { workspace: string; campaign: string; person: string }, kind: string, on: string | null, voids: string | null = null) =>
+    (await c.query("insert into campaign_outcomes (workspace_id, campaign_id, person_id, kind, occurred_on, voids, actor_user_id, at) values ($1, $2, $3, $4, $5, $6, $7, now()) returning id", [p.workspace, p.campaign, p.person, kind, on, voids, U])).rows[0].id as string;
+
+  const theirs = await campaignPerson(OTHER);
+  const hidden = await mark(theirs, "deal", "2026-11-18");
+  const p = await campaignPerson(W);
+  expect((await c.query("select id from campaign_outcomes where id = $1", [hidden])).rows).toEqual([]);
+
+  const meeting = await mark(p, "meeting", "2026-11-18");
+  await expect(mark(p, "call", "2026-11-18")).rejects.toThrow(/campaign_outcomes_kind_check/);
+  await expect(mark(p, "deal", null)).rejects.toThrow(/campaign_outcomes_occurred_on_check/);
+  await expect(mark(p, "meeting", "2026-11-18", meeting)).rejects.toThrow(/campaign_outcomes_occurred_on_check/);
+  await expect(mark({ ...p, person: crypto.randomUUID() }, "meeting", "2026-11-18")).rejects.toThrow(/campaign_outcomes_person_fk/);
+  await expect(mark(p, "deal", null, meeting)).rejects.toThrow(/campaign_outcomes_voids_fk/);
+  await mark(p, "meeting", null, meeting);
+  await expect(mark(p, "meeting", null, meeting)).rejects.toThrow(/campaign_outcomes_voids_key/);
+  await expect(c.query("update campaign_outcomes set kind = 'deal' where id = $1", [meeting])).rejects.toThrow(/permission denied/);
+  await expect(c.query("delete from campaign_outcomes where id = $1", [meeting])).rejects.toThrow(/permission denied/);
+});
+
+test("the schema declares campaign_outcomes' keys and checks as migration 0154 made them", async () => {
+  const t = getTableConfig(campaignOutcomes);
+  const declared = [...t.uniqueConstraints.map((u) => u.getName()), ...t.foreignKeys.map((f) => f.getName()), ...t.checks.map((ch) => ch.name)].sort();
+  const migrated = (await c.query("select conname from pg_constraint where conrelid = 'campaign_outcomes'::regclass and contype not in ('n', 'p') order by conname")).rows.map((r) => r.conname as string);
+  expect(declared).toEqual(migrated);
 });

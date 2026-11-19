@@ -160,6 +160,7 @@ function ByStep(p: { steps: Results["steps"] | undefined }) {
       <h2 id="by-step" className="font-sans text-sm font-semibold">
         By step
       </h2>
+      <p className="text-sm text-muted-foreground">Counted by Direx, unless a number says otherwise.</p>
       {/* Tables are 14px, and this one scrolls sideways on a phone rather than squeezing its columns. */}
       <div className="overflow-x-auto text-sm">
         <Table aria-labelledby="by-step" textOverflow="wrap">
@@ -361,6 +362,8 @@ export function Overview(p: { workspaceId: string; campaign: Loaded; edit: boole
             ))}
           </ol>
         </section>
+        {/* In the wide column, so its four columns keep their words. */}
+        <ByStep steps={results?.steps} />
       </div>
       <div className="flex min-w-0 flex-col gap-8">
         {/* The goal comes first, above what was sent (marketer UX pass, D1). */}
@@ -373,7 +376,6 @@ export function Overview(p: { workspaceId: string; campaign: Loaded; edit: boole
             </div>
           ))}
         </dl>
-        <ByStep steps={results?.steps} />
         <CampaignNotes key={c.notesRevision} workspaceId={workspaceId} campaign={c} edit={p.edit} />
         <Activity
           workspaceId={workspaceId}

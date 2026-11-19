@@ -351,6 +351,8 @@ test("a Campaign opens on its Overview: status, numbers, measures against target
   expect(timeline).toEqual(["Tue 3 NovFirst email · emailDone", "Fri 20 NovXFollow-up · X DM you send yourselfNot drafted yet"]);
   expect((await screen.findByRole("link", { name: "Review 2 drafts" })).getAttribute("href")).toBe(`/w/${W}/campaigns/${ID}?tab=drafts`);
   const byStep = within(screen.getByRole("table", { name: "By step" }));
+  // Every number names its source: Direx's own count unless the cell says a person marked it.
+  expect(screen.getByText("Counted by Direx, unless a number says otherwise.")).toBeTruthy();
   expect(byStep.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Step", "Sent", "Replied", "Interested"]);
   const rows = byStep.getAllByRole("row").slice(1).map((r) => Array.from(r.children, (c) => c.textContent));
   expect(rows).toEqual([

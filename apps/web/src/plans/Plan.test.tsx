@@ -84,6 +84,10 @@ test("a marketer edits every line, saves the draft and submits it, and a refusal
   await userEvent.click(screen.getByRole("button", { name: "Add a measure" }));
   await userEvent.type(screen.getAllByLabelText("Measure")[1]!, "Replies");
   await userEvent.type(screen.getAllByLabelText("Target")[1]!, "10");
+  // A hand-written Measure starts as entered by a person, and can be counted by Direx instead.
+  const source = screen.getByRole("combobox", { name: "Where measure 2's number comes from" });
+  expect(source.textContent).toContain("Entered by a person");
+  await pick(source, "Counted by Direx from email replies");
   await userEvent.click(screen.getByRole("button", { name: "Add a budget line" }));
   await userEvent.type(screen.getAllByLabelText("Budget line")[1]!, "Ads");
   await userEvent.type(screen.getAllByLabelText("Amount")[1]!, "12.5");
@@ -95,10 +99,40 @@ test("a marketer edits every line, saves the draft and submits it, and a refusal
   expect(saved[0]).toBe("/api/w/{workspaceId}/plans/{id}/draft");
   const sent = (saved[1] as { body: { revision: number; body: Record<string, unknown> } }).body;
   expect(sent.revision).toBe(5);
-  expect(sent.body).toMatchObject({ goal: "5 meetings", steps: [{ title: "Follow-up" }], measures: [{ label: "Meetings" }, { label: "Replies", target: "10" }], budget: [{ label: "Mailbox" }, { label: "Ads", amountCents: 1250, billedBy: "direx" }] });
+  expect(sent.body).toMatchObject({ goal: "5 meetings", steps: [{ title: "Follow-up" }], measures: [{ label: "Meetings" }, { label: "Replies", target: "10", source: "replies" }], budget: [{ label: "Mailbox" }, { label: "Ads", amountCents: 1250, billedBy: "direx" }] });
   await userEvent.click(screen.getByRole("button", { name: "Send for sign-off" }));
   expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/plans/{id}/submit", { ...one, body: { revision: 6 } });
   expect(await screen.findByText(/Still needed: dates up to 45 days apart/)).toBeTruthy();
+});
+
+test.each([
+  ["replies", "Counted by Direx from meetings marked on People", "meetings"],
+  ["meetings", "Entered by a person", "external"],
+  [undefined, "Counted by Direx from email replies", "replies"],
+])("changing a Measure source from %s starts a separate reading history", async (source, choice, expected) => {
+  const measure = { ...body.measures[0]!, source };
+  let draft = { ...body, measures: [measure] };
+  serve(() => reply(200, plan({ draft })));
+  const put = vi.spyOn(api, "PUT").mockImplementation(((_: string, o: { body: { body: typeof draft } }) => {
+    draft = o.body.body;
+    return reply(200, { revision: 6, missing: [] });
+  }) as never);
+  show();
+  const label = await screen.findByLabelText("Measure");
+  await userEvent.type(label, " updated");
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  const savedMeasure = () => (put.mock.calls.at(-1)![1] as { body: { body: { measures: typeof measure[] } } }).body.body.measures[0]!;
+  expect(savedMeasure()).toEqual({ ...measure, label: "Meetings updated" });
+  await pick(screen.getByRole("combobox", { name: "Where measure 1's number comes from" }), choice!);
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  const changed = savedMeasure();
+  expect(changed).toEqual({ ...measure, label: "Meetings updated", source: expected, key: expect.any(String) });
+  expect(changed.key).not.toBe(measure.key);
+  expect(changed.key).not.toBe("");
+  // Further edits to this source keep its new history, just as edits to the old source did.
+  await userEvent.type(screen.getByLabelText("Target"), "0");
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(savedMeasure()).toEqual({ ...changed, target: "40" });
 });
 
 test("a refused save is shown and nothing is submitted", async () => {
@@ -335,7 +369,7 @@ test("a Measure Direx counts says so beside it, in the draft and in the editor",
   expect(draft.getByText("Meetings: 4, counted by Direx from meetings marked on People")).toBeTruthy();
   cleanup();
   show();
-  expect(await screen.findByText("Counted by Direx from meetings marked on People")).toBeTruthy();
+  expect((await screen.findByRole("combobox", { name: "Where measure 1's number comes from" })).textContent).toContain("Counted by Direx from meetings marked on People");
 });
 
 test("a draft that ran on the subscription says so under Cost, not $0.00, and a run that never reached a model gives no untested warning", async () => {

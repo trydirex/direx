@@ -2,7 +2,7 @@
 // Everything: every state listed, "Show more" by cursor, a row opening the Item beside the list,
 // the filters read from and written to the route, and both empty states.
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { pick, withQueries } from "../testing";
@@ -146,4 +146,36 @@ test("an empty Workspace says nothing is here yet; filters with no match offer t
   expect(clears).toHaveLength(2);
   await userEvent.click(clears[1]!);
   expect(onFilters).toHaveBeenCalledWith({ state: undefined, channel: undefined, type: undefined, campaign: undefined, q: undefined });
+});
+
+
+test("Clear discards pending search text even when the route has no search", async () => {
+  serve([{ items: [item()], nextCursor: null }]);
+  const { onFilters } = show({ filters: { state: "sent" } });
+  await screen.findByRole("list", { name: "Everything" });
+  vi.useFakeTimers();
+  try {
+    const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "pending" } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(input.value).toBe("");
+    act(() => vi.advanceTimersByTime(300));
+    expect(onFilters).toHaveBeenCalledTimes(1);
+    expect(onFilters).toHaveBeenCalledWith({ state: undefined, channel: undefined, type: undefined, campaign: undefined, q: undefined });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("search limits pasted text to 100 characters and explains the limit", async () => {
+  serve([{ items: [item()], nextCursor: null }]);
+  const { onFilters } = show();
+  await screen.findByRole("list", { name: "Everything" });
+  const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+  expect(input.maxLength).toBe(100);
+  expect(screen.getByText("Up to 100 characters")).toBeTruthy();
+  await userEvent.click(input);
+  await userEvent.paste("x".repeat(101));
+  expect(input.value).toBe("x".repeat(100));
+  await waitFor(() => expect(onFilters).toHaveBeenCalledWith({ q: "x".repeat(100) }));
 });

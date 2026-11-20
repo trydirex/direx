@@ -112,6 +112,46 @@ test("the setup link on a server with no accounts opens on sign-up and holds its
   await waitFor(() => expect(held).toHaveBeenCalledWith("/api/admission/token", expect.objectContaining({ body: JSON.stringify({ token: "a".repeat(64) }) })));
 });
 
+test("signing up from the setup link mails a return path without its token (DX-R-0024-005)", async () => {
+  serveNewServer("needs_link");
+  const sent = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ token: null }));
+  open(CLAIM);
+  await userEvent.type(await screen.findByLabelText("Email"), "sam@example.com");
+  await userEvent.type(screen.getByLabelText(/^Password/), "a long enough password");
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledWith("/api/auth/sign-up/email", expect.anything()));
+  const body = JSON.parse(String(sent.mock.calls.find(([path]) => path === "/api/auth/sign-up/email")![1]!.body));
+  expect(body.callbackURL).toBe("/claim");
+});
+
+test("a dev server holds the setup token and leaves it out of the first-run magic link", async () => {
+  serveNewServer("sign_up");
+  const sent = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({}));
+  const oldURL = location.href;
+  // The router uses memory history here, but the return path also reads the browser URL.
+  window.history.replaceState(null, "", CLAIM);
+  try {
+    open(CLAIM);
+    expect(await screen.findByRole("heading", { name: "Sign up for Direx" })).toBeTruthy();
+    await userEvent.type(screen.getByLabelText("Email"), "sam@example.com");
+    await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
+    expect(sent).toHaveBeenCalledWith("/api/auth/sign-in/magic-link", expect.objectContaining({
+      body: JSON.stringify({ email: "sam@example.com", callbackURL: "/claim", errorCallbackURL: "/claim" }),
+    }));
+    expect(sent).toHaveBeenCalledWith("/api/admission/token", expect.objectContaining({
+      body: JSON.stringify({ token: "a".repeat(64) }),
+    }));
+  } finally {
+    window.history.replaceState(null, "", oldURL);
+  }
+});
+
+test("signed in, /claim opens the claim page for the held token", async () => {
+  serve(true);
+  open("/claim");
+  expect(await screen.findByRole("heading", { level: 1, name: "Claim this server" })).toBeTruthy();
+});
+
 test("a server with accounts keeps today's sign-in, on the setup link too", async () => {
   serveNewServer(null);
   open(CLAIM);

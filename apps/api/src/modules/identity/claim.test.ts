@@ -75,6 +75,15 @@ test("an expired or revoked link is refused", async () => {
   expect(await admins()).toEqual([]);
 });
 
+test("with no token in the body, the held invite cookie claims, so sign-in links needn't carry it", async () => {
+  const token = await issue();
+  const cookie = await account();
+  const bare = () => closed.call("/api/server/claim", cookie, { method: "POST", body: {} });
+  expect(await (await bare()).json()).toEqual({ error: "link_needed" });
+  expect((await closed.call("/api/server/claim", `${cookie}; direx_invite=${token}`, { method: "POST", body: {} })).status).toBe(200);
+  expect(await admins()).toHaveLength(1);
+});
+
 test("claiming needs a session and a token-shaped body", async () => {
   const token = await issue();
   expect((await claim(undefined, token)).status).toBe(401);

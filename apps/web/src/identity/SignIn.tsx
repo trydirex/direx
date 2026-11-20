@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Field, Notice, Page } from "../components/layout";
 import { NativeButton, NativeInput } from "@/components/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -51,8 +51,9 @@ export function SignIn({
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState<string>();
   const [error, setError] = useState<string | undefined>(() => signupRefusal(location.search));
+  const tokenHeld = useRef<Promise<void> | undefined>(undefined);
   useEffect(() => {
-    if (inviteToken) void holdInviteToken(inviteToken);
+    tokenHeld.current = inviteToken ? holdInviteToken(inviteToken) : undefined;
   }, [inviteToken]);
   // Both buttons show until the server says which it is set up for, so a server that has them never loses them.
   const providers = useQuery(signInOptionsQuery).data ?? { google: true, microsoft: true };
@@ -60,7 +61,18 @@ export function SignIn({
   const fail = (e: Error) => setError(e.message);
   const signedIn = () => location.assign(callbackURL);
 
+  // The tokenless claim page relies on the cookie set by the hold response.
+  const claimTokenHeld = () => callbackURL === "/claim" ? tokenHeld.current : undefined;
+  const social = async (provider: "google" | "microsoft") => {
+    await claimTokenHeld();
+    await signInWith(provider, callbackURL);
+  };
+  const magicLink = async () => {
+    await claimTokenHeld();
+    await sendSignInLink(email, callbackURL);
+  };
   const submit = async () => {
+    if (mode !== "forgot") await claimTokenHeld();
     if (mode === "sign_in") {
       await signInWithPassword(email, password, callbackURL);
       signedIn();
@@ -92,12 +104,12 @@ export function SignIn({
         {(providers.google || providers.microsoft) && (
           <div className="flex flex-col gap-2">
             {providers.google && (
-              <NativeButton type="button" variant="outline" onClick={() => signInWith("google", callbackURL).catch(fail)}>
+              <NativeButton type="button" variant="outline" onClick={() => social("google").catch(fail)}>
                 Continue with Google
               </NativeButton>
             )}
             {providers.microsoft && (
-              <NativeButton type="button" variant="outline" onClick={() => signInWith("microsoft", callbackURL).catch(fail)}>
+              <NativeButton type="button" variant="outline" onClick={() => social("microsoft").catch(fail)}>
                 Continue with Microsoft
               </NativeButton>
             )}
@@ -161,7 +173,7 @@ export function SignIn({
             onClick={() => {
               if (!email) return setError("Enter your email address first.");
               setPending("link");
-              sendSignInLink(email, callbackURL)
+              magicLink()
                 .then(() => setSent(`Check ${email} for a sign-in link. It works once and expires in 5 minutes.`), fail)
                 .finally(() => setPending(undefined));
             }}

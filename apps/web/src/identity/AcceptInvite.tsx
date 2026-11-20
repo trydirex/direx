@@ -45,8 +45,11 @@ export function AcceptInvite({ workspaceId, token, onJoined }: { workspaceId: st
   );
 }
 
-/** The page the bootstrap link from `bun run server-admin --invite` opens, once the person is signed in (ADR 0024). */
-export function ClaimServer({ token, onClaimed }: { token: string; onClaimed: () => void }) {
+/**
+ * The page the bootstrap link from `bun run server-admin --invite` opens, once the person is signed in (ADR 0024).
+ * With no `token`, the server uses the one the link's page held in a cookie.
+ */
+export function ClaimServer({ token, onClaimed }: { token?: string; onClaimed: () => void }) {
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
   const claim = () => {

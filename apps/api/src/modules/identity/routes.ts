@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { APIError } from "better-auth/api";
-import { setCookie } from "hono/cookie";
+import { getCookie, setCookie } from "hono/cookie";
 import type { Auth } from "./adapters/auth";
 import { claimServer, isServerAdmin } from "./application/admission";
 import { createOrganization, listDeletedWorkspaces, listMyWorkspaces } from "./application/orgs";
@@ -101,16 +101,17 @@ const serverStatusRoute = createRoute({
   },
 });
 
-// The bootstrap page calls this once the person is signed in (DX-R-0024-005).
+// The bootstrap page calls this once the person is signed in (DX-R-0024-005). With no token in the
+// body it uses the held one, so sign-in never has to put the token in a link it mails.
 const claimRoute = createRoute({
   method: "post",
   path: "/api/server/claim",
-  request: { body: { content: { "application/json": { schema: z.object({ token: Token }) } } } },
+  request: { body: { content: { "application/json": { schema: z.object({ token: Token.optional() }) } } } },
   responses: {
     200: json(z.object({ ok: z.literal(true) }), "The caller is now this server's first Server admin"),
     400: json(ErrorBody, "Not a token"),
     401: json(ErrorBody, "Not signed in"),
-    409: json(ErrorBody, "link_unusable: expired, revoked, used, or the server is claimed; unverified_email"),
+    409: json(ErrorBody, "link_unusable: expired, revoked, used, or the server is claimed; unverified_email; link_needed: no token given or held"),
   },
 });
 
@@ -224,7 +225,9 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
     .openapi(claimRoute, async (c) => {
       const s = await session(c.req.raw.headers);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
-      const result = await claimServer(s.user.id, c.req.valid("json").token);
+      const token = c.req.valid("json").token ?? Token.safeParse(getCookie(c, INVITE_COOKIE)).data;
+      if (!token) return c.json({ error: "link_needed" }, 409);
+      const result = await claimServer(s.user.id, token);
       return result === "ok" ? c.json({ ok: true as const }, 200) : c.json({ error: result }, 409);
     })
     .openapi(workspaceRoute, (c) => {

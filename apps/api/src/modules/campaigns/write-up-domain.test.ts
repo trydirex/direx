@@ -69,6 +69,8 @@ test("creditPhrase and claimsWinner catch credit and a winner without a comparis
   expect(claimsWinner("Not much changed, and LinkedIn DM worked best.", false)).toBe(true);
   expect(claimsWinner("Email was not, in fact, better than LinkedIn DM.", false)).toBe(false);
   expect(claimsWinner("No, email was best, really.", false)).toBe(true);
+  expect(claimsWinner("Email was not only better than LinkedIn DM but also easier to run.", false)).toBe(true);
+  expect(claimsWinner("Email was not better.", false)).toBe(false);
 });
 
 test.each([
@@ -78,6 +80,7 @@ test.each([
   "No rates but email was best.",
   "No, but after all, email was best.",
   "No, results differed — separately, email was best.",
+  "Email was not only better than LinkedIn DM but also easier to run.",
 ])(
   "writeUpProblem refuses a winner after a separate negation: %j",
   (paragraph) => {

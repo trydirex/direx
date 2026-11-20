@@ -2,6 +2,7 @@
 // Cross-workspace access through the app as main.ts mounts it: a member of W1 gets 404 on
 // every route of W2, credentials included. Routes are read from the app, so a new one without a case fails here.
 import { expect, test } from "vitest";
+import { ownerClient } from "../../../../../test/db";
 import { app } from "../../main";
 import { TEST_SECRET, testIdentity } from "./test-auth";
 
@@ -116,6 +117,16 @@ const rival = await app.request(`/api/w/${w2}/competitors`, {
   body: JSON.stringify({ name: "Rival", landingUrl: "http://127.0.0.1/" }),
 });
 const competitorId = ((await rival.json()) as { competitor: { id: string } }).competitor.id;
+// A competitor proposal in W2, written straight to the table, since a scan needs the worker's agents.
+const db = await ownerClient();
+const proposalId = (
+  await db.query(
+    `with f as (insert into competitor_finds (workspace_id, kind, site, at) values ($1, 'own_site', 'https://w2.example/', now()) returning id)
+     insert into competitor_proposals (workspace_id, find_id, name, name_key, found_at) select $1, id, 'Rival Two', 'rivaltwo', now() from f returning id`,
+    [w2],
+  )
+).rows[0].id as string;
+await db.end();
 const plan = await app.request(`/api/w/${w2}/plans`, {
   method: "POST",
   headers: { cookie: b, "content-type": "application/json" },
@@ -399,6 +410,9 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "PATCH /api/w/:workspaceId/competitors/:id": { path: `/api/w/${w2}/competitors/${competitorId}`, body: { name: "Rival 2" } },
   "POST /api/w/:workspaceId/competitors/:id/check": { path: `/api/w/${w2}/competitors/${competitorId}/check` },
   "POST /api/w/:workspaceId/competitors/find-pages": { path: `/api/w/${w2}/competitors/find-pages`, body: { landingUrl: "http://127.0.0.1/" } },
+  "GET /api/w/:workspaceId/competitors/proposals": { path: `/api/w/${w2}/competitors/proposals` },
+  "POST /api/w/:workspaceId/competitors/proposals/scan": { path: `/api/w/${w2}/competitors/proposals/scan` },
+  "POST /api/w/:workspaceId/competitors/proposals/:id/dismiss": { path: `/api/w/${w2}/competitors/proposals/${proposalId}/dismiss` },
   "GET /api/w/:workspaceId/competitors/:id/changes": { path: `/api/w/${w2}/competitors/${competitorId}/changes` },
   // Last of the four: W2's Owner removes the row the cases above use.
   "DELETE /api/w/:workspaceId/competitors/:id": { path: `/api/w/${w2}/competitors/${competitorId}` },

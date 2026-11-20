@@ -5,6 +5,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { requirePermission, type MemberEnv } from "../identity/index";
 import type { Competitors } from "./application/competitors";
 import { createFindPages, type FindPages } from "./application/find-pages";
+import { createProposals, type ProposalList, type Proposals } from "./application/proposals";
 import type { Snapshots } from "./application/snapshots";
 import { MAX_NAME_CHARS, MAX_URL_CHARS, SOURCES, type Source } from "./domain/competitor";
 import { LABELS, type Label } from "./domain/labels";
@@ -17,7 +18,7 @@ const errors = {
   401: json(ErrorBody, "Not signed in"),
   403: json(ErrorBody, "Not allowed"),
   404: json(ErrorBody, "Not found"),
-  409: json(ErrorBody, "Refused: the list is full, the name is taken, or Find pages is already running for this Workspace"),
+  409: json(ErrorBody, "Refused: the list is full, the name is taken, Find pages is already running, or there is no site to scan"),
 };
 const ws = z.object({ workspaceId: z.uuid() });
 const one = ws.extend({ id: z.uuid() });
@@ -75,8 +76,8 @@ const addRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/competitors",
   middleware: [requirePermission("workspace.settings")],
-  request: { params: ws, ...body(z.strictObject(Fields)) },
-  responses: { 200: json(Saved, "Added, with a check of each URL"), ...errors },
+  request: { params: ws, ...body(z.strictObject({ ...Fields, proposalId: z.uuid().optional() })) },
+  responses: { 200: json(Saved, "Added, with a check of each URL. The proposal used, and any of the same name or site, is closed as added"), ...errors },
 });
 const editRoute = createRoute({
   method: "patch",
@@ -115,11 +116,41 @@ const findPagesRoute = createRoute({
   responses: { 200: json(FindResult, "The pricing and changelog pages found from the homepage and sitemap, or why none could be looked for. Nothing is saved"), ...errors },
 });
 
+const Proposal = z
+  .object({ id: z.uuid(), name: z.string(), site: z.string().nullable(), comparisonUrl: z.string().nullable(), source: z.enum(["own_site", "search"]), terms: z.array(z.string()).nullable(), foundAt: z.iso.datetime() })
+  .openapi("CompetitorProposal");
+const ProposalList = z.object({ proposals: z.array(Proposal), site: z.string().nullable(), scannedAt: z.iso.datetime().nullable() }).openapi("CompetitorProposals");
+const proposalsRoute = createRoute({
+  method: "get",
+  path: "/api/w/{workspaceId}/competitors/proposals",
+  middleware: [requirePermission("workspace.read")],
+  request: { params: ws },
+  responses: { 200: json(ProposalList, "Competitors Direx found that wait for a person, the site they came from, and when it was last scanned"), ...errors },
+});
+const scanRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/competitors/proposals/scan",
+  middleware: [requirePermission("workspace.settings")],
+  request: { params: ws },
+  responses: { 200: json(ProposalList, "The Workspace's site read again for competitor names"), ...errors },
+});
+const dismissRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/competitors/proposals/{id}/dismiss",
+  middleware: [requirePermission("workspace.settings")],
+  request: { params: one },
+  responses: { 200: json(z.object({ ok: z.literal(true) }), "Dismissed; it won't be proposed again"), ...errors },
+});
+const listJson = (l: ProposalList) => ({ ...l, scannedAt: l.scannedAt?.toISOString() ?? null, proposals: l.proposals.map((p) => ({ ...p, foundAt: p.foundAt.toISOString() })) });
+
 const status = (reason: string) => (reason === "not_found" ? 404 : reason === "too_many" || reason === "name_taken" ? 409 : 400);
 
-export function competitorRoutes(deps: { competitors: () => Competitors; snapshots: () => Snapshots; findPages?: FindPages }) {
+export function competitorRoutes(deps: { competitors: () => Competitors; snapshots: () => Snapshots; findPages?: FindPages; proposals?: () => Proposals }) {
   const { competitors, snapshots } = deps;
   const findPages = deps.findPages ?? createFindPages();
+  // Without a way to know the Workspace's site there is nothing to scan, and the list stays empty.
+  const noSite = createProposals({ site: async () => null });
+  const proposals = deps.proposals ?? (() => noSite);
   return new OpenAPIHono<MemberEnv>()
     .openapi(listRoute, async (c) => {
       const ws = c.get("member").workspaceId;
@@ -164,5 +195,14 @@ export function competitorRoutes(deps: { competitors: () => Competitors; snapsho
       const r = await findPages(c.get("member").workspaceId, c.req.valid("json").landingUrl);
       if (!r.ok && r.reason === "busy") return c.json({ error: "busy" }, 409);
       return c.json(r, 200);
+    })
+    .openapi(proposalsRoute, async (c) => c.json(listJson(await proposals().list(c.get("member").workspaceId)), 200))
+    .openapi(scanRoute, async (c) => {
+      const r = await proposals().scan(c.get("member").workspaceId);
+      return "ok" in r ? c.json({ error: r.reason }, 409) : c.json(listJson(r), 200);
+    })
+    .openapi(dismissRoute, async (c) => {
+      const m = c.get("member");
+      return (await proposals().dismiss(m.workspaceId, m.userId, c.req.valid("param").id)) ? c.json({ ok: true as const }, 200) : c.json({ error: "not_found" }, 404);
     });
 }

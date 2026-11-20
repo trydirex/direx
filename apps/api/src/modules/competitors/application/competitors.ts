@@ -2,8 +2,9 @@
 // The competitor list: add, edit, remove, list, and a check of what each URL gives. The check
 // answers the person at that moment and is not stored; a failed one never blocks the save.
 import type { createPageReader } from "../../seo/index";
-import { deleteRow, getRow, inWorkspace, insertRow, isUniqueViolation, listRows, lockList, countRows, updateRow, type CompetitorRow, type CompetitorValues } from "../adapters/repo";
+import { closeProposals, deleteRow, getRow, inWorkspace, insertRow, isUniqueViolation, listRows, lockList, countRows, openProposals, updateRow, type CompetitorRow, type CompetitorValues, type CompetitorsTx } from "../adapters/repo";
 import { checkFields, MAX_COMPETITORS, pricesIn, SOURCES, type FieldProblem, type Source } from "../domain/competitor";
+import { nameKey, siteKey } from "../domain/own-site";
 
 export type ReadPage = ReturnType<typeof createPageReader>;
 export type CheckResult = "readable" | "no_prices" | "robots_disallowed" | "not_html" | "too_big" | "failed";
@@ -11,6 +12,8 @@ export type CheckResult = "readable" | "no_prices" | "robots_disallowed" | "not_
 export type Check = { source: Source; url: string; result: CheckResult; detail?: string; prices?: string[] };
 export type Competitor = Pick<CompetitorRow, "id" | "name" | "pricingUrl" | "changelogUrl" | "landingUrl" | "comparisonUrl">;
 export type Input = { name: string; comparisonUrl?: string | null } & Partial<Record<`${Source}Url`, string | null>>;
+/** `proposalId` is the proposal a person used to fill the form; one matching by name or site is closed too. */
+export type NewInput = Input & { proposalId?: string };
 type Refused = { ok: false; reason: FieldProblem | "too_many" | "name_taken" | "not_found" };
 type Saved = { ok: true; competitor: Competitor; checks: Check[] };
 
@@ -21,6 +24,14 @@ const clean = (v: Input): CompetitorValues => {
   const url = (u: string | null | undefined) => (u?.trim() ? u.trim() : null);
   return { name: v.name.trim(), pricingUrl: url(v.pricingUrl), changelogUrl: url(v.changelogUrl), landingUrl: url(v.landingUrl), comparisonUrl: url(v.comparisonUrl) };
 };
+
+/** Closes, as added, the open proposals this new competitor answers: the one used, and any of the same name or site. */
+async function closeAnswered(tx: CompetitorsTx, row: CompetitorRow, proposalId: string | undefined, by: string, at: Date) {
+  const key = nameKey(row.name);
+  const site = row.landingUrl && siteKey(row.landingUrl);
+  const answered = (await openProposals(tx)).filter((p) => p.id === proposalId || p.nameKey === key || (site && p.site && siteKey(p.site) === site));
+  await closeProposals(tx, answered.map((p) => p.id), by, "added", at);
+}
 
 export function createCompetitors(deps: { readPage: ReadPage; now?: () => Date }) {
   const now = deps.now ?? (() => new Date());
@@ -57,7 +68,7 @@ export function createCompetitors(deps: { readPage: ReadPage; now?: () => Date }
   return {
     list: async (workspaceId: string) => (await inWorkspace(workspaceId, listRows)).map(view),
 
-    async add(workspaceId: string, userId: string, input: Input): Promise<Saved | Refused> {
+    async add(workspaceId: string, userId: string, input: NewInput): Promise<Saved | Refused> {
       const v = clean(input);
       const problem = checkFields(v);
       if (problem) return { ok: false, reason: problem };
@@ -65,7 +76,9 @@ export function createCompetitors(deps: { readPage: ReadPage; now?: () => Date }
         inWorkspace(workspaceId, async (tx) => {
           await lockList(tx, workspaceId);
           if ((await countRows(tx)) >= MAX_COMPETITORS) return { ok: false, reason: "too_many" } as const;
-          return insertRow(tx, workspaceId, v, userId, now());
+          const row = await insertRow(tx, workspaceId, v, userId, now());
+          await closeAnswered(tx, row, input.proposalId, userId, now());
+          return row;
         }),
       );
     },

@@ -26,7 +26,7 @@ import { createBriefs, createPageReader, createSeo, pagesWorthABrief, seoAskStar
 import { createDocs, createWriteBackGrants, docsRoutes, docsWriteBackRoutes } from "./modules/docs/index";
 import { createProposals, createRequests, createStops, createTokens, DOOR_BASE, doorApp, maxDaysFromEnv, registerProposals, registerReaders, tokenRoutes } from "./modules/door/index";
 import { doorReads } from "./modules/core-reads/index";
-import { competitorRoutes, createCompetitors, createLabels, createSnapshots } from "./modules/competitors/index";
+import { competitorRoutes, createCompetitorProposals, createCompetitors, createLabels, createSnapshots } from "./modules/competitors/index";
 import { createPosts, createSocial, socialRoutes } from "./modules/social/index";
 import { addressLabelsFor, createTerms, keptEligibility, prospectingAskStarts, prospectingRoutes, signalsFor } from "./modules/prospecting/index";
 import { listenHost, loadDeployment, mediaS3Url, withClientIp } from "./startup";
@@ -329,7 +329,19 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
   // appears only once its eval passes the founder's signed bar; until then the start is refused.
   const competitorLabels = createLabels({ start: () => startAgent });
   const competitorSnapshots = createSnapshots({ readPage: createPageReader(), afterRead: (workspaceId) => competitorLabels.classify(workspaceId) });
-  app.route("/", competitorRoutes({ competitors: () => competitors, snapshots: () => competitorSnapshots }));
+  // A Workspace's site is the address its latest Brand read of a website used, as "read the website
+  // again" finds it ("brand_reader" is that agent's id). No Brand read means no site to scan.
+  const competitorProposals = createCompetitorProposals({
+    site: async (workspaceId) => {
+      // A server whose worker hasn't started has no runs to look in yet.
+      for (const { run } of (await worker()?.agents?.list(workspaceId, "brand_reader")) ?? []) {
+        const url = (run.input as { url?: unknown }).url;
+        if (typeof url === "string") return url;
+      }
+      return null;
+    },
+  });
+  app.route("/", competitorRoutes({ competitors: () => competitors, snapshots: () => competitorSnapshots, proposals: () => competitorProposals }));
   // Built when the worker starts, since accepting one queues its start on the worker's queue.
   let nextSteps: NextSteps | undefined;
   const campaigns = createCampaigns({

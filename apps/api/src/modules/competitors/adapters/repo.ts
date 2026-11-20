@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Every competitors SQL statement, inside one Workspace, apart from the weekly read's list of Workspaces.
-import { and, asc, count, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
-import { competitorChanges, competitors, competitorSnapshots } from "@direx/db/schema-competitors";
+import { competitorChanges, competitorFinds, competitorProposals, competitors, competitorSnapshots } from "@direx/db/schema-competitors";
 
 export type CompetitorRow = typeof competitors.$inferSelect;
 export type CompetitorValues = Pick<CompetitorRow, "name" | "pricingUrl" | "changelogUrl" | "landingUrl"> & Partial<Pick<CompetitorRow, "comparisonUrl">>;
 
 export const inWorkspace = <T>(workspaceId: string, fn: (tx: WorkspaceTx) => Promise<T>) => withWorkspace(workspaceId, fn);
+export type CompetitorsTx = WorkspaceTx;
 
 export function isUniqueViolation(e: unknown): boolean {
   const err = e as { code?: string; cause?: { code?: string } };
@@ -170,3 +171,42 @@ export const setItemId = (tx: WorkspaceTx, changeId: string, itemId: string) =>
     .where(and(eq(competitorChanges.id, changeId), isNull(competitorChanges.itemId)));
 
 export const deleteRow = async (tx: WorkspaceTx, id: string) => (await tx.delete(competitors).where(eq(competitors.id, id)).returning({ id: competitors.id })).length > 0;
+
+export type ProposalRow = typeof competitorProposals.$inferSelect & { kind: string; terms: string[] | null };
+export type NewProposal = Pick<typeof competitorProposals.$inferInsert, "name" | "nameKey" | "site" | "comparisonUrl">;
+
+/** Proposals still waiting for a person, oldest first, with how each was found. */
+export async function openProposals(tx: WorkspaceTx): Promise<ProposalRow[]> {
+  const p = competitorProposals;
+  const rows = await tx
+    .select({ p, kind: competitorFinds.kind, terms: competitorFinds.terms })
+    .from(p)
+    .innerJoin(competitorFinds, eq(competitorFinds.id, p.findId))
+    .where(isNull(p.closedAt))
+    .orderBy(asc(p.foundAt), asc(p.name));
+  return rows.map((r) => ({ ...r.p, kind: r.kind, terms: r.terms }));
+}
+
+/** Every name and site ever proposed, closed or not, so neither is proposed twice. */
+export const proposedBefore = (tx: WorkspaceTx) => tx.select({ nameKey: competitorProposals.nameKey, site: competitorProposals.site }).from(competitorProposals);
+
+/** When this site was last scanned for names, or null. */
+export async function lastScan(tx: WorkspaceTx, site: string): Promise<Date | null> {
+  const f = competitorFinds;
+  const [r] = await tx.select({ at: f.at }).from(f).where(and(eq(f.kind, "own_site"), eq(f.site, site))).orderBy(desc(f.at)).limit(1);
+  return r?.at ?? null;
+}
+
+/** Records a scan and its new proposals; a name another scan proposed meanwhile is skipped. */
+export async function addScan(tx: WorkspaceTx, workspaceId: string, site: string, found: NewProposal[], at: Date) {
+  const [find] = await tx.insert(competitorFinds).values({ workspaceId, kind: "own_site", site, at }).returning({ id: competitorFinds.id });
+  if (found.length) await tx.insert(competitorProposals).values(found.map((f) => ({ ...f, workspaceId, findId: find!.id, foundAt: at }))).onConflictDoNothing();
+}
+
+/** Closes the open proposals among `ids`; returns the ids it closed. */
+export async function closeProposals(tx: WorkspaceTx, ids: string[], by: string, as: "added" | "dismissed", at: Date): Promise<string[]> {
+  if (!ids.length) return [];
+  const p = competitorProposals;
+  const rows = await tx.update(p).set({ closedAt: at, closedBy: by, closedAs: as }).where(and(inArray(p.id, ids), isNull(p.closedAt))).returning({ id: p.id });
+  return rows.map((r) => r.id);
+}

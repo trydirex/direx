@@ -64,14 +64,14 @@ export function QueueRow({ item: i, workspaceId, wide }: { item: Item; workspace
   const warning = i.warnings.length === 1 ? <span className="text-xs font-medium text-warning">{i.warnings[0]!.text}</span> : <WarningCount count={i.warnings.length} />;
   if (wide)
     return (
-      <span className="flex w-full min-w-0 flex-wrap items-start gap-x-6 gap-y-2 text-left">
-        <span className="flex min-w-0 flex-1 basis-80 flex-col gap-1">
+      <span className="grid w-full min-w-0 grid-cols-1 items-start gap-x-6 gap-y-2 text-left sm:grid-cols-[minmax(0,1fr)_auto]">
+        <span className="flex min-w-0 flex-col gap-1">
           {what}
           {/* The open Item shows the whole title; two lines keep the list scannable. */}
           <span className="line-clamp-2 font-medium text-pretty wrap-break-word text-foreground">{i.title}</span>
           {warning}
         </span>
-        <span className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 sm:w-56 sm:flex-col sm:items-end sm:text-right">
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:w-56 sm:flex-col sm:items-end sm:text-right">
           <StateChip state={i.state} reason={i.reason} />
           <span className="text-xs text-muted-foreground tabular-nums">{i.at ? listTime(new Date(i.at)) : `Made ${listTime(new Date(i.createdAt))}`}</span>
         </span>

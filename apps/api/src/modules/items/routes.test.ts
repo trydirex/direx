@@ -63,6 +63,12 @@ test("a snapshot or approver in the request is rejected, not ignored", async () 
   expect((await items.view(W, i.id))!.state).toBe("needs_approval");
 });
 
+test("a choice may run to 2000 characters, room for three edited assumptions", async () => {
+  const i = await needsApproval();
+  expect((await post_(url(`/${i.id}/approve`), owner, { revision: 1, choice: "x".repeat(2001) })).status).toBe(400);
+  expect((await post_(url(`/${i.id}/approve`), owner, { revision: 1, choice: "x".repeat(2000) })).status).not.toBe(400);
+});
+
 test("refusals are named", async () => {
   const i = await needsApproval();
   const stale = await post_(url(`/${i.id}/approve`), owner, { revision: 9 });

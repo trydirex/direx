@@ -9,9 +9,9 @@ type Kind = Data["kinds"][number];
 
 const CHANNEL: Record<Kind["rows"][number]["channels"][number], string> = { email: "Email", linkedin_dm: "LinkedIn DM", x_dm: "X DM" };
 const KIND: Record<Kind["kind"], { title: string; column: string; had: string }> = {
-  interested: { title: "Interested replies from People this Campaign reached", column: "Replied interested", had: "Replied interested" },
-  meeting: { title: "Meetings with People this Campaign reached", column: "Had a meeting", had: "Meeting" },
-  deal: { title: "Deals with People this Campaign reached", column: "Had a deal", had: "Deal" },
+  interested: { title: "Interested replies from People this Campaign reached", column: "Interested", had: "Replied interested" },
+  meeting: { title: "Meetings with People this Campaign reached", column: "Meetings", had: "Meeting" },
+  deal: { title: "Deals with People this Campaign reached", column: "Deals", had: "Deal" },
 };
 
 /** A channel mix in words: "Email only", "Email and LinkedIn DM", "Email, LinkedIn DM and X DM". */
@@ -36,13 +36,13 @@ function OneKind(p: { kind: Kind }) {
         <p className="text-sm text-muted-foreground">{`None yet. ${reached} ${reached === 1 ? "Person" : "People"} reached so far.`}</p>
       ) : (
         <>
-          {/* Scrolls sideways on a phone rather than squeezing its columns. */}
+          {/* Short column words, since header cells never wrap, and a minimum width so a phone scrolls sideways. */}
           <div className="overflow-x-auto text-sm">
-            <Table aria-labelledby={id} textOverflow="wrap" className="min-w-sm">
+            <Table aria-labelledby={id} textOverflow="wrap" className="min-w-128">
               <TableHeader>
                 <TableRow>
                   <TableHeaderCell scope="col">Channels</TableHeaderCell>
-                  <TableHeaderCell scope="col" className="text-right">People reached</TableHeaderCell>
+                  <TableHeaderCell scope="col" className="text-right">Reached</TableHeaderCell>
                   <TableHeaderCell scope="col" className="text-right">{words.column}</TableHeaderCell>
                   <TableHeaderCell scope="col" className="text-right">Rate</TableHeaderCell>
                 </TableRow>
@@ -50,7 +50,8 @@ function OneKind(p: { kind: Kind }) {
               <TableBody>
                 {k.rows.map((r) => (
                   <TableRow key={r.channels.join()}>
-                    <TableHeaderCell scope="row">{mixWords(r.channels)}</TableHeaderCell>
+                    {/* A plain cell keeps the row label whole: the library truncates every header cell. */}
+                    <TableCell role="rowheader" className="font-medium">{mixWords(r.channels)}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.reached}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.outcomes}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.rate === null ? <span className="text-muted-foreground">too few to compare</span> : `${r.rate}%`}</TableCell>

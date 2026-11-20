@@ -38,14 +38,16 @@ const rows = (table: HTMLElement) => within(table).getAllByRole("row").map((r) =
 test("each kind's table has a row per channel mix with its counts, a whole-percent rate or too few to compare", async () => {
   const s = await show(full);
   expect(rows(s.getByRole("table", { name: "Interested replies from People this Campaign reached" }))).toEqual([
-    ["Channels", "People reached", "Replied interested", "Rate"],
+    ["Channels", "Reached", "Interested", "Rate"],
     ["Email only", "40", "12", "30%"],
     ["Email and LinkedIn DM", "20", "10", "50%"],
     ["Email, LinkedIn DM and X DM", "3", "1", "too few to compare"],
   ]);
+  // Each row is still named by its channels for a screen reader, in a cell that wraps rather than truncates.
+  expect(within(s.getByRole("table", { name: "Interested replies from People this Campaign reached" })).getAllByRole("rowheader").map((c) => c.textContent)).toEqual(["Email only", "Email and LinkedIn DM", "Email, LinkedIn DM and X DM"]);
   const meetings = s.getByRole("table", { name: "Meetings with People this Campaign reached" });
   expect(rows(meetings)).toEqual([
-    ["Channels", "People reached", "Had a meeting", "Rate"],
+    ["Channels", "Reached", "Meetings", "Rate"],
     ["Email only", "40", "1", "too few to compare"],
     ["X DM only", "20", "0", "too few to compare"],
   ]);

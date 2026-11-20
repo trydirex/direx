@@ -18,7 +18,7 @@ const CAMP = "00000000-0000-4000-8000-0000000000dd";
 const reply = (status: number, body: unknown) => Promise.resolve({ ...(status < 400 ? { data: body } : { error: body }), response: new Response(null, { status }) });
 const at = { params: { path: { workspaceId: W } } };
 const body = { schemaVersion: 1, whoFor: "Ops leads", personas: [], positioning: "The audit", channels: [], assumptions: [] };
-const strategy = (o: Record<string, unknown> = {}) => ({ id: ID, currentVersion: 1, current: body, draft: body, draftRevision: 3, missing: [], waiting: null, ...o });
+const strategy = (o: Record<string, unknown> = {}) => ({ id: ID, currentVersion: 1, current: body, draft: body, draftRevision: 3, missing: [], waiting: null, notes: [], citedReadings: [], ...o });
 
 afterEach(() => {
   cleanup();

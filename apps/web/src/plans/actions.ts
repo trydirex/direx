@@ -8,12 +8,14 @@ import { api } from "../client";
 import { statusLabel, type RunDetail } from "../agents/actions";
 import { messageForCode } from "../api/messages";
 import { ITEM_MESSAGES } from "../items/actions";
+import { dayWords } from "../seo/actions";
 
 type S = components["schemas"];
 export type Strategy = S["Strategy"];
 export type Plan = S["Plan"];
 export type PlanSummary = S["PlanSummary"];
 export type ListedPlan = S["ListedPlan"];
+export type CitedReading = S["CitedReading"];
 
 export type Basis = { kind: "fact"; factId: string; version: number } | { kind: "source"; label: string; url?: string } | { kind: "assumption" } | { kind: "reading"; readingId: string };
 export type Channel = { key: string; label: string; timing: "now" | "later"; reason: string; basis: Basis };
@@ -30,6 +32,9 @@ export type Tracking = { planned: number; done: number; skipped: number; steps: 
 const COUNTED_FROM: Record<Exclude<MeasureSource, "external">, string> = { replies: "email replies", interested_replies: "replies labelled interested", meetings: "meetings marked on People", deals: "deals marked on People" };
 /** What Direx counts a Measure from, such as "email replies"; null when a person enters its readings. */
 export const countedFrom = (source: MeasureSource | undefined) => (source && source !== "external" ? COUNTED_FROM[source] : null);
+/** The choices for where a Measure's number comes from, entered by a person first: a hand-written Measure starts there. */
+export const MEASURE_SOURCES: readonly MeasureSource[] = ["external", "replies", "interested_replies", "meetings", "deals"];
+export const sourceWords = (source: MeasureSource) => (source === "external" ? "Entered by a person" : `Counted by Direx from ${COUNTED_FROM[source]}`);
 
 export const emptyStrategy = (): StrategyBody => ({ schemaVersion: 1, whoFor: "", personas: [], positioning: "", channels: [], assumptions: [] });
 export const emptyPlan = (): PlanBody => ({ schemaVersion: 1, goal: "", audience: "", startsOn: "", endsOn: "", steps: [], measures: [], budget: [], assumptions: [] });
@@ -104,9 +109,21 @@ const WORDS: Record<string, string> = {
 /** What a draft still needs, named as the editor labels its fields (`labels`, by the path's first part), each once. */
 export const missingWords = (m: { path: string; message: string }[], labels: Partial<Record<string, string>> = {}) => [...new Set(m.map((x) => WORDS[x.message] ?? labels[x.path.split(".")[0]!] ?? x.path))].join(", ");
 
-export const basisLabel = (b: Basis, factValue?: (id: string) => string | undefined) =>
-  // ponytail: a placeholder until the views carry the cited reading's Measure, value and day.
-  b.kind === "assumption" ? "assumption" : b.kind === "reading" ? "Earlier Campaign reading" : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
+/** A cited reading in words, "Interested replies 3, counted by Direx, 12 November 2026"; null when this Workspace doesn't have it. */
+const readingWords = (c: CitedReading | undefined) => (c?.found ? `${c.measureLabel} ${c.value}, ${c.source === "system" ? "counted by Direx" : "entered by a person"}, ${dayWords(c.observedOn!)}` : null);
+const readingLabel = (c: CitedReading | undefined) => {
+  const words = readingWords(c);
+  return words ? `From an earlier Campaign: ${words}${c!.newer ? " (since changed)" : ""}` : "From a Campaign reading that isn't in this Workspace";
+};
+/** The note for a cited reading a newer one has replaced, on a plan or the Strategy. */
+export const readingChanged = (what: "plan" | "Strategy", readingId: string | undefined, cited: CitedReading[] = []) => {
+  const words = readingWords(cited.find((c) => c.id === readingId));
+  return `An earlier Campaign reading this ${what} relies on has changed.${words ? ` It said ${words}.` : ""}`;
+};
+
+/** What a reason or target rests on, in words. `cited` is the view's `citedReadings`, which names a reading basis. */
+export const basisLabel = (b: Basis, factValue?: (id: string) => string | undefined, cited: CitedReading[] = []) =>
+  b.kind === "assumption" ? "assumption" : b.kind === "reading" ? readingLabel(cited.find((c) => c.id === b.readingId.toLowerCase())) : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
 
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 const one = (workspaceId: string, id: string) => ({ path: { workspaceId, id } });

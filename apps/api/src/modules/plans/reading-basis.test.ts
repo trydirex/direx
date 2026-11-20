@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A draft may rest a target or a channel on an earlier Campaign's reading. The sinks keep that only
 // while the reading is this Workspace's, on another plan, and still the newest for its Measure.
-import { expect, test } from "vitest";
+import { citedReadings } from "./application/plans";
+import { inWorkspace } from "./adapters/repo";
+import { expect, test, vi } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { createFacts, factKinds } from "../facts/index";
 import { seedMember } from "../identity/fixtures/member";
 import { itemsWorld, person } from "../items/fixtures/items";
 import { createPlans, planKinds, planSinks, type Basis, type PlanBody, type StrategyBody } from "./index";
 import { campaignOnPlanCreated } from "../campaigns/index";
-import type { Actor } from "../ledger/index";
 import type { CampaignOverlaps } from "./application/drafting";
 
 const { W, items, who } = await itemsWorld({ kinds: { ...factKinds(), ...planKinds() } });
@@ -41,14 +42,14 @@ const planDraft = (basis: Basis = { kind: "assumption" }): PlanBody => ({
   assumptions: [],
 });
 
-async function approveStrategy(ws: string) {
+async function approveStrategy(ws: string, body = strategyDraft()) {
   const { draftRevision } = await plans.strategy(ws);
-  const { revision } = ok(await plans.saveStrategyDraft(ws, { revision: draftRevision, body: strategyDraft() }));
+  const { revision } = ok(await plans.saveStrategyDraft(ws, { revision: draftRevision, body }));
   const { item } = ok(await plans.submitStrategy(ws, { revision, actor }));
   ok(await items.approve(ws, item.id, item.revision, who));
 }
 
-async function approvedPlan(ws: string, title = "Earlier", body = planDraft()) {
+async function approvedPlan(ws: string, body = planDraft(), title = "Earlier") {
   const p = await plans.createPlan(ws, { title, request: "Book 4 meetings", createdBy: person.userId });
   const { revision } = ok(await plans.savePlanDraft(ws, p.id, { revision: 0, body }));
   const { item } = ok(await plans.submitPlan(ws, p.id, { revision, actor }));
@@ -57,8 +58,8 @@ async function approvedPlan(ws: string, title = "Earlier", body = planDraft()) {
 }
 
 /** Records a reading and returns its id, the newest row the plan has. */
-async function reading(ws: string, planId: string, value: string, observedOn: string, measureKey = "meetings", actor: Actor = { system: "reports" }) {
-  ok(await plans.recordReading(ws, planId, { measureKey, value, observedOn, actor }));
+async function reading(ws: string, planId: string, value: string, observedOn: string, o: { measureKey?: string; actor?: { userId: string } } = {}) {
+  ok(await plans.recordReading(ws, planId, { measureKey: o.measureKey ?? "meetings", value, observedOn, actor: o.actor ?? { system: "reports" } }));
   const c = await appClient();
   await c.query("select set_config('app.workspace_id', $1, false)", [ws]);
   const { rows } = await c.query("select id from plan_measure_readings where plan_id = $1 order by at desc limit 1", [planId]);
@@ -128,6 +129,129 @@ test("the Strategy sink keeps a newest reading from any plan and downgrades a st
   expect(((await plans.strategy(W)).draft as StrategyBody).channels.map((c) => c.basis)).toEqual([cite(newest), { kind: "assumption" }]);
 });
 
+// The views: what each cited reading says, and a note once a newer reading replaces one the version cites.
+const measure = (key: string, label: string, basis: Basis = { kind: "assumption" }) => ({ key, label, target: "4", basis });
+const twoMeasures = (meetings: Basis = { kind: "assumption" }, replies: Basis = { kind: "assumption" }) => ({ ...planDraft(), measures: [measure("meetings", "Meetings", meetings), measure("replies", "Replies", replies)] });
+const shown = (id: string, value: string, observedOn: string, o: { source?: "person" | "system"; newer?: boolean } = {}) =>
+  ({ id, found: true, measureLabel: "Meetings", value, source: o.source ?? "system", observedOn, newer: o.newer ?? false });
+const missing = (id: string) => ({ id, found: false, measureLabel: null, value: null, source: null, observedOn: null, newer: false });
+
+/** A plan with two Measures and one reading, and an approved plan citing that reading. */
+async function citing(ws = W) {
+  const source = await approvedPlan(ws, twoMeasures());
+  const cited = await reading(ws, source, "3", "2026-11-12");
+  return { source, cited, plan: await approvedPlan(ws, planDraft(cite(cited))) };
+}
+
+test("a plan view shows the reading it cites; a person's correction adds a note, another Measure's reading doesn't", async () => {
+  const { source, cited, plan } = await citing();
+  expect(await plans.plan(W, plan)).toMatchObject({ citedReadings: [shown(cited, "3", "2026-11-12")], notes: [] });
+  await reading(W, source, "40", "2026-11-13", { measureKey: "replies" });
+  expect(await plans.plan(W, plan)).toMatchObject({ citedReadings: [shown(cited, "3", "2026-11-12")], notes: [] });
+  await reading(W, source, "2", "2026-11-12", { actor });
+  expect(await plans.plan(W, plan)).toMatchObject({ citedReadings: [shown(cited, "3", "2026-11-12", { newer: true })], notes: [{ kind: "reading_changed", readingId: cited }] });
+});
+
+test("plan citations with different UUID casing share one reading and one change note", async () => {
+  const { source, cited, plan } = await citing();
+  const p = (await plans.plan(W, plan))!;
+  const { revision } = ok(await plans.savePlanDraft(W, plan, { revision: p.draftRevision, body: twoMeasures(cite(cited.toUpperCase()), cite(cited)) }));
+  const { item } = ok(await plans.submitPlan(W, plan, { revision, actor }));
+  ok(await items.approve(W, item.id, item.revision, who));
+  await reading(W, source, "5", "2026-11-14");
+  const view = (await plans.plan(W, plan))!;
+  expect(view.citedReadings).toEqual([shown(cited, "3", "2026-11-12", { newer: true })]);
+  expect(view.notes).toEqual([{ kind: "reading_changed", readingId: cited }]);
+});
+
+test("a new count for the cited Measure adds the note too", async () => {
+  const { source, cited, plan } = await citing();
+  await reading(W, source, "5", "2026-11-14");
+  expect((await plans.plan(W, plan))!.notes).toEqual([{ kind: "reading_changed", readingId: cited }]);
+});
+
+test("an id from another Workspace, unknown, or not an id shows as not found, with no note", async () => {
+  const W2 = crypto.randomUUID();
+  await seedMember(W2, person.userId);
+  await approveStrategy(W2);
+  const theirs = await reading(W2, await approvedPlan(W2), "9", "2026-11-12");
+  const unknown = crypto.randomUUID();
+  const plan = await approvedPlan(W, twoMeasures(cite(theirs), cite(unknown)));
+  const { draftRevision } = (await plans.plan(W, plan))!;
+  ok(await plans.savePlanDraft(W, plan, { revision: draftRevision, body: { measures: [{ basis: cite("typed-by-hand") }, null] } }));
+  expect(await plans.plan(W, plan)).toMatchObject({ citedReadings: [missing(theirs), missing(unknown), missing("typed-by-hand")], notes: [] });
+});
+
+test("a reading only the draft cites is shown but never noted", async () => {
+  const { source, cited, plan } = await citing();
+  const older = await reading(W, source, "1", "2026-11-05");
+  const { draftRevision } = (await plans.plan(W, plan))!;
+  ok(await plans.savePlanDraft(W, plan, { revision: draftRevision, body: twoMeasures(cite(older), cite(cited)) }));
+  expect(await plans.plan(W, plan)).toMatchObject({ citedReadings: [shown(cited, "3", "2026-11-12"), shown(older, "1", "2026-11-05", { newer: true })], notes: [] });
+});
+
+test("the Strategy view shows its cited readings and notes one a newer reading replaced", async () => {
+  const W3 = crypto.randomUUID();
+  await seedMember(W3, person.userId);
+  expect(await plans.strategy(W3)).toMatchObject({ notes: [], citedReadings: [] });
+  await approveStrategy(W3);
+  const { source, cited } = await citing(W3);
+  const channel = (basis: Basis) => ({ key: "email", label: "Cold email", timing: "now" as const, reason: "Replies came from it", basis });
+  await approveStrategy(W3, strategyDraft([channel(cite(cited.toUpperCase()))]));
+  expect(await plans.strategy(W3)).toMatchObject({ citedReadings: [shown(cited, "3", "2026-11-12")], notes: [] });
+  const correction = await reading(W3, source, "2", "2026-11-12", { actor });
+  const s = await plans.strategy(W3);
+  ok(await plans.saveStrategyDraft(W3, { revision: s.draftRevision, body: strategyDraft([channel(cite(correction))]) }));
+  expect(await plans.strategy(W3)).toMatchObject({
+    citedReadings: [shown(cited, "3", "2026-11-12", { newer: true }), shown(correction, "2", "2026-11-12", { source: "person" })],
+    notes: [{ kind: "reading_changed", readingId: cited }],
+  });
+});
+
+
+test("a thousand draft citations use one query, preserving order and deduplicating", async () => {
+  const { cited } = await citing();
+  const ids = [cited.toUpperCase(), ...Array.from({ length: 1000 }, () => crypto.randomUUID()), cited];
+  await inWorkspace(W, async (tx) => {
+    const spy = vi.spyOn(tx, "select");
+    try {
+      const result = await citedReadings(tx, [...ids, cited, "Legacy-A", "legacy-a", "Legacy-A"]);
+      expect(result).toEqual([shown(cited, "3", "2026-11-12"), ...ids.slice(1, -1).map(missing), missing("Legacy-A"), missing("legacy-a")]);
+      // One outer SELECT and its NOT EXISTS subquery, independent of citation count.
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+test("empty and invalid citations need no reading query", async () => {
+  expect(await inWorkspace(W, (tx) => citedReadings(tx, []))).toEqual([]);
+  await inWorkspace(W, async (tx) => {
+    const spy = vi.spyOn(tx, "select");
+    try {
+      expect(await citedReadings(tx, ["Legacy-A", "legacy-a", "Legacy-A"])).toEqual([missing("Legacy-A"), missing("legacy-a")]);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+test("cited labels follow the approved plan and fall back to the key if removed", async () => {
+  const { source, cited } = await citing();
+  const replace = async (body: PlanBody) => {
+    const p = (await plans.plan(W, source))!;
+    const { revision } = ok(await plans.savePlanDraft(W, source, { revision: p.draftRevision, body }));
+    const { item } = ok(await plans.submitPlan(W, source, { revision, actor }));
+    ok(await items.approve(W, item.id, item.revision, who));
+  };
+  await replace({ ...planDraft(), measures: [measure("meetings", "New label")] });
+  expect(await inWorkspace(W, (tx) => citedReadings(tx, [cited]))).toEqual([{ ...shown(cited, "3", "2026-11-12"), measureLabel: "New label" }]);
+  await replace({ ...planDraft(), measures: [measure("replies", "Replies")] });
+  expect(await inWorkspace(W, (tx) => citedReadings(tx, [cited]))).toEqual([{ ...shown(cited, "3", "2026-11-12"), measureLabel: "meetings" }]);
+});
+
 // The brief's port, as the composition root wires it from campaigns: overlaps set here per plan, and what it was asked.
 const overlapsFor = new Map<string, CampaignOverlaps>();
 const asked: string[][] = [];
@@ -158,11 +282,11 @@ test("with no readings yet, both drafters' brief says there are no earlier resul
 
 test("the brief lists the 3 plans read most recently, each Measure's newest reading, and marks too-few rows", async () => {
   const ws = await freshWorkspace();
-  const twoMeasures = { ...planDraft(), measures: [...planDraft().measures, { key: "revenue", label: "Revenue", target: "£2,000", basis: { kind: "assumption" as const }, source: "external" as const }] };
-  const spring = await approvedPlan(ws, "Spring", twoMeasures);
-  const left = await approvedPlan(ws, "Left out");
-  const summer = await approvedPlan(ws, "Summer");
-  const autumn = await approvedPlan(ws, "Autumn");
+  const withRevenue = { ...planDraft(), measures: [...planDraft().measures, { key: "revenue", label: "Revenue", target: "£2,000", basis: { kind: "assumption" as const }, source: "external" as const }] };
+  const spring = await approvedPlan(ws, withRevenue, "Spring");
+  const left = await approvedPlan(ws, planDraft(), "Left out");
+  const summer = await approvedPlan(ws, planDraft(), "Summer");
+  const autumn = await approvedPlan(ws, planDraft(), "Autumn");
   await reading(ws, spring, "2", "2026-10-01");
   await reading(ws, left, "1", "2026-10-02");
   const summerId = await reading(ws, summer, "5", "2026-10-03");
@@ -170,7 +294,7 @@ test("the brief lists the 3 plans read most recently, each Measure's newest read
   const meetingsId = await reading(ws, spring, "3", "2026-10-12");
   // An earlier day typed later is not the newest; a person's reading is.
   await reading(ws, spring, "1", "2026-10-05");
-  const revenueId = await reading(ws, spring, "£400", "2026-10-10", "revenue", { userId: person.userId });
+  const revenueId = await reading(ws, spring, "£400", "2026-10-10", { measureKey: "revenue", actor: { userId: person.userId } });
   overlapsFor.set(spring, {
     kinds: [
       { kind: "interested", rows: [{ channels: ["email"], reached: 40, outcomes: 3, rate: null }, { channels: ["email", "linkedin_dm"], reached: 12, outcomes: 2, rate: null }] },

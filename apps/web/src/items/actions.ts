@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Item calls the pages make, and the rules for showing them. Each change returns the
 // API's error code, or null when it worked.
-import { queryOptions, useQueries } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions, useQueries } from "@tanstack/react-query";
 import type { components } from "../api/schema";
 import { call, inWorkspace } from "../api/query";
 import { api } from "../client";
+import { ACTION_LABEL, KIND_LABEL } from "./type-labels";
+export { TYPES } from "./type-labels";
 
 type S = components["schemas"];
 export type Item = S["Item"];
@@ -21,31 +23,6 @@ export const STATE_LABEL: Record<ItemState, string> = {
   blocked: "Blocked",
   cancelled: "Cancelled",
 };
-
-const KIND_LABEL: Record<string, string> = {
-  company_review: "Company review",
-  brief: "SEO Brief",
-  fact_proposal: "Brand suggestion",
-  fact_conflict: "Brand conflict",
-  lesson_proposal: "Lesson",
-  lesson_fact: "Lesson",
-  plan_version: "Plan",
-  strategy_version: "Strategy",
-  plan_change: "Plan change",
-  next_step: "Next step",
-  campaign_conflict: "Campaign conflict",
-  // Notices and choices about a running Campaign, not drafts to approve.
-  campaign_waiting: "Campaign",
-  campaign_launch_moved: "Campaign",
-  campaign_stall: "Campaign",
-  campaign_plan_unfinished: "Campaign",
-  standing_rule_offer: "Standing rule",
-  newsletter_skipped: "Newsletter",
-  opt_out_review: "Opt-out",
-  reply: "Reply",
-  manual_post: "Post",
-};
-const ACTION_LABEL: Record<string, string> = { outreach: "Email", newsletter: "Newsletter", social: "Post" };
 
 /** Whether approving the Item sends or posts something (an email, post, issue or DM); everything else on Home is a decision. */
 export const toApprove = (i: Pick<Item, "kind">) => i.kind === "action";
@@ -97,6 +74,12 @@ export const message = (code: string) => ITEM_MESSAGES[code] ?? "That didn't go 
 
 export const mayApprove = (role: Role) => role === "owner" || role === "admin" || role === "marketer";
 export const mayEdit = (role: Role) => role !== "viewer";
+
+/** Kinds that close only with their own answer; the server refuses to dismiss them (`choice_required`). */
+const OWN_ANSWER = ["opt_out_review", "reply", "company_review", "plan_change"];
+/** Whether "Don't send" or "Dismiss" can withdraw it: still open, its outcome known, and not a kind that needs its own answer. */
+export const mayWithdraw = (i: Pick<Item, "state" | "kind" | "reasonCode">) =>
+  (i.state === "draft" || i.state === "needs_approval" || i.state === "scheduled" || i.state === "held") && i.reasonCode !== "outcome_unknown" && !OWN_ANSWER.includes(i.kind);
 
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 const one = (workspaceId: string, id: string) => ({ path: { workspaceId, id } });
@@ -187,6 +170,18 @@ export const rangeQuery = (workspaceId: string, start: Date, days: number) =>
       ]);
       return { ...read, launching: launches.launches };
     },
+  });
+
+/** Everything's filters as the list API takes them: comma lists for state, channel and type. */
+export type ListFilters = { state?: string | undefined; channel?: string | undefined; type?: string | undefined; campaign?: string | undefined; q?: string | undefined };
+
+/** Every Item these filters match, newest first, 100 a page; each next page starts after the last row. */
+export const everythingQuery = (workspaceId: string, f: ListFilters) =>
+  infiniteQueryOptions({
+    queryKey: inWorkspace(workspaceId, "items", "everything", f),
+    queryFn: ({ pageParam }) => call(api.GET("/api/w/{workspaceId}/items", { params: { ...at(workspaceId), query: { ...f, limit: 100, ...(pageParam && { cursor: pageParam }) } } })),
+    initialPageParam: "",
+    getNextPageParam: (page) => page.nextCursor,
   });
 
 /** Steps a running Campaign's plan dates in `days` days from `start` that nothing has been drafted for yet. */

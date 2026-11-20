@@ -7,7 +7,7 @@ import { Link } from "@tanstack/react-router";
 import { Button } from "@/components/Button";
 import { Textarea } from "@/components/Input";
 import { Field, Notice } from "../components/layout";
-import { approve, message, type Item } from "../items/actions";
+import { approve, itemQuery, message, type Item } from "../items/actions";
 import { dayWords, say, writeAgain, writeUpQuery, type Loaded, type WriteUp as Data } from "./actions";
 
 /** Why Direx couldn't write it up, from the coded failure. */
@@ -41,11 +41,21 @@ export function WriteUp(p: { workspaceId: string; campaign: Pick<Loaded, "id" | 
 
   async function again() {
     setPending(true);
-    const failed = await writeAgain(p.workspaceId, p.campaign.id);
-    setPending(false);
-    // Already being written, by someone else's click or the morning's run: show that, quietly.
-    setError(failed && failed !== "writing" ? (WRITE_UP_MESSAGES[failed] ?? say(failed)) : undefined);
-    await client.invalidateQueries({ queryKey: query.queryKey });
+    setError(undefined);
+    try {
+      const failed = await writeAgain(p.workspaceId, p.campaign.id);
+      // Already being written, by someone else's click or the morning's run: show that, quietly.
+      if (failed && failed !== "writing") setError(WRITE_UP_MESSAGES[failed] ?? say(failed));
+    } catch {
+      setError("Couldn't confirm that writing started. Try again if it's still available.");
+    } finally {
+      // The server may have started writing before the response was lost.
+      try {
+        await client.invalidateQueries({ queryKey: query.queryKey });
+      } finally {
+        setPending(false);
+      }
+    }
   }
   const offerAgain = p.edit && (w?.status === "failed" || (w?.status === "written" && w.corrected));
   const open = w?.suggestions.some((s) => !s.outcome) && w.itemId;
@@ -115,6 +125,7 @@ const MAX_TEXT = 400;
  * that can't approve.
  */
 export function AssumptionsChoice(p: { workspaceId: string; item: Pick<Item, "id" | "revision" | "state">; suggestions: Suggestion[]; approve: boolean; onDone: () => void }) {
+  const client = useQueryClient();
   const [ticked, setTicked] = useState(() => p.suggestions.map(() => true));
   const [texts, setTexts] = useState(() => p.suggestions.map((s) => s.assumption));
   const [pending, setPending] = useState(false);
@@ -127,10 +138,17 @@ export function AssumptionsChoice(p: { workspaceId: string; item: Pick<Item, "id
     // Each ticked one by its place, with its text only when the person changed it.
     const add = ticked.flatMap((on, index) => (on ? [texts[index]!.trim() === p.suggestions[index]!.assumption ? { index } : { index, text: texts[index]!.trim() }] : []));
     setPending(true);
-    const failed = await approve(p.workspaceId, p.item, JSON.stringify({ add }));
-    setPending(false);
-    setError(failed ? (failed === "choice_required" ? "Tick at least one suggestion." : message(failed)) : undefined);
-    if (!failed) p.onDone();
+    setError(undefined);
+    try {
+      const failed = await approve(p.workspaceId, p.item, JSON.stringify({ add }));
+      if (failed) setError(failed === "choice_required" ? "Tick at least one suggestion." : message(failed));
+      else p.onDone();
+    } catch {
+      setError("Couldn't confirm that the suggestions were added. Try again if they're still open.");
+      await client.invalidateQueries({ queryKey: itemQuery(p.workspaceId, p.item.id).queryKey });
+    } finally {
+      setPending(false);
+    }
   }
 
   if (!deciding)

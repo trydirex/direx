@@ -139,8 +139,9 @@ const approveRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/items/{id}/approve",
   // `openedAt` is when the review page opened the Item; sent, the decision counts toward the person's own review rates.
-  // `praise` is "This one's great", kept with the decision. `choice` fits three edited 400-character assumptions as JSON.
-  request: { params: one, ...body(z.strictObject({ revision: z.number().int().positive(), choice: z.string().max(2000).optional(), openedAt: z.iso.datetime().optional(), praise: z.boolean().optional() })) },
+  // `praise` is "This one's great", kept with the decision.
+  // Three 400-character edits can each use six JSON characters per code unit, plus 75 for the envelope.
+  request: { params: one, ...body(z.strictObject({ revision: z.number().int().positive(), choice: z.string().max(7275).optional(), openedAt: z.iso.datetime().optional(), praise: z.boolean().optional() })) },
   responses: { 200: json(One, "Approved"), ...errors },
 });
 const approveCleanRoute = createRoute({

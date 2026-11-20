@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The write-up card in each of its states, Write it again for those who may edit, and the suggestions
 // Item's body: all ticked to begin with, edits sent as the choice, and its refusals in words.
+import { QueryClient } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
@@ -9,7 +10,7 @@ import { withQueries } from "../testing";
 import type { WriteUp as Data } from "./actions";
 import { AssumptionsChoice, failureWords, WriteUp } from "./WriteUp";
 import { ItemPanel } from "../items/ItemPanel";
-import type { Item } from "../items/actions";
+import { itemQuery, type Item } from "../items/actions";
 
 const W = "00000000-0000-4000-8000-0000000000aa";
 const ID = "00000000-0000-4000-8000-0000000000bb";
@@ -105,6 +106,20 @@ test("a corrected number says so; Write it again calls the API and shows it bein
   expect(card.queryByRole("alert")).toBeNull();
 });
 
+test("a lost write-again response says to retry, refreshes, and lets the editor retry", async () => {
+  const { card, post } = await show({ ...written, status: "failed" });
+  post.mockRejectedValueOnce(new TypeError("Network error"));
+  const again = card.getByRole("button", { name: "Write it again" });
+  await userEvent.click(again);
+  expect((await card.findByRole("alert")).textContent).toContain("Try again");
+  expect(api.GET).toHaveBeenCalledTimes(2);
+
+  serve({ ...written, status: "writing" });
+  await userEvent.click(again);
+  expect((await card.findByRole("status")).textContent).toBe("Writing the write-up…");
+  expect(card.queryByRole("alert")).toBeNull();
+});
+
 test("a Viewer sees no Write it again", async () => {
   const { card } = await show({ ...written, corrected: true }, { edit: false });
   expect(card.getByText("A number here was corrected after this was written.")).toBeTruthy();
@@ -146,6 +161,22 @@ test("the Item ticks every suggestion to begin with, and approving sends each by
   await userEvent.click(screen.getByRole("button", { name: "Add 2 to the Strategy" }));
   expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/items/{id}/approve", { params: { path: { workspaceId: W, id: ITEM } }, body: { revision: 3, choice: JSON.stringify({ add: [{ index: 0 }, { index: 1 }] }) } });
   expect(done).toHaveBeenCalled();
+});
+
+test("a lost approval response refreshes the Item and lets the reviewer retry", async () => {
+  const refresh = vi.spyOn(QueryClient.prototype, "invalidateQueries");
+  const { post, done } = choose();
+  post.mockRejectedValueOnce(new TypeError("Network error"));
+  const add = screen.getByRole("button", { name: "Add 2 to the Strategy" });
+  await userEvent.click(add);
+  expect((await screen.findByRole("alert")).textContent).toContain("Try again");
+  expect(refresh).toHaveBeenCalledWith({ queryKey: itemQuery(W, ITEM).queryKey });
+  expect(done).not.toHaveBeenCalled();
+
+  await userEvent.click(add);
+  expect(post).toHaveBeenCalledTimes(2);
+  expect(done).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 test("unticking one and editing the other sends only the ticked one, with its new text", async () => {

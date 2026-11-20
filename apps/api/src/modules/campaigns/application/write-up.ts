@@ -32,8 +32,8 @@ export type WriteUpView = {
 };
 type Overlaps = (workspaceId: string, campaignId: string) => Promise<{ kinds: { kind: string; rows: OverlapRow[] }[] } | undefined>;
 
-/** A step with no email, post or DM in any state: a manual step, or one where nothing went out. */
-export const NOTHING_RECORDED = "no emails, posts or DMs recorded by Direx";
+/** No states were counted from the step's Items; sent DMs can be recorded separately. */
+export const NOTHING_RECORDED = "no recorded item states for this step";
 
 // The plans drafter's heading for overlap rows. The writer read "80 reached, 4 with the outcome" the wrong
 // way round under it (real eval, 2026-11-20), so the write-up says plainly which number is part of which.

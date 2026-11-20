@@ -65,11 +65,15 @@ export const creditPhrase = (text: string): string | null => text.match(CREDIT)?
 // A winner needs a comparison; "too few to compare" gives none.
 const WINNER = /\b(better|best|worse|worst|outperform\w*|beat|beats|won|winner|wins|(?:more|most|less|least)\s+(?:effective|successful)|stronger|strongest|weaker|weakest|works? best)\b/i;
 // "no channel is judged better" says the opposite of a winner (real eval, 2026-11-20): a negation in
-// the few words before the winner word cancels it.
+// the few words before the winner word cancels it only within the same clause.
 const NEGATED = /\b(no|not|never|neither|nor|none|cannot|can't|isn't|aren't|wasn't|weren't|without)\b(?:\W+\w+){0,4}\W*$/i;
+const CLAUSE_BOUNDARY = /[.!?;,:…—–\r\n]|\b(?:but|whereas)\b/i;
 export function claimsWinner(text: string, comparable: boolean): boolean {
   if (comparable) return false;
-  for (const m of text.matchAll(new RegExp(WINNER.source, "gi"))) if (!NEGATED.test(text.slice(0, m.index))) return true;
+  for (const m of text.matchAll(new RegExp(WINNER.source, "gi"))) {
+    const clause = text.slice(0, m.index).split(CLAUSE_BOUNDARY).at(-1)!;
+    if (!NEGATED.test(clause)) return true;
+  }
   return false;
 }
 

@@ -64,9 +64,17 @@ test("creditPhrase and claimsWinner catch credit and a winner without a comparis
   // A negated winner word is no claim, but a later, plain one still is.
   expect(claimsWinner("These groups are too few to compare, so no channel is judged better than another.", false)).toBe(false);
   expect(claimsWinner("We can't say email did better.", false)).toBe(false);
+  expect(claimsWinner("Email is not yet best.", false)).toBe(false);
   expect(claimsWinner("No rates are given. Email still did better.", false)).toBe(true);
   expect(claimsWinner("Not much changed, and LinkedIn DM worked best.", false)).toBe(true);
 });
+
+test.each(["No rates. Email was best.", "No rates; email was best.", "No rates, email was best.", "No rates but email was best."])(
+  "writeUpProblem refuses a winner after a separate negation: %j",
+  (paragraph) => {
+    expect(writeUpProblem({ ...ok, paragraph }, brief)).toBe("winner_without_comparison");
+  },
+);
 
 const brief: Brief = {
   text: "reading r1: Replies 12, counted by Direx, 2026-11-20\nemail: 40 reached, 3 with the outcome, too few to compare",

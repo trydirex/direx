@@ -124,11 +124,11 @@ const CASES: Case[] = [
     title: "Logistics ops, Q4 push",
     goal: "8 meetings with warehouse ops managers",
     from: "2026-10-12",
-    to: "2026-10-13",
+    to: "2026-10-23",
     steps: ["- First email (email, 2026-10-12): 250 sent, 6 blocked", "- LinkedIn DM (linkedin DM, 2026-10-15): 50 sent", "- Follow-up email (email, 2026-10-22): 238 sent"],
     readings: [
-      { id: "9d4b2f6e-0a83-4e1c-b7d5-3f8a6c2e1b90", label: "Meetings", value: "7", source: "system", observedOn: "2026-10-14" },
-      { id: "1e6c8a3d-f5b2-4790-a4e1-8b3d0f9c7a25", label: "Interested replies", value: "26", source: "system", observedOn: "2026-10-14" },
+      { id: "9d4b2f6e-0a83-4e1c-b7d5-3f8a6c2e1b90", label: "Meetings", value: "7", source: "system", observedOn: "2026-10-24" },
+      { id: "1e6c8a3d-f5b2-4790-a4e1-8b3d0f9c7a25", label: "Interested replies", value: "26", source: "system", observedOn: "2026-10-24" },
     ],
     kinds: [
       {

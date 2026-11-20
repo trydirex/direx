@@ -8,6 +8,8 @@ import { withUser } from "@direx/db/user";
 import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Role } from "../domain/roles";
 
+export { WorkspacePurging };
+
 export type MyWorkspace = { id: string; name: string; role: Role; organization: { id: string; name: string } };
 
 /** Creates an Organization, its first Workspace and the Owner in one transaction. */

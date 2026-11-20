@@ -25,8 +25,16 @@ export { adminSteppedUp, requireServerAdmin, type ServerAdminEnv } from "./serve
 export const adminEmails = async (workspaceId: string): Promise<string[]> =>
   (await listMembers(workspaceId)).filter((m) => can(m.role, "workspace.settings")).map((m) => m.email);
 
-/** The Workspace's name for a notice, or null when it has none or can't be read. */
-export const workspaceName = (workspaceId: string): Promise<string | null> => repo.inWorkspace(workspaceId, repo.workspaceName);
+/** The Workspace's name for a notice, or null when it has none or the lookup fails. */
+export async function workspaceName(workspaceId: string): Promise<string | null> {
+  try {
+    return await repo.inWorkspace(workspaceId, repo.workspaceName);
+  } catch (error) {
+    // Once the purge starts, the notice must stop too.
+    if (error instanceof repo.WorkspacePurging) throw error;
+    return null;
+  }
+}
 
 /**
  * Names the Workspace in a notice, so an Admin of several Workspaces can tell which one it is about.

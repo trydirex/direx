@@ -14,10 +14,9 @@ import { EmptyState, Notice, Page } from "../components/layout";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { campaignsQuery } from "../campaigns/actions";
 import { networksQuery } from "../social/actions";
-import { approveClean, BULK, cancel, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, mayWithdraw, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
+import { approveClean, BULK, cancel, everythingQuery, ITEM_MESSAGES, mayApprove, mayEdit, mayWithdraw, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
 import type { ItemDialog } from "./ItemPanel";
 import { ApproveList, approvedToast, QueueRow } from "./QueueRow";
-import { StateChip } from "./StateChip";
 
 const ALL = "";
 const STATES = (Object.entries(STATE_LABEL) as [ItemState, string][]).map(([value, label]) => ({ value, label }));
@@ -172,32 +171,6 @@ export function Everything(p: {
         </div>
       </Dialog>
       {refused && <Notice tone="error">{refused}</Notice>}
-      {(approver || editor) && items.length > 0 && (
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex min-h-8 items-center gap-2 text-sm">
-            <input type="checkbox" className="size-4 accent-primary" checked={allShown} onChange={(e) => setChosen(e.target.checked ? firstShown : [])} />
-            Select all shown
-          </label>
-          {ticked.length > 0 && (
-            <>
-              <span aria-live="polite" className="text-sm text-muted-foreground">{`${ticked.length} selected`}</span>
-              {approvable.length > 0 && (
-                <Button size="sm" onClick={() => setConfirming("approve")}>
-                  {`Approve ${approvable.length}`}
-                </Button>
-              )}
-              {withdrawable.length > 0 && (
-                <Button size="sm" variant="outline" onClick={() => setConfirming("withdraw")}>
-                  {`Withdraw ${withdrawable.length}`}
-                </Button>
-              )}
-              <Button size="sm" variant="ghost" onClick={() => setChosen([])}>
-                Clear selection
-              </Button>
-            </>
-          )}
-        </div>
-      )}
       <QueryBoundary query={query} messages={ITEM_MESSAGES}>
         {() => {
           if (items.length === 0)
@@ -208,28 +181,69 @@ export function Everything(p: {
             );
           return (
             <>
-              <ul aria-label="Everything" className="flex flex-col divide-y divide-border rounded-card border border-border bg-card">
-                {items.map((i) => (
-                  <li key={i.id} className="flex items-start">
-                    {(approver || editor) && (
-                      <input
-                        type="checkbox"
-                        className="mt-4 ml-4 size-4 shrink-0 accent-primary"
-                        aria-label={`Select ${i.title}`}
-                        checked={chosen.includes(i.id)}
-                        disabled={!chosen.includes(i.id) && chosen.length >= BULK}
-                        onChange={(e) => tick(i.id, e.target.checked)}
-                      />
-                    )}
-                    <button type="button" className="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-1 border-0 bg-transparent px-4 py-3 text-left hover:bg-accent" aria-current={i.id === p.item || undefined} onClick={() => p.onItem(i.id)}>
-                      <QueueRow item={i} workspaceId={p.workspaceId} />
-                      {/* QueueRow leaves Needs approval out, since its queue holds nothing else; here every state shows. */}
-                      {i.state === "needs_approval" && <span><StateChip state={i.state} /></span>}
-                      {!i.at && <span className="text-xs text-muted-foreground tabular-nums">{`Made ${listTime(new Date(i.createdAt))}`}</span>}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="rounded-card border border-border bg-card">
+                {/* Stays at the top while the list scrolls, so the bulk actions are always in reach. */}
+                <div className="sticky top-0 z-10 flex min-h-12 flex-wrap items-center gap-x-4 gap-y-2 rounded-t-card border-b border-border bg-card px-4 py-2">
+                  {(approver || editor) && (
+                    <label className="flex min-h-8 cursor-pointer items-center gap-3 text-sm font-medium">
+                      <input type="checkbox" className="size-4 accent-primary" checked={allShown} onChange={(e) => setChosen(e.target.checked ? firstShown : [])} />
+                      Select all shown
+                    </label>
+                  )}
+                  <span aria-live="polite" className="text-sm text-muted-foreground tabular-nums">
+                    {ticked.length > 0 ? `${ticked.length} selected` : `${items.length}${query.hasNextPage ? "+" : ""} shown`}
+                  </span>
+                  {ticked.length > 0 && (
+                    <span className="ml-auto flex flex-wrap gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => setChosen([])}>
+                        Clear selection
+                      </Button>
+                      {withdrawable.length > 0 && (
+                        <Button size="sm" variant="outline" onClick={() => setConfirming("withdraw")}>
+                          {`Withdraw ${withdrawable.length}`}
+                        </Button>
+                      )}
+                      {approvable.length > 0 && (
+                        <Button size="sm" onClick={() => setConfirming("approve")}>
+                          {`Approve ${approvable.length}`}
+                        </Button>
+                      )}
+                    </span>
+                  )}
+                </div>
+                <ul aria-label="Everything" className="flex flex-col divide-y divide-border">
+                  {items.map((i) => {
+                    const on = chosen.includes(i.id);
+                    const open = i.id === p.item;
+                    return (
+                      // The open or ticked row takes the clay tint; any other row warms to linen under the pointer.
+                      <li key={i.id} className={`flex items-stretch transition-colors duration-150 last:rounded-b-card ${open || on ? "bg-primary-tint" : "hover:bg-accent"}`}>
+                        {(approver || editor) && (
+                          // The whole left strip ticks the row, so the target is the row's height, not the 16px box.
+                          <label className="flex shrink-0 cursor-pointer items-start pt-3.5 pr-1 pl-4">
+                            <input
+                              type="checkbox"
+                              className="size-4 accent-primary"
+                              aria-label={`Select ${i.title}`}
+                              checked={on}
+                              disabled={!on && chosen.length >= BULK}
+                              onChange={(e) => tick(i.id, e.target.checked)}
+                            />
+                          </label>
+                        )}
+                        <button
+                          type="button"
+                          className="flex min-h-0 min-w-0 flex-1 cursor-pointer rounded-none border-0 bg-transparent px-4 py-3 text-left font-normal focus-visible:-outline-offset-2"
+                          aria-current={open || undefined}
+                          onClick={() => p.onItem(i.id)}
+                        >
+                          <QueueRow item={i} workspaceId={p.workspaceId} wide />
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
               {query.hasNextPage && (
                 <Button variant="outline" className="self-start" pending={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()}>
                   Show more

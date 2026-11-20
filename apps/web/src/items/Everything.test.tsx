@@ -89,12 +89,15 @@ test("every state shows with its name, a Held one with its reason, and Show more
   // With no time to go out, a row says when it was made.
   expect(within(list).getAllByText(/^Made /)).toHaveLength(2);
   expect(asked[0]).toEqual({ limit: 100 });
+  // The bar above the list counts the rows, with a "+" while another page waits.
+  expect(screen.getByText("2+ shown")).toBeTruthy();
 
   await userEvent.click(screen.getByRole("button", { name: "Show more" }));
   expect(await within(list).findByText("Old post")).toBeTruthy();
   expect(within(list).getAllByRole("listitem")).toHaveLength(3);
   expect(asked[1]).toEqual({ limit: 100, cursor: "next-1" });
   expect(screen.queryByRole("button", { name: "Show more" })).toBeNull();
+  expect(screen.getByText("3 shown")).toBeTruthy();
 });
 
 test("a row opens its Item beside the list, and closing it clears the open Item", async () => {

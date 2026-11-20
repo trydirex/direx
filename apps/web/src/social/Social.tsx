@@ -513,6 +513,13 @@ function AccountCard({
         {canDoWords(a.canDo)} Today: {h.used.posts} of {h.budget.posts} posts, {h.used.links} of {h.budget.links} links.
         {a.warning && <strong className="text-foreground"> Reconnect by {dayWords(a.warning.endsAt.slice(0, 10))}.</strong>}
       </p>
+      {a.ownAppLimits.length > 0 && (
+        <ul className="text-sm text-muted-foreground">
+          {a.ownAppLimits.map((l) => (
+            <li key={l}>{l}</li>
+          ))}
+        </ul>
+      )}
       <HealthLine name={a.name} h={h} act={health}>
         {(mine || manage) && a.establishable && (
           <Button

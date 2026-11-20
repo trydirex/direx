@@ -43,6 +43,8 @@ export type SocialNetworkInfo = {
   /** The network allows several accounts only for different purposes, so each one after the first states its own. */
   angleForEachAccount?: boolean;
   fields?: readonly { name: string; label: string; optional?: boolean }[];
+  /** Sentences shown under "can do" while the Workspace's own app is in use. */
+  ownAppLimits?: readonly string[];
   /** How a self-hoster registers their own app. */
   wizard?: { consoleUrl: string; scopes: readonly string[]; steps: readonly string[] };
 };
@@ -51,6 +53,9 @@ const awaiting = { cloud: "awaiting_approval", self_host: "awaiting_approval" } 
 const feature = (key: NetworkFeature["key"], scopes: readonly string[] = [], over: Partial<NetworkFeature> = {}): NetworkFeature => ({ key, built: false, scopes, ...over });
 
 const BUILT = { built: true };
+
+// Meta's apps in development mode let only people with a role on the app sign in.
+const META_OWN_APP_LIMITS = ["While your app is in development mode, only accounts with a role on the app can connect."];
 
 const unbuilt = (connection: string, label: string, ...accountTypes: string[]): SocialNetworkInfo => ({
   connection,
@@ -124,6 +129,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   {
     ...unbuilt("facebook", "Facebook", "page"),
     availability: awaiting,
+    ownAppLimits: META_OWN_APP_LIMITS,
     tokenEnds: true,
     features: [feature("publish", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("links", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("follow_ups", ["pages_manage_engagement"], BUILT), feature("video", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("image", ["pages_manage_posts", "pages_read_engagement"]), feature("analytics", ["read_insights"]), feature("comments", ["pages_read_engagement", "pages_read_user_content", "pages_manage_engagement"])],
     wizard: {
@@ -136,6 +142,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     ...unbuilt("instagram", "Instagram", "professional"),
     postLimit: 2200,
     availability: awaiting,
+    ownAppLimits: META_OWN_APP_LIMITS,
     features: [feature("publish", ["instagram_business_content_publish"]), feature("links", ["instagram_business_content_publish"]), feature("analytics", ["instagram_business_manage_insights"]), feature("comments", ["instagram_business_manage_comments"])],
     wizard: {
       consoleUrl: "https://developers.facebook.com/apps",
@@ -152,6 +159,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     ...unbuilt("threads", "Threads", "profile"),
     postLimit: 500,
     availability: awaiting,
+    ownAppLimits: META_OWN_APP_LIMITS,
     features: [feature("publish", ["threads_content_publish"], BUILT), feature("links", ["threads_content_publish"], BUILT), feature("follow_ups", ["threads_manage_replies"], BUILT), feature("video", ["threads_content_publish"], { ...BUILT, needsPublicUrl: true }), feature("image", ["threads_content_publish"], { needsPublicUrl: true }), feature("analytics", ["threads_manage_insights"]), feature("comments", ["threads_read_replies", "threads_manage_replies"])],
     wizard: {
       consoleUrl: "https://developers.facebook.com/apps",

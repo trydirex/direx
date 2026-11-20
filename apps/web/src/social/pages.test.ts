@@ -26,6 +26,7 @@ const account: Account = {
   lastCheckedAt: null,
   warning: { level: "soon", endsAt: "2030-01-01T00:00:00.000Z" },
   canDo: [{ feature: "publish", status: "available" }, { feature: "links", status: "needs_own_app" }, { feature: "analytics", status: "reconnect" }, { feature: "comments", status: "coming" }],
+  ownAppLimits: [],
   health: { budget: { posts: 2, replies: 4, links: 1 }, used: { posts: 1, links: 0 }, paused: null },
   runBy: null,
   angle: null,

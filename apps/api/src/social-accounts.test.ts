@@ -71,7 +71,7 @@ function setup(o: { deployment?: "cloud" | "self_host"; systemApp?: boolean; net
 }
 const body = async <T>(r: Response) => (await r.json()) as T;
 type Target = { id: string; added: boolean };
-type Account = { name: string; status: string; warning: { level: string } | null; canDo: { feature: string; status: string }[]; lastCheckedAt: string | null };
+type Account = { name: string; status: string; warning: { level: string } | null; canDo: { feature: string; status: string }[]; ownAppLimits: string[]; lastCheckedAt: string | null };
 
 test("a login with three Pages offers all three, and only the picked ones become accounts", async () => {
   const s = setup();
@@ -128,6 +128,17 @@ test("can do: built and granted, needs own app, needs a reconnect, coming", asyn
   expect(await read()).toEqual([["publish", "available"], ["links", "needs_own_app"], ["analytics", "reconnect"], ["comments", "coming"]]);
   await s.vault.create({ workspaceId: ws, actorUserId: owner.userId, scope: "workspace", kind: "basic", key: "oauth_app:testnet", name: "Ours", meta: { username: "own" }, value: { password: "own-secret" } });
   expect((await read())[1]).toEqual(["links", "available"]);
+});
+
+test("the own app's limits show only while the Workspace's own app is in use", async () => {
+  const s = setup({ networks: [{ ...info, ownAppLimits: ["Only testers can connect."] }] });
+  const { ws, owner } = await s.workspace();
+  const c = await s.connect(ws, owner.userId);
+  await s.call(`/api/w/${ws}/social/credentials/${c.id}/targets`, owner.cookie, { method: "POST", body: { ids: ["p1"] } });
+  const read = async () => (await body<{ accounts: Account[] }>(await s.call(`/api/w/${ws}/social/accounts`, owner.cookie))).accounts[0]!.ownAppLimits;
+  expect(await read()).toEqual([]);
+  await s.vault.create({ workspaceId: ws, actorUserId: owner.userId, scope: "workspace", kind: "basic", key: "oauth_app:testnet", name: "Ours", meta: { username: "own" }, value: { password: "own-secret" } });
+  expect(await read()).toEqual(["Only testers can connect."]);
 });
 
 test("a network's refusal asks for a reconnect; a network failure changes nothing but the time", async () => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Every competitors SQL statement, inside one Workspace, apart from the weekly read's list of Workspaces.
-import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, isNull, lt, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
 import { competitorChanges, competitorFinds, competitorProposals, competitors, competitorSnapshots } from "@direx/db/schema-competitors";
@@ -203,19 +203,27 @@ export async function addScan(tx: WorkspaceTx, workspaceId: string, site: string
   if (found.length) await tx.insert(competitorProposals).values(found.map((f) => ({ ...f, workspaceId, findId: find!.id, foundAt: at }))).onConflictDoNothing();
 }
 
-/** Records a paid search, whatever it found, with the amount a person confirmed, and its new proposals. */
-export async function addSearch(tx: WorkspaceTx, workspaceId: string, s: { terms: string[]; confirmedMicros: number; by: string }, found: NewProposal[], at: Date) {
+/** Atomically records an admitted paid search before the caller starts discovery. */
+export async function reserveSearch(tx: WorkspaceTx, workspaceId: string, s: { terms: string[]; confirmedMicros: number; by: string }, at: Date, month: SearchMonth, limit: number) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`competitor-search:${workspaceId}:${month.start.toISOString()}`}, 0))`);
+  if ((await searchesInMonth(tx, month)) >= limit) return null;
   const [find] = await tx
     .insert(competitorFinds)
     .values({ workspaceId, kind: "search", terms: s.terms, confirmedMicros: s.confirmedMicros, confirmedBy: s.by, at })
     .returning({ id: competitorFinds.id });
-  if (found.length) await tx.insert(competitorProposals).values(found.map((f) => ({ ...f, workspaceId, findId: find!.id, foundAt: at }))).onConflictDoNothing();
+  return find!.id;
 }
 
-/** How many paid searches the Workspace ran since `since`. */
-export async function searchesSince(tx: WorkspaceTx, since: Date): Promise<number> {
+export async function addSearchProposals(tx: WorkspaceTx, workspaceId: string, findId: string, found: NewProposal[], at: Date) {
+  if (found.length) await tx.insert(competitorProposals).values(found.map((f) => ({ ...f, workspaceId, findId, foundAt: at }))).onConflictDoNothing();
+}
+
+type SearchMonth = { start: Date; end: Date };
+
+/** How many slots were used in this Workspace during the given UTC month. */
+export async function searchesInMonth(tx: WorkspaceTx, { start, end }: SearchMonth): Promise<number> {
   const f = competitorFinds;
-  return (await tx.select({ n: count() }).from(f).where(and(eq(f.kind, "search"), gte(f.at, since))))[0]!.n;
+  return (await tx.select({ n: count() }).from(f).where(and(eq(f.kind, "search"), gte(f.at, start), lt(f.at, end))))[0]!.n;
 }
 
 /** Closes the open proposals among `ids`; returns the ids it closed. */

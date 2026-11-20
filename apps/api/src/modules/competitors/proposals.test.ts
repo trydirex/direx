@@ -5,7 +5,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { expect, test } from "vitest";
 import { ownerClient } from "../../../../../test/db";
 import type { FetchHtml, FetchSitemap } from "../agents/index";
-import type { Discovery } from "../extensions/index";
+import { NotAvailable, type Discovery } from "../extensions/index";
 import { TEST_SECRET, testIdentity } from "../identity/test-auth";
 import { createProposals } from "./application/proposals";
 import { competitorRoutes, createCompetitors, createSnapshots, type ReadPage } from "./index";
@@ -157,6 +157,71 @@ test("a search Direx pays for proposes what it finds once, records its estimate 
   const { rows } = await db.query("select count(*)::int as n, min(confirmed_micros) as micros from competitor_finds where workspace_id = $1 and kind = 'search'", [W3]);
   await db.end();
   expect(rows).toEqual([{ n: 5, micros: "120000" }]);
+});
+
+test("concurrent requests for the final slot only start one paid search", async () => {
+  const w = (await createOrg(owner, "Concurrent searching")).workspace.id;
+  let searches = 0;
+  discovery = { estimate: async () => ({ usd: 0.12 }), search: async () => (searches++, []) };
+  const search = () => post("search", { terms: ["bank reconciliation software"] }, owner, w);
+  for (let i = 0; i < 4; i++) expect((await search()).status).toBe(200);
+
+  const quotes = Promise.withResolvers<void>();
+  let quoting = 0;
+  discovery.estimate = async () => {
+    if (++quoting === 2) quotes.resolve();
+    await quotes.promise;
+    return { usd: 0.12 };
+  };
+  const results = await Promise.all([search(), search()]);
+  expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  expect(await results.find((r) => r.status === 409)!.json()).toEqual({ error: "search_limit" });
+  expect(searches).toBe(5);
+});
+
+test("a search completing in December still uses November's allowance", async () => {
+  const w = (await createOrg(owner, "Month boundary")).workspace.id;
+  const { user } = (await (await call("/api/me", owner)).json()) as { user: { id: string } };
+  const november = new Date("2026-11-30T23:59:59Z");
+  const december = new Date("2026-12-01T00:00:00Z");
+  let clock = november;
+  const searcher = createProposals({
+    site: async () => null, now: () => clock,
+    discovery: () => ({ estimate: async () => ({ usd: 0.12 }), search: async () => { clock = december; return []; } }),
+  });
+  const search = () => searcher.search(w, user.id, ["bank reconciliation software"]);
+  expect(await search()).toMatchObject({ searchesLeft: 5 });
+  expect(await search()).toMatchObject({ searchesLeft: 4 });
+  clock = november;
+  expect(await searcher.list(w)).toMatchObject({ searchesLeft: 4 });
+});
+
+test("failed estimates leave the allowance untouched; uncertain discovery and proposal failures retain usage", async () => {
+  const w = (await createOrg(owner, "Search failures")).workspace.id;
+  const { user } = (await (await call("/api/me", owner)).json()) as { user: { id: string } };
+  const vendor: Discovery = {
+    estimate: async () => { throw new NotAvailable("quote"); },
+    search: async () => { throw new Error("discovery connection lost"); },
+  };
+  const searcher = createProposals({
+    site: async () => { throw new Error("site lookup failed"); },
+    now: () => new Date("2026-11-04T00:00:00Z"),
+    discovery: () => vendor,
+  });
+  const search = () => searcher.search(w, user.id, ["bank reconciliation software"]);
+  const allowance = async () => (await createProposals({
+    site: async () => null, now: () => new Date("2026-11-04T00:00:00Z"),
+  }).list(w)).searchesLeft;
+  expect(await search()).toEqual({ ok: false, reason: "not_available" });
+  expect(await allowance()).toBe(5);
+
+  vendor.estimate = async () => ({ usd: 0.12 });
+  await expect(search()).rejects.toThrow("discovery connection lost");
+  expect(await allowance()).toBe(4);
+
+  vendor.search = async () => [{ name: "Acme", domain: "acme.example", source: "test" }];
+  await expect(search()).rejects.toThrow("site lookup failed");
+  expect(await allowance()).toBe(3);
 });
 
 test("search terms holding an email or a web address are refused, and only an Owner or Admin may search", async () => {

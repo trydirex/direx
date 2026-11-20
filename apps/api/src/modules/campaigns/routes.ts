@@ -650,6 +650,28 @@ const overlapsRoute = createRoute({
   responses: { 200: json(Overlaps, "For interested replies, meetings and deals: People each channel mix reached, how many had the outcome, and each one's Touches before it"), ...errors },
 });
 
+// The Campaign's write-up (spec 2026-11-20 campaign-write-up), null before one exists. `failure` is the coded
+// reason the web words; `corrected` says a cited reading is no longer its Measure's newest.
+const WriteUp = z
+  .object({
+    writeUp: z
+      .object({
+        status: z.enum(["writing", "written", "failed"]),
+        paragraph: z.string().nullable(),
+        cites: z.array(z.object({ readingId: z.uuid(), label: z.string(), value: z.string(), source: z.enum(["person", "system"]), observedOn: z.string() })),
+        suggestions: z.array(z.object({ assumption: z.string(), because: z.string(), readingIds: z.array(z.string()), outcome: z.enum(["added", "not_added"]).optional() })),
+        failure: z.string().nullable(),
+        itemId: z.uuid().nullable(),
+        writtenAt: z.iso.datetime().nullable(),
+        corrected: z.boolean(),
+      })
+      .nullable(),
+  })
+  .openapi("CampaignWriteUp");
+const writeUpRoute = createRoute({ method: "get", path: "/api/w/{workspaceId}/campaigns/{id}/write-up", middleware: [requirePermission("workspace.read")], request: { params: one }, responses: { 200: json(WriteUp, "The write-up, or null before one exists"), ...errors } });
+// Write it again: one new run for a written or failed write-up of an Ended Campaign.
+const writeAgainRoute = createRoute({ method: "post", path: "/api/w/{workspaceId}/campaigns/{id}/write-up", middleware: [requirePermission("item.edit")], request: { params: one }, responses: { 202: json(WriteUp, "Being written again"), ...errors } });
+
 // What Direx did for one Campaign, newest first.
 const activityRoute = createRoute({
   method: "get",
@@ -749,6 +771,17 @@ export function campaignRoutes(deps: { campaigns: () => Campaigns }) {
     const { workspaceId, id } = c.req.valid("param");
     const r = await deps.campaigns().overlaps(workspaceId, id);
     return r ? c.json(r, 200) : c.json({ error: "not_found" }, 404);
+  });
+  app.openapi(writeUpRoute, async (c) => {
+    const { workspaceId, id } = c.req.valid("param");
+    const writeUp = await deps.campaigns().writeUp(workspaceId, id);
+    return writeUp === undefined ? c.json({ error: "not_found" }, 404) : c.json({ writeUp }, 200);
+  });
+  app.openapi(writeAgainRoute, async (c) => {
+    const { workspaceId, id } = c.req.valid("param");
+    const r = await deps.campaigns().writeAgain(workspaceId, id);
+    if (r.ok) return c.json({ writeUp: r.writeUp }, 202);
+    return c.json({ error: r.reason }, r.reason === "not_found" ? 404 : 409);
   });
   app.openapi(activityRoute, async (c) => {
     const { workspaceId, id } = c.req.valid("param");

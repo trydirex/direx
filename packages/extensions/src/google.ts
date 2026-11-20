@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Google as an OAuth provider for the vault: data only. The client id and secret are the
-// sign-in pair from env, added by the composition root. Consent is separate from sign-in,
+// Google as an OAuth provider for the vault: data only. The client id and secret are added by the
+// composition root: the sign-in pair from env for Gmail, and for Search Console the Workspace's
+// own app first, then the server's (credentials/index.ts). Consent is separate from sign-in,
 // offline and always prompted, so Google returns a refresh token every time.
 import { GMAIL_SCOPES } from "./gmail/manifest";
 

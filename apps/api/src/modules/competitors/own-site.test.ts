@@ -37,6 +37,8 @@ test.each([
   ["/double-comparison", "double"],
   ["/vs-double", "double"],
   ["/compare/double", "double"],
+  ["/compare/equility-vs-double", "double"],
+  ["/vs/double-vs-equility-hq", "double"],
   ["/vs/booke-ai", "booke-ai"],
   ["/equility-vs-double", "double"],
   ["/double-vs-equility", "double"],
@@ -47,8 +49,11 @@ test.each([
 
 test.each([
   "/double-vs-xenett",
+  "/compare/double-vs-xenett",
+  "/vs/double-vs-xenett",
   "/equility-vs-double-vs-xenett",
   "/equility-alternative",
+  "/equility-hq-alternative",
   "/a-alternative",
   "/one-two-three-four-alternative",
   "/compare",
@@ -60,6 +65,9 @@ test.each([
 test("one page per competitor, the shortest address", () => {
   const locs = ["https://www.equilityhq.com/en-us/double-alternative", "https://www.equilityhq.com/double-alternative"];
   expect(namesFromSitemap(locs, ownNames(EQUILITY))).toEqual([{ slug: "double", url: "https://www.equilityhq.com/double-alternative" }]);
+  const shorter = "https://www.equilityhq.com/booke-ai-alternative";
+  const longer = "https://www.equilityhq.com/en/bookeai-alternative";
+  expect(namesFromSitemap([longer, shorter], ownNames(EQUILITY))).toEqual([{ slug: "booke-ai", url: shorter }]);
 });
 
 test("names read as words, and every way of writing one is the same key", () => {

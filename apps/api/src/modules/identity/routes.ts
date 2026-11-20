@@ -7,7 +7,7 @@ import { claimServer, isServerAdmin } from "./application/admission";
 import { createOrganization, listDeletedWorkspaces, listMyWorkspaces } from "./application/orgs";
 import { INVITE_COOKIE, type Admission } from "./domain/admission";
 import { ROLES } from "./domain/roles";
-import { requireMember, STEP_UP_MS, type MemberEnv } from "./middleware";
+import { readSession, requireMember, sessionWithinCap, steppedUp, type MemberEnv } from "./middleware";
 
 const ErrorBody = z.object({ error: z.string() }).openapi("Error");
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -145,9 +145,11 @@ const setPasswordRoute = createRoute({
   },
 });
 
+/** Better Auth's routes that end sessions. */
+const REVOKE = /^\/api\/auth\/revoke-(session|sessions|other-sessions)$/;
+
 /** `auth` is resolved on first use, so building the OpenAPI document needs no secrets. */
 export function identityRoutes(auth: () => Auth, baseURL: () => string, admission: () => Admission) {
-  const session = (headers: Headers) => auth().api.getSession({ headers });
   const app = new OpenAPIHono<MemberEnv>({
     defaultHook: (result, c) => {
       if (!result.success) {
@@ -155,7 +157,13 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
       }
     },
   });
-  app.on(["GET", "POST"], "/api/auth/*", (c) => auth().handler(c.req.raw));
+  app.on(["GET", "POST"], "/api/auth/*", async (c) => {
+    // The 90-day cap holds on Better Auth's own routes too (ADR 0037 rule 003), and ending sessions
+    // asks for the short step-up window (rule 004), so a stolen cookie can't sign the owner out elsewhere.
+    const s = c.req.header("cookie") ? await sessionWithinCap(auth, c.req.raw.headers) : null;
+    if (s && REVOKE.test(c.req.path) && !steppedUp({ signedInAt: new Date(s.session.createdAt) }, "short")) return c.json({ error: "step_up_required" }, 403);
+    return auth().handler(c.req.raw);
+  });
   app.use("/api/w/:workspaceId", requireMember(auth));
   app.use("/api/w/:workspaceId/*", requireMember(auth));
 
@@ -166,7 +174,7 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
       return c.json({ google: !!p.google, microsoft: !!p.microsoft, firstRun }, 200);
     })
     .openapi(meRoute, async (c) => {
-      const s = await session(c.req.raw.headers);
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const accounts = await auth().api.listUserAccounts({ headers: c.req.raw.headers });
       const hasPassword = accounts.some((a) => a.providerId === "credential");
@@ -174,9 +182,9 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
     })
     .openapi(setPasswordRoute, async (c) => {
       const headers = c.req.raw.headers;
-      const s = await session(headers);
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
-      if (Date.now() - new Date(s.session.createdAt).getTime() > STEP_UP_MS) return c.json({ error: "step_up_required" }, 403);
+      if (!steppedUp({ signedInAt: new Date(s.session.createdAt) }, "short")) return c.json({ error: "step_up_required" }, 403);
       try {
         await auth().api.setPassword({ body: { newPassword: c.req.valid("json").password }, headers });
       } catch (e) {
@@ -186,19 +194,19 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
       return c.json({ ok: true as const }, 200);
     })
     .openapi(myWorkspacesRoute, async (c) => {
-      const s = await session(c.req.raw.headers);
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       return c.json({ workspaces: await listMyWorkspaces(s.user.id) }, 200);
     })
     .openapi(deletedWorkspacesRoute, async (c) => {
-      const s = await session(c.req.raw.headers);
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const list = await listDeletedWorkspaces(s.user.id);
       const workspaces = list.map((w) => ({ ...w, deletedAt: w.deletedAt.toISOString(), purgeFrom: new Date(w.deletedAt.getTime() + PURGE_GRACE_MS).toISOString() }));
       return c.json({ workspaces }, 200);
     })
     .openapi(createOrgRoute, async (c) => {
-      const s = await session(c.req.raw.headers);
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       // On self-host outside dev, only a Server admin (DX-R-0024-008).
       if (!(await admission().canCreateOrganization(s.user.id))) return c.json({ error: "server_admins_only" }, 403);
@@ -217,13 +225,13 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
       return c.json({ ok: true as const }, 200);
     })
     .openapi(serverStatusRoute, async (c) => {
-      const s = await session(c.req.raw.headers);
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const [{ claimed }, canCreateOrganization, serverAdmin] = await Promise.all([admission().status(), admission().canCreateOrganization(s.user.id), isServerAdmin(s.user.id)]);
       return c.json({ claimed, canCreateOrganization, serverAdmin }, 200);
     })
     .openapi(claimRoute, async (c) => {
-      const s = await session(c.req.raw.headers);
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const token = c.req.valid("json").token ?? Token.safeParse(getCookie(c, INVITE_COOKIE)).data;
       if (!token) return c.json({ error: "link_needed" }, 409);

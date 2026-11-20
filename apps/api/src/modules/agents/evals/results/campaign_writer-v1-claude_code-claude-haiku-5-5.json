@@ -1,0 +1,40 @@
+{
+  "agent": "campaign_writer",
+  "definitionVersion": 1,
+  "promptDigest": "2ed37402f0d9eb01276245875195fe8529434ced00580ae48f56ced82dc17283",
+  "provider": "claude_code",
+  "model": "claude-haiku-5-5",
+  "at": "2026-11-20T19:52:50.920Z",
+  "runs": 3,
+  "passed": true,
+  "cases": [
+    {
+      "name": "comparable",
+      "passed": true,
+      "passes": 3
+    },
+    {
+      "name": "too-few-to-compare",
+      "passed": true,
+      "passes": 3
+    },
+    {
+      "name": "person-and-counted",
+      "passed": true,
+      "passes": 3
+    },
+    {
+      "name": "no-readings",
+      "passed": true,
+      "passes": 3
+    },
+    {
+      "name": "assumption-already-held",
+      "passed": true,
+      "passes": 3
+    }
+  ],
+  "measures": {
+    "problemRuns": 0
+  }
+}

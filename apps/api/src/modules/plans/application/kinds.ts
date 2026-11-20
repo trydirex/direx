@@ -3,10 +3,10 @@
 // else: no Action, no reservation, no model or network call.
 import { citationOf } from "../../facts";
 import type { ItemKind } from "../../items";
-import { lockPlan, lockStrategy, readPlanVersion, readStrategyVersion, setPlanCurrent, setStrategyCurrent, type PlansTx } from "../adapters/repo";
+import { insertStrategyVersion, latestStrategyVersion, lockPlan, lockStrategy, readPlanVersion, readStrategyVersion, setPlanCurrent, setStrategyCurrent, type PlansTx } from "../adapters/repo";
 import { applyVersion, planCitations, strategyCitations, type Citation } from "../domain/labels";
 import type { PlanBody, StrategyBody } from "../domain/types";
-import { PLAN_KIND, STRATEGY_KIND, type VersionPayload } from "./submit";
+import { digestOf, PLAN_KIND, STRATEGY_KIND, type VersionPayload } from "./submit";
 
 const NOT_FOUND = { ok: false, reason: "not_found" } as const;
 const OK = { ok: true } as const;
@@ -25,6 +25,29 @@ async function refusedCitation(tx: PlansTx, cited: Citation[]) {
     if ((await citationOf(tx, c.factId, c.version)) !== "ok") return { ok: false, reason: `citation_not_ok:${c.factId}` } as const;
   }
   return null;
+}
+
+/** As many assumptions as a Strategy body may hold (`strategyBody`). */
+const MAX_ASSUMPTIONS = 20;
+
+/**
+ * Adds assumptions to the current Strategy as a new version, made current at once, in the caller's
+ * transaction (a campaign write-up's suggestions, approved). Its base is the current version, so a draft
+ * submitted from an older one is refused as changed when it comes to be approved, as any would be.
+ */
+export async function appendAssumptions(tx: PlansTx, a: { assumptions: string[]; actorUserId: string; now: Date }): Promise<{ ok: true; version: number } | { ok: false; reason: string }> {
+  const head = await lockStrategy(tx);
+  const current = head?.currentVersion != null ? await readStrategyVersion(tx, head.id, head.currentVersion) : undefined;
+  if (!head || !current) return { ok: false, reason: "no_strategy" };
+  const body = current.body as StrategyBody;
+  if (body.assumptions.length + a.assumptions.length > MAX_ASSUMPTIONS) return { ok: false, reason: `too_many_assumptions:${body.assumptions.length}` };
+  const next: StrategyBody = { ...body, assumptions: [...body.assumptions, ...a.assumptions.map((text) => ({ text }))] };
+  const refused = await refusedCitation(tx, strategyCitations(next));
+  if (refused) return refused;
+  const version = ((await latestStrategyVersion(tx, head.id))?.version ?? 0) + 1;
+  await insertStrategyVersion(tx, { workspaceId: head.workspaceId, strategyId: head.id, version, body: next, digest: digestOf(next), baseVersion: head.currentVersion, actorUserId: a.actorUserId, at: a.now });
+  await setStrategyCurrent(tx, head.id, version, a.now);
+  return { ok: true, version };
 }
 
 /** The Item kinds this module applies. Registered when items is built, so items never imports plans. */

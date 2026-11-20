@@ -2,7 +2,7 @@
 // Sign-in (I1 to I3), the SMTP adapter and the startup refusal.
 import { expect, test } from "vitest";
 import { authConfigFromEnv, createIdentity, logMailer, selfHostAdmission, smtpMailer, type Admission } from "./index";
-import { trustedProxiesFromEnv } from "./adapters/auth";
+import { sessionDaysFromEnv, STEP_UP_WINDOWS, trustedProxiesFromEnv } from "./adapters/auth";
 import { TEST_SECRET, testIdentity } from "./test-auth";
 
 const { routes, auth, signIn } = testIdentity();
@@ -139,4 +139,21 @@ test("trusted proxies are read as addresses and ranges, and a bad entry stops th
   for (const bad of ["nginx", "10.0.0.0/33", "fd00::/129", "10.0.0.0/8/8", "10.0.0.0/x"]) {
     expect(() => trustedProxiesFromEnv({ DIREX_TRUSTED_PROXIES: bad })).toThrow(/DIREX_TRUSTED_PROXIES/);
   }
+});
+
+test("DIREX_SESSION_DAYS is 30 unless set, a whole number from 2 to 90, and refused on cloud (ADR 0037 rule 001)", () => {
+  expect(sessionDaysFromEnv({})).toBe(30);
+  expect(sessionDaysFromEnv({ DIREX_SESSION_DAYS: "" })).toBe(30);
+  expect(sessionDaysFromEnv({ DIREX_DEPLOYMENT: "cloud" })).toBe(30);
+  expect(sessionDaysFromEnv({ DIREX_SESSION_DAYS: "2" })).toBe(2);
+  expect(sessionDaysFromEnv({ DIREX_SESSION_DAYS: "90" })).toBe(90);
+  expect(authConfigFromEnv({ NODE_ENV: "test", DIREX_SESSION_DAYS: "14" }).sessionDays).toBe(14);
+  for (const bad of ["1", "91", "30.5", "-5", "a week", " 30"]) {
+    expect(() => sessionDaysFromEnv({ DIREX_SESSION_DAYS: bad })).toThrow(`DIREX_SESSION_DAYS must be a whole number of days from 2 to 90, not ${bad}`);
+  }
+  expect(() => sessionDaysFromEnv({ DIREX_SESSION_DAYS: "30", DIREX_DEPLOYMENT: "cloud" })).toThrow(/self-hosted Direx only/);
+});
+
+test("Better Auth's own fresh-session routes ask for the short step-up window (ADR 0037 rule 004)", () => {
+  expect(auth().options.session?.freshAge! * 1000).toBe(STEP_UP_WINDOWS.short);
 });

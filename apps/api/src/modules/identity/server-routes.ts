@@ -7,7 +7,7 @@ import type { Auth } from "./adapters/auth";
 import type { Mailer } from "./adapters/mail";
 import { addServerAdmin, isServerAdmin, listAccounts, removeServerAdmin, setSignupPolicy } from "./application/admission";
 import type { Admission } from "./domain/admission";
-import { STEP_UP_MS } from "./middleware";
+import { readSession, steppedUp as signedInWithin } from "./middleware";
 
 export type ServerAdminEnv = { Variables: { admin: { userId: string; signedInAt: Date } } };
 type Env = ServerAdminEnv;
@@ -15,15 +15,15 @@ type Env = ServerAdminEnv;
 /** Only a signed-in Server admin passes; sets `admin`. Being one opens no Workspace (rule 007). */
 export const requireServerAdmin = (auth: () => Auth) =>
   createMiddleware<Env>(async (c, next) => {
-    const s = await auth().api.getSession({ headers: c.req.raw.headers });
+    const s = await readSession(auth, c);
     if (!s) return c.json({ error: "not_signed_in" }, 401);
     if (!(await isServerAdmin(s.user.id))) return c.json({ error: "forbidden" }, 403);
     c.set("admin", { userId: s.user.id, signedInAt: new Date(s.session.createdAt) });
     await next();
   });
 
-/** A Server admin signed in within the step-up window. */
-export const adminSteppedUp = (a: Env["Variables"]["admin"]) => Date.now() - a.signedInAt.getTime() <= STEP_UP_MS;
+/** A Server admin signed in within the short step-up window: every Server admin action changes who holds power (ADR 0037 rule 004). */
+export const adminSteppedUp = (a: Env["Variables"]["admin"]) => signedInWithin(a, "short");
 
 const ErrorBody = z.object({ error: z.string() }).openapi("Error");
 const json = <T extends z.ZodType>(schema: T, description: string) => ({ description, content: { "application/json": { schema } } });

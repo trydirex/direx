@@ -10,6 +10,7 @@ import { createVault, rootKeyFromEnv } from "../credentials/index";
 import { createKeys, signInFor } from "./adapters/keys";
 import * as repo from "./adapters/repo";
 import { failureOf, resetOf } from "./adapters/runtime/envelope";
+import { useCodexBinaryForTests } from "./adapters/runtime/codex";
 import { startLogin } from "./adapters/runtime/login";
 import { adapterBlocked, ADAPTERS, withCliAdapters } from "./adapters/runtime/registry";
 import { sandboxStatus } from "./adapters/runtime/sandbox";
@@ -23,8 +24,12 @@ import { createModels } from "./index";
 
 const PATH = pathWithoutRealClis(process.env.PATH);
 process.env.PATH = PATH;
+// Codex is found through its test parameter, never PATH (DX-R-0036-003); null is "not installed".
+const codexIn = (dir: string | null) => useCodexBinaryForTests(dir === null ? null : join(dir, "codex"));
+codexIn(null);
 afterEach(() => {
   process.env.PATH = PATH;
+  codexIn(null);
 });
 
 const vault = createVault({ rootKey: rootKeyFromEnv({ DIREX_MASTER_KEY: "00".repeat(31) + "ad" }), now: () => new Date() });
@@ -277,7 +282,7 @@ test("signed out, not installed and a blocked sandbox each say which", async () 
   expect(await adapterBlocked(ADAPTERS[1]!)).toBe("not_installed");
   process.env.PATH = PATH;
   const status = await sandboxStatus();
-  process.env.PATH = `${fakeCli("codex", "signed_out")}:${PATH}`;
+  codexIn(fakeCli("codex", "signed_out"));
   const blocked = await adapterBlocked(ADAPTERS[1]!);
   if (status.ok) {
     expect(blocked).toBeNull();
@@ -334,7 +339,7 @@ test("a failure that isn't about the sign-in opens no entry", async () => {
 test("the Test button passes when nothing comes back, and fails when the file does", async () => {
   const { ws, user } = await setup();
   await addSignIn(ws, "codex", null, user, "x");
-  process.env.PATH = `${fakeCli("codex", "success")}:${PATH}`;
+  codexIn(fakeCli("codex", "success"));
   const status = await sandboxStatus();
   const run = (dispatch: Dispatch) => testAdapter({ deployment: "self_host", models: models(dispatch), workspaceId: ws, userId: user, provider: "codex" });
   if (!status.ok) {
@@ -351,7 +356,7 @@ test("the Test button passes when nothing comes back, and fails when the file do
   };
   expect(await run(leaks)).toEqual({ ok: false, reason: "file_visible" });
   expect(await run(async () => ({ ok: false, family: "configuration", definite: true, reason: "signed_out" }))).toEqual({ ok: false, reason: "signed_out" });
-  process.env.PATH = "/nonexistent";
+  codexIn(null);
   expect(await run(async () => fine())).toEqual({ ok: false, reason: "not_installed" });
   // No sign-in at all is a refusal, named.
   process.env.PATH = `${fakeCli("claude", "success")}:${PATH}`;
@@ -396,7 +401,7 @@ const fakeClaudeLogin = (token = TOKEN) =>
 test("a Codex sign-in finds its link and code through the colours it prints them in", async () => {
   const { ws, user } = await setup();
   const coloured = fakeBin("codex", `printf '1. Open this link\\n   \\033[94mhttps://auth.openai.com/codex/device\\033[0m\\n2. Enter this code\\n   \\033[94mABC-DEFG\\033[0m\\n'\nsleep 1\nexit 1`);
-  process.env.PATH = `${coloured}:${PATH}`;
+  codexIn(coloured);
   const started = await beginSignIn({ deployment: "self_host", workspaceId: ws, userId: user, provider: "codex", shared: true });
   if (!started.ok) throw new Error(started.reason);
   expect(started).toMatchObject({ link: "https://auth.openai.com/codex/device", userCode: "ABC-DEFG" });
@@ -459,7 +464,7 @@ test("a Claude Code sign-in stores the token in the vault and shows only the lin
 
 test("a Codex device login stores auth.json, and a personal one belongs to its owner", async () => {
   const { ws, user } = await setup();
-  process.env.PATH = `${fakeBin("codex", `[ "$*" = "login --device-auth" ] || exit 9\necho 'Open https://auth.openai.com/codex/device and enter ABCD-EFGH'\necho '{"tokens":"device"}' > "$CODEX_HOME/auth.json"`)}:${PATH}`;
+  codexIn(fakeBin("codex", `[ "$*" = "login --device-auth" ] || exit 9\necho 'Open https://auth.openai.com/codex/device and enter ABCD-EFGH'\necho '{"tokens":"device"}' > "$CODEX_HOME/auth.json"`));
   const started = await beginSignIn({ deployment: "self_host", workspaceId: ws, userId: user, provider: "codex", shared: false });
   if (!started.ok) throw new Error(started.reason);
   expect(started).toMatchObject({ link: "https://auth.openai.com/codex/device", userCode: "ABCD-EFGH" });

@@ -36,6 +36,26 @@ test("Credentials shows a loading state, then my credentials", async () => {
   expect(screen.queryByText("Working")).toBeNull();
 });
 
+test("a Workspace's own app shows as one, with a client secret to replace, not a username and password", async () => {
+  const shared = { scope: "workspace", kind: "basic", ownerUserId: null, connection: null, status: "active", lastUsedAt: null, version: 1 };
+  serve(() =>
+    reply(200, {
+      credentials: [
+        { ...shared, id: "a1", name: "Search Console app", key: "oauth_app:google_search_console" },
+        { ...shared, id: "b1", name: "CRM login", key: "crm" },
+      ],
+    }),
+  );
+  render(withQueries(<Credentials workspace={{ ...workspace, role: "owner" }} me={ME} tab="workspace" />));
+  const row = (name: string) => screen.getByText(name).closest("tr")!;
+  await screen.findByText("Search Console app");
+  expect(row("Search Console app").textContent).toContain("Own app");
+  expect(row("Search Console app").textContent).not.toContain("Username and password");
+  expect(row("CRM login").textContent).toContain("Username and password");
+  expect(screen.getByLabelText("New client secret")).toBeTruthy();
+  expect(screen.getByLabelText("New password")).toBeTruthy();
+});
+
 test("when the credentials can't be read, Credentials says so and Retry reads them again", async () => {
   let fail = true;
   serve(() => (fail ? reply(403, { error: "forbidden" }) : reply(200, { credentials: [] })));

@@ -54,6 +54,8 @@ export type ItemKind = {
   bulk?: boolean;
   /** False when a person must pick one of its answers: Dismiss is refused, so nothing is left waiting on it. */
   dismiss?: boolean;
+  /** Runs in Dismiss's transaction, for a kind that records what not acting on it means. Throwing undoes the Dismiss. */
+  onDismiss?: (tx: ItemsTx, item: ItemRow) => Promise<void>;
   /**
    * Reverses what applying it did, with an action a person could take by hand, while nothing has changed
    * since. check says whether it still can; apply checks again and does it, as the person undoing.

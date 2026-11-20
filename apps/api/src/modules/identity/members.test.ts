@@ -3,9 +3,11 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { createBoss } from "../../jobs/boss";
 import { testIdentity } from "./test-auth";
+import { steppedUp } from "./middleware";
 
 const { signIn, call, createOrg, inviteToken, addMember, outbox } = testIdentity();
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -179,6 +181,59 @@ test("I10: elevated actions need a sign-in in the last 10 minutes, and a session
   expect((await patch(fresh)).status).toBe(200);
 });
 
+test("a session read past Better Auth's updateAge sends the renewed cookie back, so use keeps a person signed in", async () => {
+  const owner = await signIn();
+  const { workspace } = await createOrg(owner);
+  const sessionCookie = (res: Response) => res.headers.getSetCookie().find((c) => c.includes("session_token="));
+
+  expect(sessionCookie(await call(`/api/w/${workspace.id}`, owner))).toBeUndefined();
+
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);
+  const renewedRes = await call(`/api/w/${workspace.id}`, owner);
+  const renewed = sessionCookie(renewedRes);
+  expect(renewed).toContain(`Max-Age=${30 * DAY / 1000}`);
+  expect(renewedRes.headers.get("cache-control")).toBe("no-store");
+  expect((await call("/api/me", renewed!.split(";")[0])).status).toBe(200);
+
+  vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);
+  expect(sessionCookie(await call("/api/me", owner))).toContain(`Max-Age=${30 * DAY / 1000}`);
+});
+
+test("a sign-in ends after 30 days without use (ADR 0037 rule 001)", async () => {
+  const owner = await signIn();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 29 * DAY);
+  expect((await call("/api/me", owner)).status).toBe(200);
+  vi.setSystemTime(Date.now() + 31 * DAY);
+  expect((await call("/api/me", owner)).status).toBe(401);
+});
+
+test("a sign-in in daily use still ends 90 days after it was made, on Direx and Better Auth routes (ADR 0037 rule 003)", async () => {
+  const owner = await signIn();
+  const { workspace } = await createOrg(owner);
+  const start = Date.now();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  for (const day of [20, 40, 60, 80, 89]) {
+    vi.setSystemTime(start + day * DAY);
+    expect((await call(`/api/w/${workspace.id}`, owner)).status).toBe(200);
+  }
+  vi.setSystemTime(start + 91 * DAY);
+  expect(await (await call("/api/auth/get-session", owner)).json()).toBeNull();
+  expect((await call(`/api/w/${workspace.id}`, owner)).status).toBe(401);
+
+  // Reached first through a Direx route, the session is gone for Better Auth too.
+  const other = await signIn();
+  const made = Date.now();
+  for (const day of [20, 40, 60, 80, 89]) {
+    vi.setSystemTime(made + day * DAY);
+    expect((await call("/api/me", other)).status).toBe(200);
+  }
+  vi.setSystemTime(made + 91 * DAY);
+  expect((await call("/api/me", other)).status).toBe(401);
+  expect(await (await call("/api/auth/get-session", other)).json()).toBeNull();
+});
+
 test("deleting a Workspace cancels its queued jobs and leaves another Workspace's (ADR 0030 rule 007)", async () => {
   const owner = await signIn();
   const [a, b] = [(await createOrg(owner)).workspace.id, (await createOrg(owner, "Other")).workspace.id];
@@ -224,4 +279,24 @@ test("a role change or removal tells onMemberChange after it commits, and a fail
   expect((await site.call(at, owner, { method: "DELETE" })).status).toBe(200);
   expect(told).toHaveBeenLastCalledWith(w, admin.userId, "marketer", null);
   expect(console.error).toHaveBeenCalledWith("after a membership change", expect.any(Error));
+});
+
+test("step-up windows: 10 minutes for credentials and power, 60 for everyday approvals (ADR 0037 rule 004)", () => {
+  const at = (minutesAgo: number) => ({ signedInAt: new Date(Date.now() - minutesAgo * MIN) });
+  expect([steppedUp(at(9.9), "short"), steppedUp(at(10.1), "short")]).toEqual([true, false]);
+  expect([steppedUp(at(59.9), "long"), steppedUp(at(60.1), "long")]).toEqual([true, false]);
+});
+
+test("ending sessions through Better Auth's routes needs a sign-in in the last 10 minutes (ADR 0037 rule 004)", async () => {
+  const owner = await signIn();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 11 * MIN);
+  for (const path of ["/api/auth/revoke-other-sessions", "/api/auth/revoke-sessions", "/api/auth/revoke-session"]) {
+    const res = await call(path, owner, { method: "POST", body: path.endsWith("session") ? { token: "x" } : {} });
+    expect([res.status, await res.json()]).toEqual([403, { error: "step_up_required" }]);
+  }
+  expect((await call("/api/me", owner)).status).toBe(200);
+
+  const fresh = await signIn();
+  expect((await call("/api/auth/revoke-other-sessions", fresh, { method: "POST", body: {} })).status).toBe(200);
 });

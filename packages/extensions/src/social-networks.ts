@@ -5,7 +5,9 @@ import { FACEBOOK_SCOPES } from "./social/facebook/provider";
 import { INSTAGRAM_SCOPES } from "./social/instagram/provider";
 import { LINKEDIN_SCOPES } from "./social/linkedin/provider";
 import { THREADS_SCOPES } from "./social/threads/provider";
+import { TIKTOK_SCOPES } from "./social/tiktok/provider";
 import { X_SCOPES } from "./social/x/provider";
+import { YOUTUBE_SCOPES } from "./social/youtube/provider";
 
 export type SocialAvailability = "available" | "awaiting_approval" | "not_built" | "not_available";
 
@@ -43,6 +45,8 @@ export type SocialNetworkInfo = {
   /** The network allows several accounts only for different purposes, so each one after the first states its own. */
   angleForEachAccount?: boolean;
   fields?: readonly { name: string; label: string; optional?: boolean }[];
+  /** Sentences shown under "can do" while the Workspace's own app is in use. */
+  ownAppLimits?: readonly string[];
   /** How a self-hoster registers their own app. */
   wizard?: { consoleUrl: string; scopes: readonly string[]; steps: readonly string[] };
 };
@@ -51,6 +55,9 @@ const awaiting = { cloud: "awaiting_approval", self_host: "awaiting_approval" } 
 const feature = (key: NetworkFeature["key"], scopes: readonly string[] = [], over: Partial<NetworkFeature> = {}): NetworkFeature => ({ key, built: false, scopes, ...over });
 
 const BUILT = { built: true };
+
+// Meta's apps in development mode let only people with a role on the app sign in.
+const META_OWN_APP_LIMITS = ["While your app is in development mode, only accounts with a role on the app can connect."];
 
 const unbuilt = (connection: string, label: string, ...accountTypes: string[]): SocialNetworkInfo => ({
   connection,
@@ -124,6 +131,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   {
     ...unbuilt("facebook", "Facebook", "page"),
     availability: awaiting,
+    ownAppLimits: META_OWN_APP_LIMITS,
     tokenEnds: true,
     features: [feature("publish", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("links", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("follow_ups", ["pages_manage_engagement"], BUILT), feature("video", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("image", ["pages_manage_posts", "pages_read_engagement"]), feature("analytics", ["read_insights"]), feature("comments", ["pages_read_engagement", "pages_read_user_content", "pages_manage_engagement"])],
     wizard: {
@@ -136,6 +144,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     ...unbuilt("instagram", "Instagram", "professional"),
     postLimit: 2200,
     availability: awaiting,
+    ownAppLimits: META_OWN_APP_LIMITS,
     features: [feature("publish", ["instagram_business_content_publish"]), feature("links", ["instagram_business_content_publish"]), feature("analytics", ["instagram_business_manage_insights"]), feature("comments", ["instagram_business_manage_comments"])],
     wizard: {
       consoleUrl: "https://developers.facebook.com/apps",
@@ -152,6 +161,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     ...unbuilt("threads", "Threads", "profile"),
     postLimit: 500,
     availability: awaiting,
+    ownAppLimits: META_OWN_APP_LIMITS,
     features: [feature("publish", ["threads_content_publish"], BUILT), feature("links", ["threads_content_publish"], BUILT), feature("follow_ups", ["threads_manage_replies"], BUILT), feature("video", ["threads_content_publish"], { ...BUILT, needsPublicUrl: true }), feature("image", ["threads_content_publish"], { needsPublicUrl: true }), feature("analytics", ["threads_manage_insights"]), feature("comments", ["threads_read_replies", "threads_manage_replies"])],
     wizard: {
       consoleUrl: "https://developers.facebook.com/apps",
@@ -159,9 +169,40 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
       steps: ["Create a Business type app and add Threads.", "Add the callback URL below. Meta may add a trailing slash, which must match exactly.", "Invite your Threads account as a tester, then accept in Threads settings.", "Copy the Threads app ID and secret into the fields below."],
     },
   },
-  unbuilt("youtube", "YouTube", "channel"),
+  {
+    ...unbuilt("youtube", "YouTube", "channel"),
+    availability: awaiting,
+    ownAppLimits: ["In Personal mode, only the Google account that made the app can connect.", "In production without Google's review, people see a warning screen first, and at most 100 can ever connect."],
+    features: [feature("video", ["https://www.googleapis.com/auth/youtube.upload"]), feature("analytics", ["https://www.googleapis.com/auth/yt-analytics.readonly"]), feature("comments", ["https://www.googleapis.com/auth/youtube.force-ssl"])],
+    wizard: {
+      consoleUrl: "https://console.cloud.google.com/apis/credentials",
+      scopes: YOUTUBE_SCOPES,
+      steps: [
+        "Create a Google Cloud project, or reuse the one you made for Search Console.",
+        "Enable the YouTube Data API v3.",
+        "On the OAuth consent screen, choose Personal if only you will connect. Otherwise choose External and set it In production. Don't leave it in Testing: Google ends its tokens after 7 days.",
+        "Create an OAuth client of type Web application, and add the callback URL below as an authorized redirect URI.",
+        "Copy the client ID and client secret into the fields below.",
+      ],
+    },
+  },
   unbuilt("gmb", "Google Business Profile", "location"),
-  unbuilt("tiktok", "TikTok", "creator", "business"),
+  {
+    ...unbuilt("tiktok", "TikTok", "creator"),
+    availability: awaiting,
+    ownAppLimits: ["Until TikTok approves your app, only the accounts added to its sandbox can connect.", "Posts from an app TikTok hasn't audited are private, need a private account, and at most 5 accounts can post a day."],
+    features: [feature("video", ["video.publish"]), feature("analytics", ["user.info.stats", "video.list"])],
+    wizard: {
+      consoleUrl: "https://developers.tiktok.com/apps",
+      scopes: TIKTOK_SCOPES,
+      steps: [
+        "Create an app, add Login Kit, and choose Web as its platform.",
+        "Add the callback URL below as a redirect URI. TikTok accepts only https, so a local install needs a public https address.",
+        "Turn on Sandbox, then under Target users add the TikTok account you will connect. It can take an hour to show.",
+        "Copy the sandbox's client key and client secret into the fields below.",
+      ],
+    },
+  },
   unbuilt("pinterest", "Pinterest", "user"),
   unbuilt("dribbble", "Dribbble", "user"),
   unbuilt("mastodon", "Mastodon", "user"),

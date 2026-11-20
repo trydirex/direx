@@ -6,3 +6,4 @@ export { CHECK_CASES, CHECK_FACTS, checkCaseErrors, scoreCheckCase, scoreCheckRu
 export { campaignEvalSuites } from "./definitions/eval-cases";
 export { SKELETON_TEMPLATE, skeletonDrift, tallyDrift, type DriftRun } from "./evals/skeleton-drift";
 export { COPY_CASES, copyFactId, scoreCopyRun, type CopyCase, type CopyOutput } from "./evals/drafted-copy";
+export { writeUpProblem, type Brief, type WriteUpOutput } from "./domain/write-up";

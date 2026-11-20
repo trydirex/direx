@@ -75,7 +75,7 @@ export async function connectForm(workspaceId: string, connection: string, f: { 
 }
 
 /** A Workspace's own app for a network: the client id in the clear, the secret encrypted. */
-export async function saveApp(workspaceId: string, network: Network, f: { clientId: string; clientSecret: string }): Promise<string | null> {
+export async function saveApp(workspaceId: string, network: Pick<Network, "connection" | "label">, f: { clientId: string; clientSecret: string }): Promise<string | null> {
   const { error } = await api.POST("/api/w/{workspaceId}/credentials", {
     params: at(workspaceId),
     body: { scope: "workspace", kind: "basic", key: `oauth_app:${network.connection}`, name: `${network.label} app`, meta: { username: f.clientId }, value: { password: f.clientSecret } },

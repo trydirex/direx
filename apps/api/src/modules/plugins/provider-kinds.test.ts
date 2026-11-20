@@ -141,6 +141,32 @@ test("every first-party manifest gives the providers it gave before", () => {
       },
       {
         "docs": [],
+        "id": "com.trydirex.youtube",
+        "mailbox": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "newsletter": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "search": [],
+      },
+      {
+        "docs": [],
+        "id": "com.trydirex.tiktok",
+        "mailbox": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "newsletter": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "search": [],
+      },
+      {
+        "docs": [],
         "id": "com.trydirex.reoon",
         "mailbox": {
           "incomplete": [],
@@ -191,6 +217,28 @@ test("every first-party manifest gives the providers it gave before", () => {
               "publishDedupe": "blind",
               "publishLeadMs": 0,
               "sendDedupe": "blind",
+            },
+          ],
+        },
+        "search": [],
+      },
+      {
+        "docs": [],
+        "id": "com.trydirex.mailchimp",
+        "mailbox": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "newsletter": {
+          "incomplete": [],
+          "shapes": [
+            {
+              "connection": "mailchimp",
+              "hasLists": true,
+              "hasStats": true,
+              "publishDedupe": "queryable",
+              "publishLeadMs": 0,
+              "sendDedupe": "queryable",
             },
           ],
         },

@@ -37,7 +37,8 @@ test.each([
   '{"members":[],"total_items":-1}',
   '{"members":[],"total_items":"2"}',
   '{"members":{},"total_items":0}',
-])("rejects an unreadable second member page: %s", async (body) => {
+  '{"members":[],"total_items":2}',
+])("rejects an invalid second member page: %s", async (body) => {
   const mc = createFakeMailchimp({ lists: [{ id: "a1b2c3d4e5", name: "Founders", members: members(2) }] });
   const fetchPage = (async (input: string, init?: RequestInit) =>
     new URL(input).searchParams.get("offset") === "1" ? new Response(body) : mc.fetch(input, init)) as typeof fetch;
@@ -54,6 +55,13 @@ test("accepts a valid empty member page", async () => {
     subscribers: [],
     nextCursor: null,
   });
+});
+
+test.each(["2", "3"])("accepts an empty member page at offset %s when the total is 2", async (cursor) => {
+  const mc = createFakeMailchimp({ lists: [{ id: "a1b2c3d4e5", name: "Founders", members: members(2) }] });
+  const plugin = createMailchimpPlugin({ fetch: mc.fetch });
+  await expect(query(plugin, "newsletter.subscribers", { listId: "a1b2c3d4e5", cursor }, mc.key))
+    .resolves.toEqual({ subscribers: [], nextCursor: null });
 });
 
 test("maps Mailchimp's states, lower-cases emails, and dates a member by opt-in, then signup, then last change", async () => {

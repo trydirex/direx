@@ -85,6 +85,9 @@ export function createMailchimpPlugin(o: MailchimpOptions = {}) {
       throw new PluginError("provider_error", "Mailchimp returned an unreadable member page");
     }
     const { members } = page;
+    if (members.length === 0 && offset < page.total_items) {
+      throw new PluginError("provider_error", "Mailchimp returned an incomplete member page");
+    }
     const rows = members.flatMap((m) => {
       const createdAt = iso(m.timestamp_opt, m.timestamp_signup, m.last_changed);
       const updatedAt = iso(m.last_changed);
@@ -93,7 +96,7 @@ export function createMailchimpPlugin(o: MailchimpOptions = {}) {
         : [];
     });
     const next = offset + members.length;
-    return subscribersOutput.parse({ subscribers: rows, nextCursor: members.length && next < page.total_items ? String(next) : null });
+    return subscribersOutput.parse({ subscribers: rows, nextCursor: next < page.total_items ? String(next) : null });
   }
 
   async function profile(input: unknown, c: Credential | null) {

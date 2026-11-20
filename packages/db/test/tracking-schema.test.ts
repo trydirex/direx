@@ -161,7 +161,7 @@ test("the edge may get a certificate only for a host whose DNS matched, in a liv
   expect(await allowed("unknown.example.com")).toBe(false);
 });
 
-test("the lookup returns ids only, for the link's own host, and a stopped domain still resolves", async () => {
+test("lookup returns ids only on the link's host even when stopped, and only sent_at can be updated on a use", async () => {
   const mine = host();
   const theirs = host();
   const d = await domain(W, mine, "stopped");
@@ -197,6 +197,11 @@ test("the lookup returns ids only, for the link's own host, and a stopped domain
   expect(await lookup(mine, id, "b".repeat(64))).toEqual([]);
   // RLS still hides the rows themselves from the app with no Workspace set.
   expect((await c.query("select count(*)::int as n from tracked_links")).rows[0].n).toBe(0);
+  await as(W);
+  const sentAt = new Date("2026-01-01T00:00:00Z");
+  const updated = await c.query("update tracked_link_uses set sent_at = $2 where id = $1 returning sent_at", [useId, sentAt]);
+  expect(updated.rows).toEqual([{ sent_at: sentAt }]);
+  await expect(c.query("update tracked_link_uses set inputs_hash = 'changed' where id = $1", [useId])).rejects.toMatchObject({ code: "42501" });
 });
 
 test("the drizzle schema names the same checks, keys, foreign keys and indexes as migration 0158", async () => {

@@ -18,6 +18,8 @@ export type Provider = {
   extraParams: Readonly<Record<string, string>>;
   clientId: string;
   clientSecret: string;
+  /** The name the provider gives the client id on consent and token calls. Default: client_id. */
+  clientIdParam?: string;
   /** Where the client pair goes on token and revoke calls. Default: the form body. */
   tokenAuth?: "body" | "basic";
   /** How a POST to the token and revoke endpoints is encoded. Default: a form. */
@@ -54,6 +56,8 @@ export type Provider = {
   renewal?: { kind: "refresh_token" } | { kind: "reconnect" } | { kind: "self_renew"; url: string; grantType: string };
   /** Default: POST with the token in a form. */
   revokeMethod?: "POST" | "DELETE";
+  /** A POST revoke also carries the client pair in its body. Default: only the token. */
+  revokeClient?: boolean;
 };
 
 /** A provider whose client pair is looked up per Workspace rather than given once for the deployment. */
@@ -127,7 +131,8 @@ function encoded(p: Provider, headers: Record<string, string>, params: Record<st
   return { headers: { ...headers, "content-type": json ? "application/json" : "application/x-www-form-urlencoded" }, body: json ? JSON.stringify(params) : new URLSearchParams(params) };
 }
 
-const client = (p: Provider): Record<string, string> => (p.tokenAuth === "basic" ? {} : { client_id: p.clientId, client_secret: p.clientSecret });
+export const clientIdParam = (p: Pick<Provider, "clientIdParam">) => p.clientIdParam ?? "client_id";
+const client = (p: Provider): Record<string, string> => (p.tokenAuth === "basic" ? {} : { [clientIdParam(p)]: p.clientId, client_secret: p.clientSecret });
 
 /** Everything but a code exchange must state how long the token lasts. */
 function withExpiry(r: CodeResult): TokenResult {
@@ -154,7 +159,7 @@ export const refreshTokens = async (p: Provider, refreshToken: string, timeoutMs
 export async function exchangeLongToken(p: Provider, shortToken: string, timeoutMs: number): Promise<TokenResult> {
   const l = p.longToken;
   if (!l) return { ok: false, error: "failed" };
-  const params = { grant_type: l.grantType, client_secret: p.clientSecret, [l.tokenParam]: shortToken, ...(l.sendClientId ? { client_id: p.clientId } : {}) };
+  const params = { grant_type: l.grantType, client_secret: p.clientSecret, [l.tokenParam]: shortToken, ...(l.sendClientId ? { [clientIdParam(p)]: p.clientId } : {}) };
   return withExpiry(await tokenCall(p, "GET", l.url, params, timeoutMs));
 }
 
@@ -178,7 +183,7 @@ export async function revokeToken(p: Provider, token: string, timeoutMs: number,
     }
     const headers: Record<string, string> = { ...p.tokenHeaders };
     if (p.tokenAuth === "basic") headers.authorization = basicAuth(p);
-    return (await fetch(url, { method: "POST", ...encoded(p, headers, { token }), signal })).ok;
+    return (await fetch(url, { method: "POST", ...encoded(p, headers, { ...(p.revokeClient ? client(p) : {}), token }), signal })).ok;
   } catch {
     return false;
   }

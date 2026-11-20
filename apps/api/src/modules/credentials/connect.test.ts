@@ -402,3 +402,15 @@ test("Search Console uses the Workspace's own Google app, else the sign-in pair,
   expect(await clientOf(bare)).toBe("own-id");
   expect(await signIn.appSource(ws, connection)).toBe("own");
 });
+
+test("a provider that names its client id differently gets that name on the consent URL", async () => {
+  const fake = startFakeProvider();
+  fakes.push(fake);
+  const p = fake.provider();
+  const vault = createVault({ rootKey: masterRootKey(Buffer.alloc(32, 9)), now: () => new Date(), providers: [{ ...p, clientIdParam: "client_key" }], callbackUrl: "http://direx.test/api/connections/callback", timeoutMs: 300 });
+  const { ws, owner } = await newWorkspace();
+  const started = await vault.start({ workspaceId: ws, userId: owner, connection: p.connection });
+  if (!started.ok) throw new Error(started.reason);
+  const query = new URL(started.url).searchParams;
+  expect([query.get("client_key"), query.get("client_id")]).toEqual([p.clientId, null]);
+});

@@ -652,6 +652,10 @@
     "0158_tracked_links.sql": {
       "sha256": "80b4e0fbe748409be4deaec7dc07a765083936fced0f841362e00faad4527876",
       "description": "Add tracking domains, tracked links and their uses, the Campaign tracking switches, and the host and link lookups for the redirect (ADR 0035)"
+    },
+    "0159_competitor_proposals.sql": {
+      "sha256": "abfd01e29365d70d01cfb2a36fbf328745e8fb5edff0df1eff7002a258545a39",
+      "description": "Add competitor_finds (each scan of a Workspace's own site, or paid search with its confirmed cost, never changed) and competitor_proposals (competitors found for a person to add or dismiss, one per name, only ever closed), under forced RLS"
     }
   }
 }

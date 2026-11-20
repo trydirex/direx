@@ -2,7 +2,7 @@
 // The competitors a Workspace watches: a name and the pages a person gave for each one. At most 5 per
 // Workspace, which the API enforces under a lock; the database keeps names unique and a URL present.
 import { sql } from "drizzle-orm";
-import { boolean, check, date, foreignKey, index, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, date, foreignKey, index, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { items, workspaces } from "./schema";
 
@@ -104,5 +104,61 @@ export const competitorChanges = pgTable(
     foreignKey({ name: "competitor_changes_item_fk", columns: [t.workspaceId, t.itemId], foreignColumns: [items.workspaceId, items.id] }).onDelete("set null"),
     check("competitor_changes_item_check", sql`${t.itemId} is null or ${t.label} is not distinct from 'answer'`),
     check("competitor_changes_source_check", sql`${t.source} in ('pricing', 'changelog', 'landing')`),
+  ],
+);
+
+// One look for competitor names: a scan of the Workspace's own site, or a paid search a person
+// confirmed the cost of. Kept whatever it found, so a search's cost is on record. Never changed.
+export const competitorFinds = pgTable(
+  "competitor_finds",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    kind: text("kind").notNull(),
+    site: text("site"),
+    terms: text("terms").array(),
+    confirmedMicros: bigint("confirmed_micros", { mode: "number" }),
+    confirmedBy: uuid("confirmed_by").references(() => user.id),
+    at: tz("at").notNull(),
+  },
+  (t) => [
+    unique("competitor_finds_workspace_id_id_key").on(t.workspaceId, t.id),
+    foreignKey({ name: "competitor_finds_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
+    check(
+      "competitor_finds_kind_check",
+      sql`(${t.kind} = 'own_site' and ${t.site} is not null and ${t.terms} is null and ${t.confirmedMicros} is null and ${t.confirmedBy} is null)
+        or (${t.kind} = 'search' and ${t.site} is null and ${t.terms} is not null and ${t.confirmedMicros} >= 0 and ${t.confirmedBy} is not null)`,
+    ),
+  ],
+);
+
+// A competitor Direx found, waiting for a person: Use fills the form, and adding that competitor or
+// dismissing it closes the proposal. One per name per Workspace, so a dismissed name never comes back.
+export const competitorProposals = pgTable(
+  "competitor_proposals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    findId: uuid("find_id").notNull(),
+    name: text("name").notNull(),
+    // The name in lower-case letters and digits only, so "Booke AI" and "booke-ai" are one name.
+    nameKey: text("name_key").notNull(),
+    site: text("site"),
+    comparisonUrl: text("comparison_url"),
+    foundAt: tz("found_at").notNull(),
+    closedAt: tz("closed_at"),
+    closedBy: uuid("closed_by").references(() => user.id),
+    closedAs: text("closed_as"),
+  },
+  (t) => [
+    uniqueIndex("competitor_proposals_name_key").on(t.workspaceId, t.nameKey),
+    foreignKey({ name: "competitor_proposals_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
+    foreignKey({ name: "competitor_proposals_find_fk", columns: [t.workspaceId, t.findId], foreignColumns: [competitorFinds.workspaceId, competitorFinds.id] }),
+    check("competitor_proposals_name_check", sql`char_length(${t.name}) between 1 and 100 and ${t.nameKey} ~ '^[a-z0-9]{1,100}$'`),
+    check("competitor_proposals_url_check", sql`char_length(coalesce(${t.site}, '')) <= 2000 and char_length(coalesce(${t.comparisonUrl}, '')) <= 2000`),
+    check(
+      "competitor_proposals_closed_check",
+      sql`(${t.closedAt} is null and ${t.closedBy} is null and ${t.closedAs} is null) or (${t.closedAt} is not null and ${t.closedBy} is not null and ${t.closedAs} in ('added', 'dismissed'))`,
+    ),
   ],
 );

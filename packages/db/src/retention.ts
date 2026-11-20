@@ -160,6 +160,8 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "public.clip_step_runs": audit,
   "public.clips": audit,
   "public.competitor_changes": auditDeletable,
+  "public.competitor_finds": audit,
+  "public.competitor_proposals": audit,
   "public.competitors": auditDeletable,
   "public.connect_links": audit,
   "public.correspondents": auditDeletable,

@@ -69,8 +69,15 @@ export const ITEM_MESSAGES: Record<string, string> = {
   no_free_slot: "This Person has no free send time in the next two weeks. Move it to a later date.",
   too_late: "That time is more than a day gone. Pick a new one.",
   late_needs_time: "This is more than a day late. Resume it here so it goes at the next free time.",
+  no_strategy: "There's no approved Strategy to add to yet.",
+  invalid_choice: "That choice couldn't be used. Give each ticked suggestion some text, up to 400 characters, then try again.",
 };
-export const message = (code: string) => ITEM_MESSAGES[code] ?? "That didn't go through. Try again.";
+export const message = (code: string) => {
+  // `too_many_assumptions:<how many the Strategy has>`
+  const many = code.match(/^too_many_assumptions:(\d+)$/)?.[1];
+  if (many) return `Your Strategy already has ${many} assumptions. Remove some first, or add fewer.`;
+  return ITEM_MESSAGES[code] ?? "That didn't go through. Try again.";
+};
 
 export const mayApprove = (role: Role) => role === "owner" || role === "admin" || role === "marketer";
 export const mayEdit = (role: Role) => role !== "viewer";

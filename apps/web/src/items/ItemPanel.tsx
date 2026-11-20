@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ApiError, inWorkspace } from "../api/query";
@@ -30,6 +30,7 @@ import { FIELD_LABEL, type Field as FactField } from "../facts/actions";
 import { editPersonDraft, resolveStall, say } from "../campaigns/actions";
 import { editPost } from "../social/actions";
 import { PlanChangeChoice, PlanImpact } from "../campaigns/PlanChange";
+import { AssumptionsChoice } from "../campaigns/WriteUp";
 import { ago } from "@/lib/ago";
 import { toast } from "@/components/toast";
 import type { components } from "../api/schema";
@@ -521,7 +522,7 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
   const w = { workspaceId: p.workspaceId };
   const campaign = () => ({ ...w, campaignId: (d.content as { campaignId: string }).campaignId });
   const plainApprove =
-    i.state === "needs_approval" && i.kind !== "fact_conflict" && i.kind !== "opt_out_review" && i.kind !== "reply" && i.kind !== "company_review" && i.kind !== "standing_rule_offer" && i.kind !== "next_step" && i.kind !== "plan_change" && mayApprove(p.role);
+    i.state === "needs_approval" && i.kind !== "fact_conflict" && i.kind !== "opt_out_review" && i.kind !== "reply" && i.kind !== "company_review" && i.kind !== "standing_rule_offer" && i.kind !== "next_step" && i.kind !== "plan_change" && i.kind !== "strategy_assumptions" && mayApprove(p.role);
 
   const approveText = i.kind === "action" ? approveLabel([{ at: sendsAt }]) : i.kind === "brief" ? "I'll make this change" : i.kind === "competitor_move" ? "I've done this" : i.kind === "campaign_stall" ? "Keep waiting" : i.kind === "campaign_waiting" || i.kind === "campaign_launch_moved" ? "Got it" : i.kind === "keys_lost" ? "Resume them" : i.kind === "late_sends" ? "Send the emails" : "Accept";
   const approveButton = plainApprove && (
@@ -600,6 +601,8 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
         <CounterMoveView c={d.content as CounterMoveContent} />
       ) : i.kind === "lesson_proposal" || i.kind === "lesson_fact" ? (
         <ProposalView workspaceId={p.workspaceId} kind={i.kind} content={d.content} />
+      ) : i.kind === "strategy_assumptions" ? (
+        <AssumptionsChoice key={i.revision} workspaceId={p.workspaceId} item={i} suggestions={(d.content as { suggestions: ComponentProps<typeof AssumptionsChoice>["suggestions"] }).suggestions} approve={mayApprove(p.role)} onDone={() => void settle(null)} />
       ) : i.kind === "company_review" ? (
         <CompanyReview key={i.revision} workspaceId={p.workspaceId} item={i} review={d.content as Review} role={p.role} keys={p.keys} onSettle={() => void settle(null)} />
       ) : (

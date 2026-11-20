@@ -31,5 +31,17 @@ export type SocialNetworkInfo = {
   fields?: readonly { name: string; label: string; optional?: boolean }[];
   /** Shown under "can do" while the Workspace's own app is in use. */
   ownAppLimits?: readonly string[];
-  wizard?: { consoleUrl: string; scopes: readonly string[]; steps: readonly string[] };
+  /** What the network accepts as a redirect URI. */
+  callback?: { https?: boolean; noLocalhost?: boolean };
+  wizard?: { consoleUrl: string; consoleName?: string; scopes: readonly string[]; steps: readonly string[] };
 };
+
+export type CallbackProblem = "needs_https" | "no_localhost";
+
+/** Pure: why the network would refuse this install's callback URL, or null. It only warns; connecting stays allowed. */
+export function callbackProblem(rules: SocialNetworkInfo["callback"], callbackUrl: string): CallbackProblem | null {
+  const url = new URL(callbackUrl);
+  if (rules?.https && url.protocol !== "https:") return "needs_https";
+  if (rules?.noLocalhost && url.hostname === "localhost") return "no_localhost";
+  return null;
+}

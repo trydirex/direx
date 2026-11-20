@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Connected network accounts: which networks a Workspace can use, what it has connected, whether each
 // still works, and what each can do. Connecting changes nothing on a network, so no Action is involved.
-import type { SocialAvailability, SocialNetworkInfo } from "../domain/network";
+import { callbackProblem, type SocialAvailability, type SocialNetworkInfo } from "../domain/network";
 import type { Identity, Vault } from "../../credentials/index";
 import type { Plugins } from "../../plugins/index";
 import { accountAbout, accountsOn, deleteTargets, insertTargets, inWorkspace, listAccounts, setAbout, targetIds, touchChecked } from "../adapters/repo";
@@ -77,7 +77,7 @@ export function createSocial(deps: SocialDeps) {
           const app = built && !form ? await deps.vault().appSource(workspaceId, n.connection) : null;
           // A self-hoster with no app registers one; on cloud there is nothing they can do.
           const availability: SocialAvailability = built && !form && !app && deployment === "cloud" ? "not_available" : n.availability[deployment];
-          const needsWizard = built && !form && !app && deployment === "self_host";
+          const wizard = built && !form && !app && deployment === "self_host" ? n.wizard : undefined;
           return {
             connection: n.connection,
             label: n.label,
@@ -88,7 +88,8 @@ export function createSocial(deps: SocialDeps) {
             publishes: !!deps.plugins().socialFor(n.connection)?.publish && !!n.features.find((f) => f.key === "publish")?.built,
             app,
             fields: n.fields?.map((f) => ({ ...f })),
-            wizard: needsWizard && n.wizard ? { ...n.wizard, scopes: [...n.wizard.scopes], steps: [...n.wizard.steps], callbackUrl: deps.callbackUrl() } : undefined,
+            wizard: wizard ? { ...wizard, scopes: [...wizard.scopes], steps: [...wizard.steps], callbackUrl: deps.callbackUrl() } : undefined,
+            callbackProblem: wizard ? callbackProblem(n.callback, deps.callbackUrl()) : null,
           };
         }),
       );

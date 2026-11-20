@@ -47,8 +47,10 @@ export type SocialNetworkInfo = {
   fields?: readonly { name: string; label: string; optional?: boolean }[];
   /** Sentences shown under "can do" while the Workspace's own app is in use. */
   ownAppLimits?: readonly string[];
-  /** How a self-hoster registers their own app. */
-  wizard?: { consoleUrl: string; scopes: readonly string[]; steps: readonly string[] };
+  /** What the network accepts as a redirect URI. */
+  callback?: { https?: boolean; noLocalhost?: boolean };
+  /** How a self-hoster registers their own app. consoleName names the console when it isn't the network's own. */
+  wizard?: { consoleUrl: string; consoleName?: string; scopes: readonly string[]; steps: readonly string[] };
 };
 
 const awaiting = { cloud: "awaiting_approval", self_host: "awaiting_approval" } as const;
@@ -74,6 +76,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     postLimit: 3000,
     availability: awaiting,
     tokenEnds: true,
+    callback: { https: true },
     features: [feature("publish", ["w_member_social"], BUILT), feature("links", ["w_member_social"], BUILT), feature("video", ["w_member_social"], BUILT), feature("image", ["w_member_social"], BUILT), feature("analytics", ["r_member_postAnalytics"]), feature("comments", ["w_member_social_feed"])],
     wizard: {
       consoleUrl: "https://www.linkedin.com/developers/apps",
@@ -94,6 +97,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     availability: awaiting,
     noDailyHealth: true,
     monthlyPostLimit: 500,
+    callback: { noLocalhost: true },
     noIdenticalAcrossAccounts: true,
     // X's developer rules forbid several accounts "for same duplicative purpose".
     angleForEachAccount: true,
@@ -136,6 +140,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     features: [feature("publish", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("links", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("follow_ups", ["pages_manage_engagement"], BUILT), feature("video", ["pages_manage_posts", "pages_read_engagement"], BUILT), feature("image", ["pages_manage_posts", "pages_read_engagement"]), feature("analytics", ["read_insights"]), feature("comments", ["pages_read_engagement", "pages_read_user_content", "pages_manage_engagement"])],
     wizard: {
       consoleUrl: "https://developers.facebook.com/apps",
+      consoleName: "Meta",
       scopes: FACEBOOK_SCOPES,
       steps: ["Create a Business type app and add Facebook Login.", "Add the callback URL below as a valid OAuth redirect URI.", "Copy the app ID and app secret into the fields below."],
     },
@@ -148,9 +153,10 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     features: [feature("publish", ["instagram_business_content_publish"]), feature("links", ["instagram_business_content_publish"]), feature("analytics", ["instagram_business_manage_insights"]), feature("comments", ["instagram_business_manage_comments"])],
     wizard: {
       consoleUrl: "https://developers.facebook.com/apps",
+      consoleName: "Meta",
       scopes: INSTAGRAM_SCOPES,
       steps: [
-        "Create a Business type app and add Instagram. Only professional accounts can connect.",
+        "Create a Business type app, or open the one you made for Facebook, and add Instagram. Only professional accounts can connect.",
         "Add the callback URL below. Meta may add a trailing slash, which must match exactly.",
         "Add your Instagram account to the app in the dashboard.",
         "Copy the Instagram app ID and secret into the fields below.",
@@ -165,8 +171,9 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     features: [feature("publish", ["threads_content_publish"], BUILT), feature("links", ["threads_content_publish"], BUILT), feature("follow_ups", ["threads_manage_replies"], BUILT), feature("video", ["threads_content_publish"], { ...BUILT, needsPublicUrl: true }), feature("image", ["threads_content_publish"], { needsPublicUrl: true }), feature("analytics", ["threads_manage_insights"]), feature("comments", ["threads_read_replies", "threads_manage_replies"])],
     wizard: {
       consoleUrl: "https://developers.facebook.com/apps",
+      consoleName: "Meta",
       scopes: THREADS_SCOPES,
-      steps: ["Create a Business type app and add Threads.", "Add the callback URL below. Meta may add a trailing slash, which must match exactly.", "Invite your Threads account as a tester, then accept in Threads settings.", "Copy the Threads app ID and secret into the fields below."],
+      steps: ["Create a separate Meta app and select the Access the Threads API use case.", "Add the callback URL below. Meta may add a trailing slash, which must match exactly.", "Invite your Threads account as a tester, then accept in Threads settings.", "Copy the Threads app ID and secret into the fields below."],
     },
   },
   {
@@ -176,6 +183,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     features: [feature("video", ["https://www.googleapis.com/auth/youtube.upload"]), feature("analytics", ["https://www.googleapis.com/auth/yt-analytics.readonly"]), feature("comments", ["https://www.googleapis.com/auth/youtube.force-ssl"])],
     wizard: {
       consoleUrl: "https://console.cloud.google.com/apis/credentials",
+      consoleName: "Google Cloud",
       scopes: YOUTUBE_SCOPES,
       steps: [
         "Create a Google Cloud project, or reuse the one you made for Search Console.",
@@ -190,6 +198,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   {
     ...unbuilt("tiktok", "TikTok", "creator"),
     availability: awaiting,
+    callback: { https: true },
     ownAppLimits: ["Until TikTok approves your app, only the accounts added to its sandbox can connect.", "Posts from an app TikTok hasn't audited are private, need a private account, and at most 5 accounts can post a day."],
     features: [feature("video", ["video.publish"]), feature("analytics", ["user.info.stats", "video.list"])],
     wizard: {

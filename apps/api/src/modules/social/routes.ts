@@ -32,8 +32,9 @@ const Network = z
     app: z.enum(["own", "system"]).nullable(),
     fields: z.array(Field).optional(),
     wizard: z
-      .object({ consoleUrl: z.string(), scopes: z.array(z.string()), steps: z.array(z.string()), callbackUrl: z.string() })
+      .object({ consoleUrl: z.string(), consoleName: z.string().optional(), scopes: z.array(z.string()), steps: z.array(z.string()), callbackUrl: z.string() })
       .optional(),
+    callbackProblem: z.enum(["needs_https", "no_localhost"]).nullable(),
   })
   .openapi("SocialNetwork");
 const Account = z

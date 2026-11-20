@@ -4,9 +4,10 @@
 import type { Facts } from "../../facts";
 import type { Items } from "../../items";
 import { ensureStrategy, inWorkspace, insertStrategyVersion, latestStrategyVersion, lockStrategy, readStrategy, readStrategyVersion, setStrategyDraft, strategyVersionsOf } from "../adapters/repo";
-import { strategyText } from "../domain/labels";
+import { draftReadings, strategyReadings, strategyText } from "../domain/labels";
 import type { StrategyBody } from "../domain/types";
 import { strategyBody, whatsMissing } from "./body";
+import { citedReadings, readingNotes } from "./plans";
 import { digestOf, itemForVersion, STRATEGY_KIND, waitingItem, type Person } from "./submit";
 
 export function strategyStore({ items, facts, now }: { items: () => Items; facts: Facts; now: () => Date }) {
@@ -14,9 +15,13 @@ export function strategyStore({ items, facts, now }: { items: () => Items; facts
     async strategy(workspaceId: string) {
       const read = await inWorkspace(workspaceId, async (tx) => {
         const row = await readStrategy(tx);
-        if (!row) return { id: null, currentVersion: null, current: null, draft: null, draftRevision: 0, missing: whatsMissing(strategyBody, null) };
+        if (!row) return { id: null, currentVersion: null, current: null, draft: null, draftRevision: 0, missing: whatsMissing(strategyBody, null), notes: [], citedReadings: [] };
         const current = row.currentVersion === null ? undefined : await readStrategyVersion(tx, row.id, row.currentVersion);
-        return { id: row.id, currentVersion: row.currentVersion, current: (current?.body as StrategyBody | undefined) ?? null, draft: row.draft, draftRevision: row.draftRevision, missing: whatsMissing(strategyBody, row.draft) };
+        const body = (current?.body as StrategyBody | undefined) ?? null;
+        // Nothing else moves under a Strategy, so a replaced reading is its only note.
+        const cites = body ? strategyReadings(body) : [];
+        const cited = await citedReadings(tx, [...cites, ...draftReadings((row.draft as { channels?: unknown } | null)?.channels)]);
+        return { id: row.id, currentVersion: row.currentVersion, current: body, draft: row.draft, draftRevision: row.draftRevision, missing: whatsMissing(strategyBody, row.draft), notes: readingNotes(cites, cited), citedReadings: cited };
       });
       return { ...read, waiting: read.id ? await waitingItem(items(), workspaceId, STRATEGY_KIND, read.id) : null };
     },

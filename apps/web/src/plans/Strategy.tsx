@@ -9,7 +9,7 @@ import { Input, Select } from "@/components/Input";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { mayEdit, type Role } from "../items/actions";
 import type { Fact } from "../facts/actions";
-import { basisLabel, emptyStrategy, missingWords, newKey, saveStrategy, say, sayDraft, sayRebased, startStrategyDraft, strategyQuery, submitStrategy, type Channel, type Strategy as Loaded, type StrategyBody } from "./actions";
+import { basisLabel, emptyStrategy, missingWords, newKey, readingChanged, saveStrategy, say, sayDraft, sayRebased, startStrategyDraft, strategyQuery, submitStrategy, type Channel, type Strategy as Loaded, type StrategyBody } from "./actions";
 import { Assumptions, BasisField, DraftProgress, FIELDSET, KeptDraft, Row, Text, useEdits, WaitingVersion } from "./Fields";
 
 const draftOf = (s: Loaded | undefined): StrategyBody => ({ ...emptyStrategy(), ...((s?.draft ?? s?.current ?? {}) as Partial<StrategyBody>) });
@@ -73,6 +73,9 @@ function Loaded(p: { workspaceId: string; role: Role; facts: Fact[]; loaded: Loa
   const factValue = (id: string) => p.facts.find((f) => f.id === id)?.value;
   return (
     <>
+      {loaded.notes.map((n) => (
+        <Notice key={n.readingId}>{readingChanged("Strategy", n.readingId, loaded.citedReadings)}</Notice>
+      ))}
       {current ? (
         <div className="flex flex-col gap-2 rounded-card border border-border p-4">
           {loaded.waiting && <p className="text-sm text-muted-foreground">Version {loaded.currentVersion}</p>}
@@ -86,7 +89,7 @@ function Loaded(p: { workspaceId: string; role: Role; facts: Fact[]; loaded: Loa
               <ul className="flex list-disc flex-col gap-1 pl-5">
                 {current.channels.map((c) => (
                   <li key={c.key}>
-                    {c.label}: {c.reason} <small className="text-sm text-muted-foreground">{basisLabel(c.basis, factValue)}</small>
+                    {c.label}: {c.reason} <small className="text-sm text-muted-foreground">{basisLabel(c.basis, factValue, loaded.citedReadings)}</small>
                   </li>
                 ))}
               </ul>
@@ -177,7 +180,7 @@ function Loaded(p: { workspaceId: string; role: Role; facts: Fact[]; loaded: Loa
                     </Select></div>
                   <Text label="Why" long value={c.reason} onChange={(reason) => setChannel(i, { reason })} />
                   <div className="flex flex-wrap items-center gap-2">
-                    <BasisField value={c.basis} facts={p.facts} onChange={(basis) => setChannel(i, { basis })} />
+                    <BasisField value={c.basis} facts={p.facts} cited={loaded.citedReadings} onChange={(basis) => setChannel(i, { basis })} />
                     <Button type="button" size="sm" variant="outline" aria-label={`Remove channel ${i + 1}`} onClick={() => set({ channels: draft.channels.filter((_, n) => n !== i) })}>
                       Remove
                     </Button>

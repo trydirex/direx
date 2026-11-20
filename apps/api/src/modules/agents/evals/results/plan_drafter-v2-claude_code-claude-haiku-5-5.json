@@ -1,17 +1,17 @@
 {
   "agent": "plan_drafter",
   "definitionVersion": 2,
-  "promptDigest": "d0e69c10f7aad1db288b9a17a8997fb2fa887e84c22a6e7844718bfe0a438d86",
+  "promptDigest": "9a713242d925e20023903e88a23743670b50173e7ad33eb7f7140a7bf8cd2f2b",
   "provider": "claude_code",
   "model": "claude-haiku-5-5",
-  "at": "2026-11-19T17:28:20.455Z",
+  "at": "2026-11-20T05:18:55.186Z",
   "runs": 3,
   "passed": true,
   "cases": [
     {
       "name": "charity-audits",
-      "passed": true,
-      "passes": 3
+      "passed": false,
+      "passes": 2
     },
     {
       "name": "shopify-ops",
@@ -27,9 +27,19 @@
       "name": "no-email-channel",
       "passed": true,
       "passes": 3
+    },
+    {
+      "name": "earlier-counted",
+      "passed": true,
+      "passes": 3
+    },
+    {
+      "name": "too-few-to-compare",
+      "passed": true,
+      "passes": 3
     }
   ],
   "measures": {
-    "problemRuns": 0
+    "problemRuns": 1
   }
 }

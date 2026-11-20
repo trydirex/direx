@@ -12,6 +12,7 @@ import { itemsWorld } from "../items/fixtures/items";
 import { CHECK_CANDIDATES, createModels } from "../models/index";
 import { testKeys } from "../models/fixtures/provider";
 import { planDefinitions, planDrafter, type PlanBody } from "../plans/index";
+import { earlierResultsText, type EarlierResult } from "../plans/evals";
 import { digestOf } from "./adapters/digest";
 import { inWorkspace, readRun } from "./adapters/repo";
 import { createLoop } from "./application/loop";
@@ -30,8 +31,12 @@ const TITLE_MAX = 80;
 /** Runs with any problem, as a share of all runs, that still count as usable. */
 const MAX_PROBLEM_SHARE = 0.1;
 
-/** `emailChannel` null: the Strategy has no email channel, so no step may carry a template. */
-type Case = { id: string; facts: string[]; strategy: object; request: string; emailChannel: string | null };
+/**
+ * `emailChannel` null: the Strategy has no email channel, so no step may carry a template. `results` are the
+ * earlier Campaigns the brief lists, written as the plans module writes them; `mustCite` asks for a reading basis.
+ */
+type Case = { id: string; facts: string[]; strategy: object; request: string; emailChannel: string | null; results?: EarlierResult[]; mustCite?: boolean };
+const readingId = (n: number) => `5b2e9c41-8d3a-4f6b-a1c7-2e4f6a8b0c${String(n).padStart(2, "0")}`;
 const factId = (n: number) => `7f1c3a52-3f0e-4a8e-9b1d-0c2d4e6f8a${String(n).padStart(2, "0")}`;
 const CASES: Case[] = [
   {
@@ -63,10 +68,62 @@ const CASES: Case[] = [
     request: "Get 5 trial signups from practice managers. Start with one short email, then LinkedIn posts.",
     emailChannel: null,
   },
+  {
+    // The last Campaign's counted readings sit in the brief, so a target can rest on one.
+    id: "earlier-counted",
+    facts: ["Brightdesk is helpdesk software for small agencies.", "Brightdesk costs $29 a month per seat."],
+    strategy: { whoFor: "Owners of digital agencies with 5 to 30 staff", positioning: "Client requests in one place, not five inboxes", channels: [{ key: "email", label: "Cold email", timing: "now" }] },
+    request: "Book intro calls with agency owners next month, by email.",
+    emailChannel: "email",
+    results: [
+      {
+        planId: crypto.randomUUID(),
+        title: "October agency outreach",
+        readings: [
+          { id: readingId(1), label: "Meetings", value: "3", source: "system", observedOn: "2026-10-31" },
+          { id: readingId(2), label: "Interested replies", value: "7", source: "system", observedOn: "2026-10-31" },
+        ],
+        overlaps: { kinds: [{ kind: "interested", rows: [{ channels: ["email"], reached: 150, outcomes: 7, rate: null }] }] },
+      },
+    ],
+    mustCite: true,
+  },
+  {
+    // Every row is too few to compare, though one mix looks ahead: no channel may be said to have done better.
+    id: "too-few-to-compare",
+    facts: ["Clinicdesk books patient recalls for dental clinics.", "Clinicdesk has a free 30-day trial."],
+    strategy: { whoFor: "Practice managers at small dental clinics", positioning: "Recalls booked without the phone calls", channels: [{ key: "email", label: "Cold email", timing: "now" }, { key: "linkedin", label: "LinkedIn DM", timing: "now" }] },
+    request: "Book 5 intro calls with practice managers next month. Choose how much to lean on email versus LinkedIn.",
+    emailChannel: "email",
+    results: [
+      {
+        planId: crypto.randomUUID(),
+        title: "Clinic outreach, October",
+        readings: [{ id: readingId(3), label: "Interested replies", value: "5", source: "system", observedOn: "2026-10-30" }],
+        overlaps: {
+          kinds: [
+            {
+              kind: "interested",
+              rows: [
+                { channels: ["email"], reached: 80, outcomes: 2, rate: null },
+                { channels: ["linkedin_dm"], reached: 15, outcomes: 3, rate: null },
+                { channels: ["email", "linkedin_dm"], reached: 10, outcomes: 0, rate: null },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  },
 ];
 
 // A call's length ("a 15-minute call") is the sender's ask, which the person reads, not a claim about the business.
 const numbersIn = (text: string) => (text.replace(/\d+[- ]minutes?\b/gi, "").match(/\d[\d,.]*%?/g) ?? []).map((n) => n.replace(/[.,]$/, ""));
+
+// A sentence naming a channel with one of these, and no hedge, claims a winner the rows can't support.
+const COMPARES = /\b(better|best|outperform\w*|more effective|stronger|strongest|higher|beat|won|winner|worked)\b/i;
+const CHANNEL = /e-?mail|linkedin|\bdms?\b|channel/i;
+const HEDGED = /too few|not enough|can't|cannot|no clear|unclear|isn't|not yet|don't know|unknown|test/i;
 
 /** What makes one run's templates unusable as written. Empty means a person could approve them. */
 function templateProblems(c: Case, plan: PlanBody): string[] {
@@ -97,13 +154,22 @@ function templateProblems(c: Case, plan: PlanBody): string[] {
   }
   // Every new Measure says where its number comes from, so a counted one fills in by itself.
   for (const m of plan.measures) if (!m.source) problems.push(`${m.key}: measure with no source`);
+  // Readings: only ones the brief listed, at least one where the case asks, and no channel said to have done better.
+  const given = (c.results ?? []).flatMap((r) => r.readings.map((x) => x.id));
+  const cited = plan.measures.flatMap((m) => (m.basis.kind === "reading" ? [m.basis.readingId] : []));
+  for (const id of cited) if (!given.includes(id)) problems.push(`cites a reading it wasn't given: ${id}`);
+  if (c.mustCite && cited.length === 0) problems.push("cites no reading");
+  if (c.results?.every((r) => r.overlaps?.kinds.every((k) => k.rows.every((w) => w.rate === null)))) {
+    const said = [plan.goal, plan.audience, ...plan.assumptions.map((a) => a.text), ...plan.steps.map((s) => s.title), ...plan.measures.map((m) => `${m.label}: ${m.target}`)];
+    for (const sentence of said.flatMap((t) => t.split(/(?<=[.!?;])\s/))) if (COMPARES.test(sentence) && CHANNEL.test(sentence) && !HEDGED.test(sentence)) problems.push(`says one channel did better: "${sentence}"`);
+  }
   const openers = templates.map((t) => t.text.split(/(?<=[.!?])\s/)[0]?.trim().toLowerCase());
   if (new Set(openers).size !== openers.length) problems.push("two templates open with the same sentence");
   return problems;
 }
 
 const sampleOf = (p: PlanBody) =>
-  [p.steps.map((s) => `- ${s.on} ${s.key} (${s.channelKey ?? "no channel"}): ${s.title}`).join("\n"), p.measures.map((m) => `- measure ${m.label}: ${m.target} (${m.source ?? "no source"})`).join("\n"), ...p.steps.flatMap((s) => (s.template ? [`### ${s.key}: ${s.template.subject}\n\n${s.template.text}\n\nCites: ${s.template.citations.map((x) => x.factId.slice(-2)).join(", ") || "nothing"}`] : []))].join("\n\n");
+  [p.steps.map((s) => `- ${s.on} ${s.key} (${s.channelKey ?? "no channel"}): ${s.title}`).join("\n"), p.measures.map((m) => `- measure ${m.label}: ${m.target} (${m.source ?? "no source"}, basis ${m.basis.kind === "reading" ? `reading ${m.basis.readingId.slice(-2)}` : m.basis.kind})`).join("\n"), p.assumptions.map((a) => `- assumes ${a.text}`).join("\n"), ...p.steps.flatMap((s) => (s.template ? [`### ${s.key}: ${s.template.subject}\n\n${s.template.text}\n\nCites: ${s.template.citations.map((x) => x.factId.slice(-2)).join(", ") || "nothing"}`] : []))].join("\n\n");
 
 test("the plan drafter writes a usable template for every email step", { timeout: 3 * 3_600_000 }, async () => {
   if (provider !== "claude_code" || !secret || !(runs >= 1)) throw new Error("run through bun run eval --purpose plan_draft --provider claude_code --runs N");
@@ -146,6 +212,7 @@ test("the plan drafter writes a usable template for every email step", { timeout
         brief: [
           { kind: "date", refId: "today", version: null, text: `Today is ${now().toISOString().slice(0, 10)}.` },
           { kind: "citable_facts", refId: "usable_facts", version: null, text: `Facts you may cite, by id and version:\n${usable.map((f) => `${f.id} version 1: ${f.text}`).join("\n")}` },
+          { kind: "earlier_results", refId: "earlier_results", version: null, text: earlierResultsText(c.results ?? []) },
           { kind: "strategy", refId: crypto.randomUUID(), version: "1", text: `The Strategy, version 1:\n${JSON.stringify({ schemaVersion: 1, personas: [], assumptions: [], ...c.strategy })}` },
         ],
         target: { id: null, draftRevision: 0 },

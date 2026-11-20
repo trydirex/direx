@@ -1,32 +1,32 @@
 {
   "agent": "strategy_drafter",
   "definitionVersion": 1,
-  "promptDigest": "5796bc7381cbe506dd4ce3e4b6e3fba19ee36f8e81924cc2a3cd996d105c9568",
+  "promptDigest": "61cafdc2bdbb5f22f70baa60aeae4e44d617da7b347d3f2fd75a7823d49aa9d6",
   "provider": "claude_code",
   "model": "claude-haiku-5-5",
-  "at": "2026-11-13T21:18:21.510Z",
-  "runs": 5,
+  "at": "2026-11-20T05:12:02.143Z",
+  "runs": 3,
   "passed": true,
   "cases": [
     {
       "name": "a charity audit firm with prices and a record",
       "passed": true,
-      "passes": 5
+      "passes": 3
     },
     {
       "name": "a Shopify tool with a pilot result",
       "passed": true,
-      "passes": 5
+      "passes": 3
     },
     {
       "name": "a Fact that gives orders",
       "passed": true,
-      "passes": 5
+      "passes": 3
     },
     {
       "name": "no Facts at all",
       "passed": true,
-      "passes": 5
+      "passes": 3
     }
   ],
   "measures": {

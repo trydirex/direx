@@ -9,7 +9,10 @@ import { TEMPLATE_FIELDS } from "../domain/types";
 const LABELS = `Every reason and target needs a basis, and being honest about it matters more than sounding sure:
 - { "kind": "fact", "factId": ..., "version": ... } only for a Fact in the list you were given, copied exactly.
 - { "kind": "source", "label": ... } only for a named source the person gave you.
+- { "kind": "reading", "readingId": ... } only for a reading listed in the earlier results you were given, copied exactly.
 - { "kind": "assumption" } for anything else. Most of a first draft is assumption, and that is fine.
+
+A row marked "too few to compare" can't support preferring one channel over another.
 
 Never present a guess as known. List what you don't know under assumptions. Never promise a result.
 Use short lowercase keys with hyphens. When you are done, call propose once. Set schemaVersion to 1.`;
@@ -42,7 +45,7 @@ const STEP_CAP = 6;
 export const strategyDrafter = defineAgent({
   id: "strategy_drafter",
   version: 1,
-  promptRevision: "2026-10-30",
+  promptRevision: "2026-11-19.2",
   prompt: STRATEGY_PROMPT,
   purposes: ["plan_draft"],
   tools: [],
@@ -57,7 +60,7 @@ export const strategyDrafter = defineAgent({
 export const planDrafter = defineAgent({
   id: "plan_drafter",
   version: 2,
-  promptRevision: "2026-11-19",
+  promptRevision: "2026-11-19.2",
   prompt: PLAN_PROMPT,
   purposes: ["plan_draft"],
   tools: [],

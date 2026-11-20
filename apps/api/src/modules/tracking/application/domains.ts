@@ -2,9 +2,33 @@
 // A Workspace's tracking domains (ADR 0035 rules 007 and 008): add one, check its DNS and then a TLS
 // handshake, stop it for new links, or remove it while nothing uses it. And the edge's question.
 import { randomBytes } from "node:crypto";
-import type { DnsLookup } from "../adapters/dns";
+import { TXT_LABEL, type DnsLookup } from "../adapters/dns";
 import * as repo from "../adapters/repo";
-import { dnsMatches, normalizeHostname, TXT_LABEL, type DomainState } from "../domain/domains";
+
+export type DomainState = repo.DomainState;
+
+const HOST = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/** Lowercase, punycode, no trailing dot; null when it isn't a hostname of at least two labels. */
+export function normalizeHostname(input: string): string | null {
+  const raw = input.trim().replace(/\.$/, "");
+  // Only a bare hostname: no port, path, credentials or spaces for URL to quietly drop.
+  if (!raw || /[/:@?#\s\\]/.test(raw)) return null;
+  let ascii: string;
+  try {
+    ascii = new URL(`http://${raw}`).hostname;
+  } catch {
+    return null;
+  }
+  return ascii.length <= 253 && HOST.test(ascii) ? ascii : null;
+}
+
+const bare = (name: string) => name.trim().toLowerCase().replace(/\.$/, "");
+
+/** Whether the CNAME points at the deployment's tracking target and a TXT record holds the Workspace's value. */
+export function dnsMatches(found: { cname: readonly string[]; txt: readonly string[] }, target: string, value: string): boolean {
+  return found.cname.some((c) => bare(c) === bare(target)) && found.txt.some((t) => t.trim() === value);
+}
 
 export type DomainView = {
   id: string;

@@ -3,7 +3,9 @@
 // on it succeeds with a trusted certificate (ADR 0035 rule 007). Tests pass their own.
 import { resolveCname, resolveTxt } from "node:dns/promises";
 import { connect } from "node:tls";
-import { TXT_LABEL } from "../domain/domains";
+
+/** The label the TXT record sits under: `_direx-tracking.<hostname>`. */
+export const TXT_LABEL = "_direx-tracking";
 
 export type DnsLookup = {
   records(hostname: string): Promise<{ cname: string[]; txt: string[] }>;

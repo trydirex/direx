@@ -5,10 +5,10 @@ import { and, count, eq, ne, sql } from "drizzle-orm";
 import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
 import { campaigns } from "@direx/db/schema-campaigns";
 import { trackedLinks, trackingDomains } from "@direx/db/schema-tracking";
-import type { DomainState } from "../domain/domains";
 
 export type TrackingTx = WorkspaceTx;
 export type DomainRow = typeof trackingDomains.$inferSelect;
+export type DomainState = "pending" | "dns_ok" | "verified" | "stopped";
 
 export const inWorkspace = <T>(workspaceId: string, fn: (tx: TrackingTx) => Promise<T>) => withWorkspace(workspaceId, fn);
 

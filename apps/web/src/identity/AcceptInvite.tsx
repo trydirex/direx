@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Notice, Page } from "../components/layout";
 import { NativeButton } from "@/components/native";
 import { acceptInvite, claimServer, previewInvite } from "./actions";
+import { signOut } from "./auth";
 import { message } from "./messages";
 import { Narrow } from "./SignIn";
 
@@ -49,7 +50,7 @@ export function AcceptInvite({ workspaceId, token, onJoined }: { workspaceId: st
  * The page the bootstrap link from `bun run server-admin --invite` opens, once the person is signed in (ADR 0024).
  * With no `token`, the server uses the one the link's page held in a cookie.
  */
-export function ClaimServer({ token, onClaimed }: { token?: string; onClaimed: () => void }) {
+export function ClaimServer({ token, email, onClaimed }: { token?: string; email: string; onClaimed: () => void }) {
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
   const claim = () => {
@@ -62,8 +63,15 @@ export function ClaimServer({ token, onClaimed }: { token?: string; onClaimed: (
   return (
     <Narrow>
       <Page title="Claim this server" description="You'll be its first Server admin: you choose who may sign up, and you can create Organizations.">
+        {/* The first account's email isn't confirmed by mail (ADR 0024 rule 002), so a typo shows here. */}
+        <p>
+          You're signed in as <strong>{email}</strong>. Check it's yours before you go on: password resets and sign-in links go there.
+        </p>
         <NativeButton pending={pending} onClick={claim}>
           Become Server admin
+        </NativeButton>
+        <NativeButton type="button" variant="ghost" size="sm" onClick={() => void signOut(location.pathname).then((e) => e && setError(e))}>
+          Use a different email
         </NativeButton>
         {error && <Notice tone="error">{error}</Notice>}
       </Page>

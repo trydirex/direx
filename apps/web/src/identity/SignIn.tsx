@@ -77,8 +77,10 @@ export function SignIn({
       await signInWithPassword(email, password, callbackURL);
       signedIn();
     } else if (mode === "sign_up") {
-      if ((await signUpWithPassword(email, password, callbackURL)) === "signed_in") signedIn();
-      else setSent(`Check ${email} for a link to confirm your address, then sign in.`);
+      const result = await signUpWithPassword(email, password, callbackURL);
+      if (result === "confirm") return setSent(`Check ${email} for a link to confirm your address, then sign in.`);
+      if (result === "verified") await signInWithPassword(email, password, callbackURL);
+      signedIn();
     } else {
       await sendPasswordReset(email);
       setSent(`If ${email} has a sign-in here, we sent it a reset link. It works once and expires in 1 hour.`);

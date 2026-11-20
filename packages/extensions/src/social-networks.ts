@@ -3,7 +3,7 @@
 // are in its manifest; this is how a person connects it and what it can do for them.
 import { FACEBOOK_SCOPES } from "./social/facebook/provider";
 import { INSTAGRAM_SCOPES } from "./social/instagram/provider";
-import { LINKEDIN_SCOPES } from "./social/linkedin/provider";
+import { LINKEDIN_PAGE_SCOPES, LINKEDIN_SCOPES } from "./social/linkedin/provider";
 import { THREADS_SCOPES } from "./social/threads/provider";
 import { TIKTOK_SCOPES } from "./social/tiktok/provider";
 import { X_SCOPES } from "./social/x/provider";
@@ -90,7 +90,25 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     },
   },
   // LinkedIn offers this only to registered legal organisations, so it stays unbuilt until a company exists.
-  { ...unbuilt("linkedin_page", "LinkedIn Pages", "page"), variantOf: "linkedin", tokenEnds: true, postLimit: 3000 },
+  {
+    ...unbuilt("linkedin_page", "LinkedIn Pages", "page"),
+    variantOf: "linkedin",
+    tokenEnds: true,
+    postLimit: 3000,
+    availability: awaiting,
+    callback: { https: true },
+    features: [feature("publish", ["w_organization_social"]), feature("analytics", ["r_organization_social"])],
+    wizard: {
+      consoleUrl: "https://www.linkedin.com/developers/apps",
+      scopes: LINKEDIN_PAGE_SCOPES,
+      steps: [
+        "Create a second app, apart from the one for your own profile. LinkedIn allows Community Management only on an app with no other products.",
+        "Link the app to your company Page, then under Products request the Community Management API. LinkedIn grants it only to a registered organization, after a review.",
+        "Under Auth, add the callback URL below.",
+        "Once LinkedIn grants access, copy the client ID and client secret into the fields below.",
+      ],
+    },
+  },
   {
     ...unbuilt("x", "X", "user"),
     postLimit: 280,

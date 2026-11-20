@@ -583,7 +583,7 @@ describe("what each network declares", () => {
       expect(net(c).availability).toEqual({ cloud: "awaiting_approval", self_host: "awaiting_approval" });
     }
     expect(feature("instagram", "publish")?.built).toBe(false);
-    expect(net("linkedin_page").features).toEqual([]);
+    expect(feature("linkedin_page", "publish")?.built).toBe(false);
   });
 
   test("follow-ups are built only where allowed", () => {

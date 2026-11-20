@@ -29,6 +29,7 @@ export function Narrow(p: { children: ReactNode }) {
 /** Google or Microsoft first (most people have one), then email and password, then an email link. Also the step-up prompt, with its own title. */
 export function SignIn({
   title = "Sign in to Direx",
+  signUpTitle = "Sign up for Direx",
   note,
   callbackURL,
   initialMode = "sign_in",
@@ -36,6 +37,7 @@ export function SignIn({
   offerSignUp = false,
 }: {
   title?: string;
+  signUpTitle?: string;
   note?: string;
   callbackURL: string;
   initialMode?: Mode;
@@ -86,7 +88,7 @@ export function SignIn({
     );
   return (
     <Narrow>
-      <Page title={mode === "sign_up" ? "Sign up for Direx" : mode === "forgot" ? "Reset your password" : title} description={note ?? (mode !== "forgot" ? "Plans and drafts your marketing. Nothing goes out until you approve it." : undefined)}>
+      <Page title={mode === "sign_up" ? signUpTitle : mode === "forgot" ? "Reset your password" : title} description={note ?? (mode !== "forgot" ? "Plans and drafts your marketing. Nothing goes out until you approve it." : undefined)}>
         {(providers.google || providers.microsoft) && (
           <div className="flex flex-col gap-2">
             {providers.google && (
@@ -167,6 +169,29 @@ export function SignIn({
             Email me a sign-in link
           </NativeButton>
         </div>
+      </Page>
+    </Narrow>
+  );
+}
+
+/**
+ * A production server nobody has signed up to yet: only the bootstrap link gets in (ADR 0024), so a
+ * form here could only fail. The page can't tell how Direx was installed, so it shows both commands.
+ */
+export function NotSetUp() {
+  return (
+    <Narrow>
+      <Page title="This Direx isn't set up yet">
+        <p className="text-sm">
+          The person who installed it becomes its first Server admin by opening the one-time link the install printed. If that's you, open that link.
+        </p>
+        <p className="text-sm">If the link was lost or has expired, make a new one on the server, from the root of the Direx checkout.</p>
+        <p className="text-sm">
+          Installed with Docker Compose: <code className="break-all">docker compose -f deploy/compose/compose.yml exec direx bun run server-admin --invite</code>
+        </p>
+        <p className="text-sm">
+          Installed from the source code: <code className="break-all">bun run server-admin --invite</code>
+        </p>
       </Page>
     </Narrow>
   );

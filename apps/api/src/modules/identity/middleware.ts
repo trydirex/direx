@@ -11,11 +11,14 @@ import { can, type Permission, type Role } from "./domain/roles";
  * The browser session behind this request, or null. Every Direx read of a session goes through here
  * (ADR 0037 rule 002). Once a session is a day old, Better Auth renews it and sends a new cookie;
  * that cookie goes onto this response. Dropped, the browser keeps the first cookie's Max-Age and
- * signs the person out 7 days after sign-in however much they use Direx.
+ * signs the person out 7 days after sign-in however much they use Direx. Its `no-store` comes along
+ * too, so no shared cache keeps a response that carries a session cookie.
  */
 export async function readSession(auth: () => Auth, c: Context) {
   const { headers, response } = await auth().api.getSession({ headers: c.req.raw.headers, returnHeaders: true });
   for (const cookie of headers.getSetCookie()) c.header("Set-Cookie", cookie, { append: true });
+  const cacheControl = headers.get("cache-control");
+  if (cacheControl) c.header("Cache-Control", cacheControl);
   return response;
 }
 

@@ -188,8 +188,10 @@ test("a session read past Better Auth's updateAge sends the renewed cookie back,
 
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);
-  const renewed = sessionCookie(await call(`/api/w/${workspace.id}`, owner));
+  const renewedRes = await call(`/api/w/${workspace.id}`, owner);
+  const renewed = sessionCookie(renewedRes);
   expect(renewed).toContain("Max-Age=604800");
+  expect(renewedRes.headers.get("cache-control")).toBe("no-store");
   expect((await call("/api/me", renewed!.split(";")[0])).status).toBe(200);
 
   vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);

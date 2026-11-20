@@ -199,9 +199,13 @@ test("the brief lists the 3 plans read most recently, each Measure's newest read
   expect(asked).toEqual([[spring, autumn, summer]]);
   // Nothing from another Workspace, and the plan being drafted never lists its own readings.
   expect(text).not.toContain(counted);
-  const planBrief = await briefed.planDraftInput(ws, spring);
-  expect(planBrief.ok && results(planBrief.input.brief)).toContain('Plan "Left out":');
-  expect(planBrief.ok && results(planBrief.input.brief)).not.toContain('Plan "Spring":');
+  for (const planId of [spring, spring.toUpperCase()]) {
+    asked.length = 0;
+    const planBrief = await briefed.planDraftInput(ws, planId);
+    expect(planBrief.ok && results(planBrief.input.brief)).toContain('Plan "Left out":');
+    expect(planBrief.ok && results(planBrief.input.brief)).not.toContain('Plan "Spring":');
+    expect(asked).toEqual([[autumn, summer, left]]);
+  }
 });
 
 test("without campaigns wired in, a plan's readings are listed with no overlaps", async () => {

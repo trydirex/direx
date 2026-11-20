@@ -84,7 +84,7 @@ export function drafting({ facts, now, campaignResults }: { facts: FactReads; no
       if (!read.row.request) return { ok: false, reason: "no_request" } as const;
       if (!read.pinned) return { ok: false, reason: "no_strategy" } as const;
       const strategy = { kind: "strategy", refId: read.pinned.strategyId, version: String(read.pinned.version), text: `The Strategy, version ${read.pinned.version}:\n${JSON.stringify(read.pinned.body)}` };
-      const input: DraftInput = { request: read.row.request, brief: [...(await brief(workspaceId, planId)), strategy], target: { id: planId, draftRevision: read.row.draftRevision } };
+      const input: DraftInput = { request: read.row.request, brief: [...(await brief(workspaceId, read.row.id)), strategy], target: { id: planId, draftRevision: read.row.draftRevision } };
       return { ok: true, input, title: read.row.title } as const;
     },
   };

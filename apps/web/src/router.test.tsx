@@ -158,6 +158,21 @@ test("the Calendar's filters live in the link: they open as set, a change replac
   expect(router.history.length).toBe(entries + 1);
 });
 
+test("Everything's filters live in the link: they open as set, and a change replaces the entry", async () => {
+  serve(true);
+  const router = open(`/w/${W}/everything?state=held&q=dana`);
+  expect(await screen.findByRole("heading", { name: "Everything" })).toBeTruthy();
+  const search = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+  expect(search.value).toBe("dana");
+  expect(router.state.location.search).toEqual({ state: "held", q: "dana" });
+  const entries = router.history.length;
+  await userEvent.type(search, " reyes");
+  await waitFor(() => expect(router.state.location.search).toEqual({ state: "held", q: "dana reyes" }));
+  await userEvent.click(screen.getAllByRole("button", { name: "Clear filters" })[0]!);
+  await waitFor(() => expect(router.state.location.search).toEqual({}));
+  expect(router.history.length).toBe(entries);
+});
+
 test("the nav moves between screens without loading the page again, and marks where you are", async () => {
   serve(true);
   const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
@@ -203,7 +218,7 @@ test("the nav has no Plan item, and names the people section Audience", async ()
   serve(true);
   open(`/w/${W}`);
   const main = await screen.findByRole("navigation", { name: "Main" });
-  expect(within(main).getAllByRole("link").map((l) => l.textContent)).toEqual(["Home", "Calendar", "Campaigns", "Audience"]);
+  expect(within(main).getAllByRole("link").map((l) => l.textContent)).toEqual(["Home", "Calendar", "Everything", "Campaigns", "Audience"]);
   expect(within(main).queryByRole("link", { name: "Plan" })).toBeNull();
 });
 

@@ -63,7 +63,7 @@ test("the rail names every icon, marks the current section, and opens the Worksp
   const main = within(screen.getByRole("navigation", { name: "Main" }));
   expect(await main.findByRole("link", { name: "Home (2 need you)" })).toBeTruthy();
   // Each name is visible text under its icon, not only a tooltip.
-  for (const name of ["Calendar", "Campaigns", "Audience"]) expect(main.getByRole("link", { name }).textContent).toBe(name);
+  for (const name of ["Calendar", "Everything", "Campaigns", "Audience"]) expect(main.getByRole("link", { name }).textContent).toBe(name);
   // ADR 0023: a plan opens only inside its Campaign, so Plan has no nav item.
   expect(main.queryByRole("link", { name: "Plan" })).toBeNull();
   expect(main.getByRole("link", { name: "Home (2 need you)" }).textContent).toMatch(/^Home/);

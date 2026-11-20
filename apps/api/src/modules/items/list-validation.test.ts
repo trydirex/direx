@@ -5,7 +5,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import type { MemberEnv } from "../identity/index";
 import type { Items } from "./application/create";
 import { itemRoutes } from "./routes";
-import { TYPES } from "../../../../web/src/items/actions";
+import { TYPES } from "../../../../web/src/items/type-labels";
 
 test("every offered type fits the bounded API filter; other limits remain enforced", async () => {
   const list = vi.fn().mockResolvedValue({ items: [], needsYouCount: 0, nextCursor: null });

@@ -10,57 +10,79 @@ const MAX_SITEMAP_FILES = 4;
 const MAX_CHILD_SITEMAPS = 3;
 const TIMEOUT_MS = 30_000;
 
+export type SiteReadDeps = { fetchHtml?: FetchHtml; fetchSitemap?: FetchSitemap };
+type Robots = { text: string; may: (url: URL) => boolean };
+
+/**
+ * One site's reads under robots.txt, each origin's file read once, a redirect followed only where
+ * robots.txt allows it, and every step stopped by `signal`. `given` is the site every read stays on.
+ */
+export function siteReader(given: string, signal: AbortSignal, deps: SiteReadDeps = {}) {
+  const fetchHtml = deps.fetchHtml ?? createFetchHtml({ maxChars: Infinity });
+  const fetchSitemap = deps.fetchSitemap ?? createFetchSitemap();
+  const robotsByOrigin = new Map<string, Promise<Robots>>();
+  const robotsOf = (url: URL) => {
+    signal.throwIfAborted();
+    const hit = robotsByOrigin.get(url.origin);
+    if (hit) return hit;
+    const read = fetchHtml(given, `${url.origin}/robots.txt`, signal).then((r) => {
+      signal.throwIfAborted();
+      const robots = robotsFrom(r.ok ? r : { ok: false, status: r.status });
+      return { text: r.ok ? r.html : "", may: (u: URL) => allowed(robots, PAGE_READER_AGENT, u.pathname + u.search) };
+    });
+    robotsByOrigin.set(url.origin, read);
+    return read;
+  };
+  const mayRead = async (url: URL) => (await robotsOf(url)).may(url);
+  /** One page, or why it couldn't be read; null when robots.txt keeps us out of it. */
+  const page = async (url: string) => {
+    if (!(await mayRead(new URL(url)))) return null;
+    const read = await fetchHtml(given, url, signal, mayRead);
+    signal.throwIfAborted();
+    return read;
+  };
+  return {
+    robotsOf,
+    page,
+    /** A page's links, or null when it couldn't be read. */
+    async links(url: string): Promise<Link[] | null> {
+      const read = await page(url);
+      return read?.ok ? linksIn(read.html, read.url) : null;
+    },
+    /** The addresses in the sitemaps robots.txt names, else /sitemap.xml: at most 4 files, 3 of them an index's children. */
+    async sitemap(): Promise<string[]> {
+      const home = new URL(given);
+      const sitemaps = sitemapsIn((await robotsOf(home)).text);
+      if (sitemaps.length === 0) sitemaps.push(`${home.origin}/sitemap.xml`);
+      const locs: string[] = [];
+      let children = 0;
+      for (let i = 0; i < sitemaps.length && i < MAX_SITEMAP_FILES; i++) {
+        const map = await fetchSitemap(given, sitemaps[i]!, signal);
+        signal.throwIfAborted();
+        if (!map.ok) continue;
+        if (!map.index) locs.push(...map.locs);
+        else for (const loc of map.locs) if (children++ < MAX_CHILD_SITEMAPS) sitemaps.push(loc);
+      }
+      return locs;
+    },
+  };
+}
+
 export type FindResult = FoundPages | { ok: false; reason: "robots_disallowed" | "unreadable"; detail?: string } | { ok: false; reason: "busy" };
 export type FindPages = (workspaceId: string, landingUrl: string) => Promise<FindResult>;
 
-export function createFindPages(deps: { fetchHtml?: FetchHtml; fetchSitemap?: FetchSitemap; timeoutMs?: number } = {}): FindPages {
-  const fetchHtml = deps.fetchHtml ?? createFetchHtml({ maxChars: Infinity });
-  const fetchSitemap = deps.fetchSitemap ?? createFetchSitemap();
+export function createFindPages(deps: SiteReadDeps & { timeoutMs?: number } = {}): FindPages {
   // ponytail: one process's lock; two API processes could each run one for a Workspace, which only costs a few reads.
   const running = new Set<string>();
 
   async function find(given: string, signal: AbortSignal): Promise<FindResult> {
-    const robotsByOrigin = new Map<string, Promise<{ text: string; may: (url: URL) => boolean }>>();
-    const robotsOf = (url: URL) => {
-      signal.throwIfAborted();
-      const hit = robotsByOrigin.get(url.origin);
-      if (hit) return hit;
-      const read = fetchHtml(given, `${url.origin}/robots.txt`, signal).then((r) => {
-        signal.throwIfAborted();
-        const robots = robotsFrom(r.ok ? r : { ok: false, status: r.status });
-        return { text: r.ok ? r.html : "", may: (u: URL) => allowed(robots, PAGE_READER_AGENT, u.pathname + u.search) };
-      });
-      robotsByOrigin.set(url.origin, read);
-      return read;
-    };
-    const mayRead = async (url: URL) => (await robotsOf(url)).may(url);
-    const readLinks = async (url: string): Promise<Link[] | null> => {
-      const u = new URL(url);
-      if (!(await mayRead(u))) return null;
-      const page = await fetchHtml(given, url, signal, mayRead);
-      signal.throwIfAborted();
-      return page.ok ? linksIn(page.html, page.url) : null;
-    };
-
+    const site = siteReader(given, signal, deps);
     const home = new URL(given);
-    const robots = await robotsOf(home);
-    if (!robots.may(home)) return { ok: false, reason: "robots_disallowed" };
-    const page = await fetchHtml(given, given, signal, mayRead);
-    signal.throwIfAborted();
-    if (!page.ok && page.reason === "robots_disallowed") return { ok: false, reason: page.reason };
+    const robots = await site.robotsOf(home);
+    const page = await site.page(given);
+    if (!page || (!page.ok && page.reason === "robots_disallowed")) return { ok: false, reason: "robots_disallowed" };
     if (!page.ok) return page.reason === "other_site" ? { ok: false, reason: "other_site" } : { ok: false, reason: "unreadable", detail: page.status ? `${page.reason} ${page.status}` : page.reason };
-
-    const sitemaps = sitemapsIn(robots.text);
-    if (sitemaps.length === 0) sitemaps.push(`${home.origin}/sitemap.xml`);
-    const locs: string[] = [];
-    let children = 0;
-    for (let i = 0; i < sitemaps.length && i < MAX_SITEMAP_FILES; i++) {
-      const map = await fetchSitemap(given, sitemaps[i]!, signal);
-      signal.throwIfAborted();
-      if (!map.ok) continue;
-      if (!map.index) locs.push(...map.locs);
-      else for (const loc of map.locs) if (children++ < MAX_CHILD_SITEMAPS) sitemaps.push(loc);
-    }
+    const locs = await site.sitemap();
 
     // Addresses on the homepage's own host that its robots.txt keeps us out of are dropped. Others
     // are only proposed, and adding the competitor reads them with their own robots.txt first.
@@ -69,7 +91,7 @@ export function createFindPages(deps: { fetchHtml?: FetchHtml; fetchSitemap?: Fe
     const found = findPages(given, page.url, candidates);
     if (!found.ok || found.changelog) return found;
     const roadmap = roadmapOf(candidates);
-    const onRoadmap = roadmap ? await readLinks(roadmap) : null;
+    const onRoadmap = roadmap ? await site.links(roadmap) : null;
     return onRoadmap ? { ...found, changelog: changelogOf(keep(given, onRoadmap, "roadmap").filter(mayPropose)) } : found;
   }
 

@@ -2,6 +2,7 @@
 // Competitor watch (Beta): the competitors a Workspace names and the pages Direx reads for each one.
 export { createCompetitors, type Competitor, type Competitors, type ReadPage } from "./application/competitors";
 export { createSnapshots, type Snapshots } from "./application/snapshots";
+export { createProposals as createCompetitorProposals, type Proposals as CompetitorProposals, type WorkspaceSite } from "./application/proposals";
 export { createLabels, type Labels } from "./application/labels";
 export { createMoves, type Moves } from "./application/moves";
 export { competitorKinds } from "./application/kinds";

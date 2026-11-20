@@ -112,6 +112,24 @@ test("the setup link on a server with no accounts opens on sign-up and holds its
   await waitFor(() => expect(held).toHaveBeenCalledWith("/api/admission/token", expect.objectContaining({ body: JSON.stringify({ token: "a".repeat(64) }) })));
 });
 
+test("signing up from the setup link mails a return path without its token (DX-R-0024-005)", async () => {
+  serveNewServer("needs_link");
+  const sent = vi.spyOn(globalThis, "fetch").mockResolvedValue(Response.json({ token: null }));
+  open(CLAIM);
+  await userEvent.type(await screen.findByLabelText("Email"), "sam@example.com");
+  await userEvent.type(screen.getByLabelText(/^Password/), "a long enough password");
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledWith("/api/auth/sign-up/email", expect.anything()));
+  const body = JSON.parse(String(sent.mock.calls.find(([path]) => path === "/api/auth/sign-up/email")![1]!.body));
+  expect(body.callbackURL).toBe("/claim");
+});
+
+test("signed in, /claim opens the claim page for the held token", async () => {
+  serve(true);
+  open("/claim");
+  expect(await screen.findByRole("heading", { level: 1, name: "Claim this server" })).toBeTruthy();
+});
+
 test("a server with accounts keeps today's sign-in, on the setup link too", async () => {
   serveNewServer(null);
   open(CLAIM);

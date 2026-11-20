@@ -92,8 +92,8 @@ export async function removePlugin(pluginId: string): Promise<string | null> {
 }
 
 /** Makes the signed-in person this server's first Server admin. Returns the API's error code, or null when it worked. */
-export async function claimServer(token: string): Promise<string | null> {
-  const { error, response } = await api.POST("/api/server/claim", { body: { token } });
+export async function claimServer(token?: string): Promise<string | null> {
+  const { error, response } = await api.POST("/api/server/claim", { body: token ? { token } : {} });
   return error ? linkCode(response, error.error) : null;
 }
 

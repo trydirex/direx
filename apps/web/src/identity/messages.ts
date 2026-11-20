@@ -19,6 +19,7 @@ export const MESSAGES: Record<string, string> = {
   last_server_admin: "A server needs at least one Server admin. Add someone else first.",
   server_admins_only: "Only whoever runs this server can create Organizations.",
   link_unusable: "This link has expired or has already been used. Ask whoever runs this server for a new one.",
+  link_needed: "Open the setup link again in this browser to claim this server.",
   bad_link: "This link isn't valid. Check that you copied all of it, or ask for a new one.",
   password_length: "Use at least 12 characters.",
   too_large: "That file is over 10 MB. A plugin is one bundled file of at most 10 MB.",

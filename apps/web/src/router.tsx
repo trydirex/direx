@@ -101,9 +101,12 @@ const signedInRoute = createRoute({
       return () => clearTimeout(timer);
     }, [options.isPending]);
     const invite = useRouterState({ select: (s) => s.location.pathname.startsWith("/invite/") });
-    const claim = useRouterState({ select: (s) => s.location.pathname.startsWith("/claim/") });
+    const claim = useRouterState({ select: (s) => /^\/claim(?:\/|$)/.test(s.location.pathname) });
     // A Workspace invite's or the bootstrap link's token, held for sign-up (ADR 0024).
     const inviteToken = useRouterState({ select: (s) => /^\/(?:invite\/[^/]+|claim)\/([0-9a-f]{64})$/.exec(s.location.pathname)?.[1] });
+    // Sign-in mails its return path in confirmation and magic links, so the bootstrap token must not
+    // be in it (DX-R-0024-005). /claim reads the token from the cookie held above.
+    const callbackURL = claim ? "/claim" : here();
     // Outside the shell, so the loading and error states get their own margin.
     if (me.data === undefined || (me.data === null && options.isPending && !optionsTimedOut)) {
       return (
@@ -125,9 +128,9 @@ const signedInRoute = createRoute({
     const firstRun = options.data?.firstRun;
     if (firstRun === "sign_up") return <SignIn callbackURL={here()} initialMode="sign_up" offerSignUp />;
     if (firstRun === "needs_link" && claim)
-      return <SignIn signUpTitle="Set up Direx" note="Sign up to become this server's first Server admin." callbackURL={here()} inviteToken={inviteToken} initialMode="sign_up" offerSignUp />;
+      return <SignIn signUpTitle="Set up Direx" note="Sign up to become this server's first Server admin." callbackURL={callbackURL} inviteToken={inviteToken} initialMode="sign_up" offerSignUp />;
     if (firstRun === "needs_link" && !invite) return <NotSetUp />;
-    return <SignIn title={invite ? "Sign in to accept your invite" : claim ? "Sign in to claim this server" : undefined} callbackURL={here()} inviteToken={inviteToken} offerSignUp />;
+    return <SignIn title={invite ? "Sign in to accept your invite" : claim ? "Sign in to claim this server" : undefined} callbackURL={callbackURL} inviteToken={inviteToken} offerSignUp />;
   },
 });
 
@@ -202,6 +205,14 @@ const claimRoute = createRoute({
     // A full load, so every screen sees the new Server admin.
     return <ClaimServer token={claimRoute.useParams().token} onClaimed={() => location.assign("/new-org")} />;
   },
+});
+
+/** Where sign-in returns from a bootstrap link: the token comes from the held cookie, not the URL. */
+const heldClaimRoute = createRoute({
+  getParentRoute: () => signedInRoute,
+  loader: preloading(ClaimServer),
+  path: "/claim",
+  component: () => <ClaimServer onClaimed={() => location.assign("/new-org")} />,
 });
 
 const newOrgRoute = createRoute({
@@ -770,6 +781,7 @@ export const routeTree = rootRoute.addChildren([
     indexRoute,
     inviteRoute,
     claimRoute,
+    heldClaimRoute,
     newOrgRoute,
     serverRoute,
     addPasswordRoute,

@@ -25,6 +25,14 @@ test("claiming sends the link's token and moves on", async () => {
   expect(post).toHaveBeenCalledWith("/api/server/claim", { body: { token: TOKEN } });
 });
 
+test("with no token in the URL, claiming leaves it to the held cookie, and says to reopen the link when none is held", async () => {
+  const post = vi.spyOn(api, "POST").mockImplementation((() => reply(409, { error: "link_needed" })) as never);
+  render(<ClaimServer onClaimed={vi.fn()} />);
+  await userEvent.click(screen.getByRole("button", { name: "Become Server admin" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Open the setup link again in this browser to claim this server.");
+  expect(post).toHaveBeenCalledWith("/api/server/claim", { body: {} });
+});
+
 test("an expired or used link says so and asks for a new one", async () => {
   vi.spyOn(api, "POST").mockImplementation((() => reply(409, { error: "link_unusable" })) as never);
   const onClaimed = vi.fn();

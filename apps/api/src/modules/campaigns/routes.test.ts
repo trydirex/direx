@@ -171,6 +171,14 @@ test("meetings and deals are marked and undone over HTTP by someone who can edit
   expect(await outcomesOf(sam)).toEqual([deal]);
 });
 
+test("a Viewer reads a Campaign's overlaps, every kind even with no outcome; another Workspace's Campaign is not found", async () => {
+  const id = await newCampaign();
+  const empty = { rows: [], people: [], more: 0 };
+  expect(await read(url(`/campaigns/${id}/overlaps`), roles.viewer)).toEqual({ kinds: [{ kind: "interested", ...empty }, { kind: "meeting", ...empty }, { kind: "deal", ...empty }], hasPosts: false });
+  const other = (await createOrg(owner)).workspace.id;
+  expect((await call(`/api/w/${other}/campaigns/${id}/overlaps`, owner)).status).toBe(404);
+});
+
 test("outcomes accept today and refuse tomorrow in the Workspace's time zone at the UTC date boundary", async () => {
   const id = await newCampaign();
   const added = await (await send("POST", url(`/campaigns/${id}/people`), owner, { csv: "email\nboundary@acme.test" })).json() as { results: { personId: string }[] };

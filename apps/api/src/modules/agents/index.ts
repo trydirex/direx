@@ -11,6 +11,7 @@ export { defineAgent, type AgentDefinition } from "./definitions/define";
 export { brandAskStarts } from "./application/brand-start";
 export { AREAS, askStart, workState, type Area, type AskStart, type WorkRef, type WorkReport, type WorkState } from "./application/ask-start";
 export { createFetchHtml, createFetchImage, createFetchJson, htmlToText, linksIn, PAGE_READER_AGENT, type FetchHtml, type FetchImage, type FetchJson, type JsonResult } from "./adapters/fetch-page";
+export { createFetchSitemap, type FetchSitemap } from "./adapters/fetch-page";
 export { allowed, robotsFrom } from "./domain/robots";
 export { capped } from "./domain/snapshot";
 export { sinkByOutputKey, type Producer, type Sink } from "./application/proposals";

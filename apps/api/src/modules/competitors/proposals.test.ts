@@ -3,7 +3,9 @@
 // dismissing, and adding a competitor closing its proposal. Pages and sitemaps come from maps.
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { expect, test } from "vitest";
+import { ownerClient } from "../../../../../test/db";
 import type { FetchHtml, FetchSitemap } from "../agents/index";
+import type { Discovery } from "../extensions/index";
 import { TEST_SECRET, testIdentity } from "../identity/test-auth";
 import { createProposals } from "./application/proposals";
 import { competitorRoutes, createCompetitors, createSnapshots, type ReadPage } from "./index";
@@ -28,14 +30,16 @@ const fetchSitemap: FetchSitemap = async (_base, url) => (url === `${SITE}sitema
 const readPage: ReadPage = async (url) => ({ ok: true, url, finalUrl: url, title: null, metaDescription: null, html: "", text: "", truncated: false, readAt: new Date() });
 const { routes, signIn, createOrg, call, addMember } = testIdentity();
 const sites = new Map<string, string>();
-const proposals = createProposals({ site: async (w) => sites.get(w) ?? null, reads: { fetchHtml, fetchSitemap } });
+// No search installed until a test installs one.
+let discovery: Discovery | undefined;
+const proposals = createProposals({ site: async (w) => sites.get(w) ?? null, reads: { fetchHtml, fetchSitemap }, discovery: () => discovery });
 const competitors = createCompetitors({ readPage });
 (routes as unknown as OpenAPIHono).route("/", competitorRoutes({ competitors: () => competitors, snapshots: () => createSnapshots({ readPage }), proposals: () => proposals }));
 
 const owner = await signIn();
 const W = (await createOrg(owner, "Contoso")).workspace.id;
 const url = (rest = "") => `/api/w/${W}/competitors${rest}`;
-type Listed = { proposals: { id: string; name: string; site: string | null; comparisonUrl: string | null; source: string }[]; site: string | null; scannedAt: string | null };
+type Listed = { proposals: { id: string; name: string; site: string | null; comparisonUrl: string | null; source: string }[]; site: string | null; scannedAt: string | null; searchAvailable?: boolean };
 const get = async (cookie = owner) => (await (await call(url("/proposals"), cookie)).json()) as Listed;
 const scan = async (cookie = owner) => {
   const r = await call(url("/proposals/scan"), cookie, { method: "POST" });
@@ -44,7 +48,7 @@ const scan = async (cookie = owner) => {
 const names = (l: Listed) => l.proposals.map((p) => p.name);
 
 test("with no Brand read of a website there is no site, nothing proposed and nothing to scan", async () => {
-  expect(await get()).toEqual({ proposals: [], site: null, scannedAt: null });
+  expect(await get()).toEqual({ proposals: [], site: null, scannedAt: null, searchAvailable: false });
   expect(await scan()).toEqual({ status: 409, body: { error: "no_site" } });
 });
 
@@ -107,4 +111,64 @@ test("a scan that runs past its limit says so and records nothing", async () => 
     timeoutMs: 20,
   });
   expect(await slow.scan(W)).toEqual({ ok: false, reason: "timed_out" });
+});
+
+const post = (path: string, body: object, cookie = owner, w = W) => call(`/api/w/${w}/competitors/proposals/${path}`, cookie, { method: "POST", body });
+
+test("with no search installed, the panel says so and an estimate is refused", async () => {
+  discovery = undefined;
+  expect((await get()).searchAvailable).toBe(false);
+  const r = await post("estimate", { terms: ["bank reconciliation software"] });
+  expect([r.status, await r.json()]).toEqual([409, { error: "not_available" }]);
+});
+
+test("a paid search shows its cost first, needs that much confirmed, and proposes what it finds once", async () => {
+  const searched: string[][] = [];
+  let results = [
+    { domain: "doublehq.com", name: "Double", source: "s" },
+    { domain: "xenett.com", name: "Xenett", source: "s" },
+    { domain: "www.equilityhq.com", name: "Equility", source: "s" },
+    { domain: "booke.ai", name: "", source: "s" },
+  ];
+  discovery = { estimate: async () => ({ usd: 0.12 }), search: async (_w, terms) => (searched.push(terms), results) };
+  const W3 = (await createOrg(owner, "Searching")).workspace.id;
+  sites.set(W3, SITE);
+  expect((await (await call(`/api/w/${W3}/competitors/proposals`, owner)).json()).searchAvailable).toBe(true);
+  const estimate = await post("estimate", { terms: ["bank reconciliation software"] }, owner, W3);
+  expect([estimate.status, await estimate.json()]).toEqual([200, { usd: 0.12 }]);
+
+  const low = await post("search", { terms: ["bank reconciliation software"], confirmedUsd: 0.1 }, owner, W3);
+  expect([low.status, await low.json()]).toEqual([400, { error: "below_estimate" }]);
+  expect(searched).toEqual([]);
+
+  const found = (await (await post("search", { terms: ["bank reconciliation software"], confirmedUsd: 0.12 }, owner, W3)).json()) as Listed & { proposals: { terms: string[] | null }[] };
+  // The Workspace's own site is never proposed; a company with no name goes by its domain.
+  expect(found.proposals.map((p) => [p.name, p.site, p.source])).toEqual([
+    ["booke.ai", "https://booke.ai/", "search"],
+    ["Double", "https://doublehq.com/", "search"],
+    ["Xenett", "https://xenett.com/", "search"],
+  ]);
+  expect(found.proposals[0]!.terms).toEqual(["bank reconciliation software"]);
+
+  // A search that finds nothing new is still recorded, with what was confirmed and by whom.
+  results = [{ domain: "doublehq.com", name: "Double", source: "s" }];
+  expect(names((await (await post("search", { terms: ["bookkeeping automation"], confirmedUsd: 0.5 }, owner, W3)).json()) as Listed)).toEqual(["booke.ai", "Double", "Xenett"]);
+  const db = await ownerClient();
+  const { rows } = await db.query("select terms, confirmed_micros from competitor_finds where workspace_id = $1 and kind = 'search' order by at", [W3]);
+  await db.end();
+  expect(rows).toEqual([
+    { terms: ["bank reconciliation software"], confirmed_micros: "120000" },
+    { terms: ["bookkeeping automation"], confirmed_micros: "500000" },
+  ]);
+});
+
+test("search terms holding an email or a web address are refused, and only an Owner or Admin may search", async () => {
+  discovery = { estimate: async () => ({ usd: 0.12 }), search: async () => [] };
+  for (const term of ["mail sam@contoso.example", "see contoso.example/pricing"]) {
+    const r = await post("estimate", { terms: [term] });
+    expect([r.status, await r.json()]).toEqual([400, { error: "person_data" }]);
+  }
+  expect((await post("estimate", { terms: ["a", "b", "c", "d"] })).status).toBe(400);
+  const viewer = (await addMember(owner, W, "viewer")).cookie;
+  expect((await post("search", { terms: ["bank rec"], confirmedUsd: 1 }, viewer)).status).toBe(403);
 });

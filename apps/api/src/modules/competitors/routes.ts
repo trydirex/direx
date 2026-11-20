@@ -119,7 +119,25 @@ const findPagesRoute = createRoute({
 const Proposal = z
   .object({ id: z.uuid(), name: z.string(), site: z.string().nullable(), comparisonUrl: z.string().nullable(), source: z.enum(["own_site", "search"]), terms: z.array(z.string()).nullable(), foundAt: z.iso.datetime() })
   .openapi("CompetitorProposal");
-const ProposalList = z.object({ proposals: z.array(Proposal), site: z.string().nullable(), scannedAt: z.iso.datetime().nullable() }).openapi("CompetitorProposals");
+const ProposalList = z
+  .object({ proposals: z.array(Proposal), site: z.string().nullable(), scannedAt: z.iso.datetime().nullable(), searchAvailable: z.boolean().openapi({ description: "Whether a company search is installed. Without one, only the Workspace's own site is scanned" }) })
+  .openapi("CompetitorProposals");
+const Terms = z.array(z.string().trim().min(2).max(100)).min(1).max(3);
+const estimateRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/competitors/proposals/estimate",
+  middleware: [requirePermission("workspace.settings")],
+  request: { params: ws, ...body(z.strictObject({ terms: Terms })) },
+  responses: { 200: json(z.object({ usd: z.number() }), "What the search costs at most, before anything is spent"), ...errors },
+});
+const searchRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/competitors/proposals/search",
+  middleware: [requirePermission("workspace.settings")],
+  request: { params: ws, ...body(z.strictObject({ terms: Terms, confirmedUsd: z.number().nonnegative() })) },
+  responses: { 200: json(ProposalList, "The companies the search found, proposed. The search is recorded and paid whatever it finds"), ...errors },
+});
+const searchStatus = (reason: string) => (reason === "not_available" ? 409 : 400);
 const proposalsRoute = createRoute({
   method: "get",
   path: "/api/w/{workspaceId}/competitors/proposals",
@@ -200,6 +218,16 @@ export function competitorRoutes(deps: { competitors: () => Competitors; snapsho
     .openapi(scanRoute, async (c) => {
       const r = await proposals().scan(c.get("member").workspaceId);
       return "ok" in r ? c.json({ error: r.reason }, 409) : c.json(listJson(r), 200);
+    })
+    .openapi(estimateRoute, async (c) => {
+      const r = await proposals().estimate(c.get("member").workspaceId, c.req.valid("json").terms);
+      return r.ok ? c.json({ usd: r.usd }, 200) : c.json({ error: r.reason }, searchStatus(r.reason));
+    })
+    .openapi(searchRoute, async (c) => {
+      const m = c.get("member");
+      const { terms, confirmedUsd } = c.req.valid("json");
+      const r = await proposals().search(m.workspaceId, m.userId, terms, confirmedUsd);
+      return "ok" in r ? c.json({ error: r.reason }, searchStatus(r.reason)) : c.json(listJson(r), 200);
     })
     .openapi(dismissRoute, async (c) => {
       const m = c.get("member");

@@ -180,7 +180,7 @@ export function Seo(p: { workspaceId: string; role: Role; notice?: string; initi
               {!mayConnect ? (
                 <p className="text-muted-foreground">A Viewer can't connect it.</p>
               ) : s.app?.source === null ? (
-                !manage && <p className="text-muted-foreground">Search Console needs a Google app first. Ask an Owner or Admin to set one up here.</p>
+                <p className="text-muted-foreground">Search Console needs a Google app first. {manage ? "Set one up below." : "Ask an Owner or Admin to set one up here."}</p>
               ) : (
                 <Button pending={connecting.pending} onClick={() => void start()}>
                   Connect Search Console

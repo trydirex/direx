@@ -97,6 +97,16 @@ test("signing up with a session goes straight to the callback", async () => {
   await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/next"));
 });
 
+test("signing up with an already verified address signs in with the same password, with no confirm step", async () => {
+  answer(200, { token: null, user: { emailVerified: true } });
+  render(withQueries(<SignIn callbackURL="/next" initialMode="sign_up" />));
+  await fill("new@example.com", "twelve chars ok");
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/next"));
+  expect(sent()).toEqual({ path: "/api/auth/sign-in/email", body: { email: "new@example.com", password: "twelve chars ok", callbackURL: "/next" } });
+  expect(screen.queryByText(/to confirm your address/)).toBeNull();
+});
+
 test("an invite link's token is handed to the server before anyone signs in", async () => {
   answer(200, { ok: true });
   const token = "a".repeat(64);

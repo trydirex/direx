@@ -42,12 +42,12 @@ test("on self-host with no AI signed in, connecting one is the open first step, 
   show();
   const [ai, read] = await steps();
   expect(ai!.getAttribute("aria-current")).toBe("step");
-  expect(ai!.textContent).toContain("1. Connect the AI that writes for you");
-  expect(read!.textContent).toContain("2. Read your website");
+  expect(ai!.textContent).toContain("Connect your AI");
+  expect(read!.textContent).toContain("Read your website");
   const step = current("Connect the AI that writes for you");
   expect(step.getByText("Step 1 of 4")).toBeTruthy();
   expect(step.queryByRole("button", { name: "Back" })).toBeNull();
-  expect(step.getByRole("button", { name: "Skip for now" })).toBeTruthy();
+  expect(step.getByRole("button", { name: "Skip this step" })).toBeTruthy();
   expect(screen.queryByRole("region", { name: "Read your website" })).toBeNull();
 });
 
@@ -63,7 +63,7 @@ test("on cloud there is no AI step, so reading the website comes first", async (
   show();
   const list = await steps();
   expect(list).toHaveLength(3);
-  expect(list[0]!.textContent).toContain("1. Read your website");
+  expect(list[0]!.textContent).toContain("Read your website");
   expect(list[0]!.getAttribute("aria-current")).toBe("step");
 });
 
@@ -75,13 +75,13 @@ test("Back and Next move one step at a time, and skipping past the last says wha
   const goal = current("Pick a first goal");
   expect(goal.getByText("Step 3 of 3")).toBeTruthy();
   await userEvent.click(goal.getByRole("button", { name: "Back" }));
-  expect(current("Check what Direx understood").getByText(/Step 2 of 3 · Finished/)).toBeTruthy();
+  expect(current("Check what Direx understood").getByText("Step 2 of 3 · Done")).toBeTruthy();
   await userEvent.click(current("Check what Direx understood").getByRole("button", { name: "Next" }));
-  await userEvent.click(current("Pick a first goal").getByRole("button", { name: "Skip for now" }));
+  await userEvent.click(current("Pick a first goal").getByRole("button", { name: "Skip this step" }));
   expect(screen.getByText("That's all the steps")).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: "Back to what's left" }));
   expect(current("Pick a first goal")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Skip setup for now" }).getAttribute("href")).toBe(`/w/${W}`);
+  expect(screen.getByRole("link", { name: "Finish setup later" }).getAttribute("href")).toBe(`/w/${W}`);
 });
 
 test("suggestions waiting are accepted or dismissed in setup itself, Brand one link away; with a plan started, setup is done", async () => {
@@ -89,7 +89,7 @@ test("suggestions waiting are accepted or dismissed in setup itself, Brand one l
   const post = vi.spyOn(api, "POST").mockImplementation((() => reply(200, {})) as never);
   show();
   const [read] = await steps();
-  expect(read!.textContent).toContain("finished. Read.");
+  expect(read!.textContent).toContain("Done. Direx read your site.");
   const check = current("Check what Direx understood");
   const proposed = within(check.getByRole("list", { name: "Proposed brand facts" }));
   expect(proposed.getByText("What you sell: Audits")).toBeTruthy();
@@ -104,11 +104,51 @@ test("suggestions waiting are accepted or dismissed in setup itself, Brand one l
   expect(screen.getAllByRole("link", { name: "Go to Home" })[0]!.getAttribute("href")).toBe(`/w/${W}`);
 });
 
+test("any step in the list opens when clicked, done or not", async () => {
+  serve({ deployment: "cloud" });
+  show();
+  const [, , goal] = await steps();
+  await userEvent.click(within(goal!).getByRole("button"));
+  expect(current("Pick a first goal").getByText("Step 3 of 3")).toBeTruthy();
+  expect(screen.queryByRole("region", { name: "Read your website" })).toBeNull();
+  // Skipped on the way past, so it says it is still open rather than completed.
+  const [read] = await steps();
+  expect(read!.textContent).toContain("Not done yet.");
+  expect(read!.textContent).not.toContain("completed");
+});
+
+test("while the website is read, the step shows that read alone and lets the person move on; what it proposes reaches Check", async () => {
+  const live = { id: "r2", agent: "brand_reader", status: "running", statusReason: null, address: "https://acme.example", proposalCount: 0, unevaluated: true, createdAt: "2026-11-14T10:00:00.000Z" };
+  serve({ deployment: "cloud", runs: [live] });
+  show();
+  await steps();
+  const read = current("Read your website");
+  expect((await read.findByText("Reading https://acme.example")).getAttribute("role")).toBe("status");
+  expect(read.getByText(/hasn't tested this model/)).toBeTruthy();
+  expect(read.queryByLabelText("Address")).toBeNull();
+  expect(read.getByRole("button", { name: "Cancel the read of https://acme.example" })).toBeTruthy();
+  await userEvent.click(read.getByRole("button", { name: "Continue while it reads" }));
+  expect(current("Check what Direx understood").getByText(/Direx is still reading/)).toBeTruthy();
+  // The read finishes on the next poll, and its proposal shows without a reload.
+  serve({ deployment: "cloud", runs: [{ ...live, status: "succeeded", proposalCount: 1 }], items: [proposal] });
+  expect(await screen.findByRole("list", { name: "Proposed brand facts" }, { timeout: 6000 })).toBeTruthy();
+});
+
+test("a finished read is one line in its step, with a way to read again", async () => {
+  serve({ deployment: "cloud", runs: [{ ...finished, agent: "brand_reader", address: "https://acme.example", proposalCount: 4 }] });
+  show();
+  await steps();
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  const read = current("Read your website");
+  expect(read.getByText(/Last read https:\/\/acme.example: Finished, 4 proposed/)).toBeTruthy();
+  expect(read.getByRole("button", { name: "Read your website again" })).toBeTruthy();
+});
+
 test("reads that all failed leave the read step open, even with facts typed on Brand", async () => {
   serve({ deployment: "cloud", facts: [fact], runs: [{ ...finished, status: "failed", statusReason: "no_route" }] });
   show();
   const [readStep] = await steps();
-  expect(readStep!.textContent).not.toContain("finished");
+  expect(readStep!.textContent).not.toContain("Done.");
   expect(readStep!.getAttribute("aria-current")).toBe("step");
 });
 

@@ -30,11 +30,34 @@ test("numbersOutsideBrief: numbers the brief holds pass, in any of its forms; in
   expect(numbersOutsideBrief("Replies came in at 12% by 2026-11-20, with £1200 entered and 3 of 40 interested.", brief)).toEqual([]);
   expect(numbersOutsideBrief("Revenue reached £1,250 and 12% replied.", brief)).toEqual(["1250"]);
   expect(numbersOutsideBrief("No numbers here.", brief)).toEqual([]);
+  // A sign changes the number; a date's hyphen doesn't.
+  expect(numbersOutsideBrief("Revenue was -1,200 on 2026-11-20.", brief)).toEqual(["-1200"]);
+  // The digits inside a reading id are not a number the brief gives.
+  expect(numbersOutsideBrief("About 52 meetings followed.", "reading 0c52a1f0-1e2b-4c3d-9e8f-123456789abc: Replies 12")).toEqual(["52"]);
+  expect(numbersOutsideBrief("Rate reached -.5%.", "Rate reached 0.5%.")).toEqual(["-0.5"]);
+  expect(numbersOutsideBrief("Rate reached .5%.", "Rate reached 0.5%.")).toEqual([]);
+});
+
+test("writeUpProblem does not treat digits inside brief labels as counts", () => {
+  const withLabel = { ...brief, text: `B2B founders; ${brief.text}` };
+  expect(writeUpProblem({ ...ok, paragraph: "There were 2 meetings." }, withLabel)).toBe("number_not_in_brief:2");
+  expect(writeUpProblem({ ...ok, paragraph: "The campaign reached B2B founders." }, withLabel)).toBeNull();
+});
+
+test.each(["most  effective", "least\nsuccessful"])("writeUpProblem checks winner claims across whitespace: %j", (phrase) => {
+  const output = { ...ok, paragraph: `Email was the ${phrase} channel.` };
+  expect(writeUpProblem(output, brief)).toBe("winner_without_comparison");
+  expect(writeUpProblem(output, { ...brief, comparable: true })).toBeNull();
 });
 
 test("creditPhrase and claimsWinner catch credit and a winner without a comparison", () => {
   expect(creditPhrase("Meetings came thanks to the DM step.")).toBe("thanks to");
   expect(creditPhrase("People reached by email and LinkedIn DM: 3 interested.")).toBeNull();
+  expect(creditPhrase("The DM step generated 12 replies.")).toBe("generated");
+  expect(creditPhrase("The second email produced 3 meetings.")).toBe("produced");
+  expect(claimsWinner("Email was the most effective channel.", false)).toBe(true);
+  expect(claimsWinner("Email was the most effective channel.", true)).toBe(false);
+  expect(claimsWinner("Posts were the least successful step.", false)).toBe(true);
   expect(claimsWinner("LinkedIn DM worked better than email.", false)).toBe(true);
   expect(claimsWinner("LinkedIn DM worked better than email.", true)).toBe(false);
   expect(claimsWinner("Both channels reached 40 People.", false)).toBe(false);

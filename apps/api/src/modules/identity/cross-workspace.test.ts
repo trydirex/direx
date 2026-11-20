@@ -360,6 +360,8 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "GET /api/w/:workspaceId/campaigns/:id/progress": { path: `/api/w/${w2}/campaigns/${anyItem}/progress` },
   "GET /api/w/:workspaceId/campaigns/:id/results": { path: `/api/w/${w2}/campaigns/${anyItem}/results` },
   "GET /api/w/:workspaceId/campaigns/:id/overlaps": { path: `/api/w/${w2}/campaigns/${anyItem}/overlaps` },
+  "GET /api/w/:workspaceId/campaigns/:id/write-up": { path: `/api/w/${w2}/campaigns/${anyItem}/write-up` },
+  "POST /api/w/:workspaceId/campaigns/:id/write-up": { path: `/api/w/${w2}/campaigns/${anyItem}/write-up` },
   "GET /api/w/:workspaceId/campaigns/:id/activity": { path: `/api/w/${w2}/campaigns/${anyItem}/activity` },
   "DELETE /api/w/:workspaceId/campaigns/:id/draft": { path: `/api/w/${w2}/campaigns/${anyItem}/draft` },
   "PUT /api/w/:workspaceId/campaigns/:id/anchor": { path: `/api/w/${w2}/campaigns/${anyItem}/anchor`, body: { on: "2030-01-07" } },

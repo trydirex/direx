@@ -9,7 +9,14 @@ import { startConnect } from "../credentials/actions";
 type S = components["schemas"];
 export type Refusal = NonNullable<S["SearchConsoleRefusal"]>;
 export type Reason = Refusal["reason"];
-export type SearchConsole = { connected: boolean; siteUrl: string | null; properties: { siteUrl: string; permissionLevel: string }[] | null; refusal: Refusal | null };
+/** `app`, before connecting: whose Google app connecting would use (null: none yet) and the redirect an own app must allow. */
+export type SearchConsole = {
+  connected: boolean;
+  siteUrl: string | null;
+  properties: { siteUrl: string; permissionLevel: string }[] | null;
+  refusal: Refusal | null;
+  app?: { source: "own" | "system" | null; callbackUrl: string };
+};
 export type Summary = paths["/api/w/{workspaceId}/seo/search-console/summary"]["get"]["responses"][200]["content"]["application/json"];
 
 /**
@@ -32,6 +39,19 @@ export type Candidates = paths["/api/w/{workspaceId}/seo/candidates"]["get"]["re
 
 export const CONNECTION = "google_search_console";
 export const API_LIBRARY = "https://console.cloud.google.com/apis/library/searchconsole.googleapis.com";
+
+/** How to make a Workspace's own Google app for Search Console. The callback URL comes from the server. */
+export const googleAppSteps = (callbackUrl: string) => ({
+  consoleUrl: "https://console.cloud.google.com/apis/credentials",
+  callbackUrl,
+  scopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+  steps: [
+    "Turn on the Search Console API for your Google Cloud project.",
+    "Set up the OAuth consent screen and publish it to Production, or choose Internal if everyone signs in with your Google Workspace. An app left in Testing stops connecting after 7 days.",
+    "Create an OAuth client ID of type Web application, with the callback URL below as an authorized redirect URI.",
+    "Paste its client ID and client secret here.",
+  ],
+});
 
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 
@@ -151,7 +171,7 @@ export async function connect(workspaceId: string, go: (url: string) => void = (
     return null;
   }
   return r.error === "unknown_connection"
-    ? "Search Console needs a Google OAuth client. Set DIREX_GOOGLE_CLIENT_ID and store its secret as signin.google, as .env.example describes."
+    ? "Search Console needs a Google app first. An Owner or Admin can set one up on this page."
     : "That didn't work. Try again.";
 }
 

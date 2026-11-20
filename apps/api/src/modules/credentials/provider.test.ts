@@ -109,3 +109,23 @@ test("revoke: no endpoint is fine, POST form with basic, DELETE per account", as
   expect(await revokeToken(del, "t", 1000)).toBe(false);
   expect(seen).toHaveLength(2);
 });
+
+test("a renamed client id goes under its own name on exchange, refresh and the long-token swap", async () => {
+  const p = provider({ clientIdParam: "client_key", longToken: { url: `${base}/long`, grantType: "swap", tokenParam: "access_token", sendClientId: true } });
+  await exchangeCode(p, code, 1000);
+  await refreshTokens(p, "rt", 1000);
+  await exchangeLongToken(p, "short", 1000);
+  const named = (s: Seen, k: string) => s.form.get(k) ?? s.query.get(k);
+  expect(seen.map((s) => [named(s, "client_key"), named(s, "client_id")])).toEqual([
+    ["id", null],
+    ["id", null],
+    ["id", null],
+  ]);
+});
+
+test("revoke sends only the token, unless the provider asks for the client pair too", async () => {
+  await revokeToken(provider({ revokeUrl: `${base}/revoke` }), "t", 1000);
+  await revokeToken(provider({ revokeUrl: `${base}/revoke`, clientIdParam: "client_key", revokeClient: true }), "t", 1000);
+  expect([...seen[0]!.form.keys()]).toEqual(["token"]);
+  expect(Object.fromEntries(seen[1]!.form)).toEqual({ client_key: "id", client_secret: "shh", token: "t" });
+});

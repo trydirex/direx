@@ -127,7 +127,7 @@ export const competitorFinds = pgTable(
     check(
       "competitor_finds_kind_check",
       sql`(${t.kind} = 'own_site' and ${t.site} is not null and ${t.terms} is null and ${t.confirmedMicros} is null and ${t.confirmedBy} is null)
-        or (${t.kind} = 'search' and ${t.site} is null and ${t.terms} is not null and ${t.confirmedMicros} >= 0 and ${t.confirmedBy} is not null)`,
+        or (${t.kind} = 'search' and ${t.site} is null and ${t.terms} is not null and ${t.confirmedMicros} is not null and ${t.confirmedMicros} >= 0 and ${t.confirmedBy} is not null)`,
     ),
   ],
 );
@@ -158,7 +158,7 @@ export const competitorProposals = pgTable(
     check("competitor_proposals_url_check", sql`char_length(coalesce(${t.site}, '')) <= 2000 and char_length(coalesce(${t.comparisonUrl}, '')) <= 2000`),
     check(
       "competitor_proposals_closed_check",
-      sql`(${t.closedAt} is null and ${t.closedBy} is null and ${t.closedAs} is null) or (${t.closedAt} is not null and ${t.closedBy} is not null and ${t.closedAs} in ('added', 'dismissed'))`,
+      sql`(${t.closedAt} is null and ${t.closedBy} is null and ${t.closedAs} is null) or (${t.closedAt} is not null and ${t.closedBy} is not null and ${t.closedAs} is not null and ${t.closedAs} in ('added', 'dismissed'))`,
     ),
   ],
 );

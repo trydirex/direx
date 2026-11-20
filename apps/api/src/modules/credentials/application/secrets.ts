@@ -14,6 +14,7 @@ import {
   isUniqueViolation,
   listEvents,
   listLive,
+  markConnectionNeedsReauth,
   touchUsed,
   updateLive,
   withWorkspace,
@@ -30,6 +31,10 @@ import { parseKind, parseMeta, type Kind, type KindRefusal, type Meta, type Secr
 import { metadata, type CredentialMeta, type Done, type Refusal } from "./meta";
 
 export type { CredentialMeta };
+
+/** The connection a Workspace's own OAuth app serves, or null for any other credential. */
+const appConnection = (row: { scope: string; kind: string; key: string | null }) =>
+  row.scope === "workspace" && row.kind === "basic" && row.key?.startsWith("oauth_app:") ? row.key.slice("oauth_app:".length) : null;
 
 export type ResolveConsumer = "execute" | "reconcile" | "query" | "poll" | "model_call" | "mcp_call" | "startup" | "webhook";
 
@@ -152,6 +157,9 @@ export function createVault(deps: VaultDeps) {
           updatedAt: at,
         });
         await insertEvent(tx, { workspaceId, credentialId: id, consumer: "create", actorUserId, outcome: "ok", at });
+        // A refresh token works only for the client it was issued to, so a new app means reconnecting.
+        const app = appConnection(row);
+        if (app) await markConnectionNeedsReauth(tx, workspaceId, app, at);
         return { ok: true as const, credential: metadata(row) };
       });
     } catch (e) {
@@ -216,6 +224,9 @@ export function createVault(deps: VaultDeps) {
       }
       const at = now();
       await updateLive(tx, workspaceId, id, row.version, { ciphertext: null, nonce: null, deletedAt: at, updatedAt: at });
+      // Tokens issued to the removed app don't work with the one that replaces it.
+      const app = appConnection(row);
+      if (app) await markConnectionNeedsReauth(tx, workspaceId, app, at);
       await insertEvent(tx, {
         workspaceId,
         credentialId: id,

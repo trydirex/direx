@@ -176,6 +176,8 @@ const propose = (findId: string, name: string, key: string) =>
 test("a find is a site scan or a confirmed search, never a mix, and is never changed or deleted", async () => {
   const scan = (await find("own_site", "https://contoso.example/", null, null, null)).rows[0].id;
   await expect(find("search", null, ["bank rec software"], 120000, U)).resolves.toBeDefined();
+  await expect(find("search", null, ["bank rec software"], 0, U)).resolves.toBeDefined();
+  await expect(find("search", null, ["bank rec software"], null, U)).rejects.toThrow(/competitor_finds_kind_check/);
   await expect(find("search", null, ["bank rec software"], 120000, null)).rejects.toThrow(/competitor_finds_kind_check/);
   await expect(find("own_site", "https://contoso.example/", ["x"], null, null)).rejects.toThrow(/competitor_finds_kind_check/);
   await expect(find("blog", "https://contoso.example/", null, null, null)).rejects.toThrow(/competitor_finds_kind_check/);
@@ -189,9 +191,23 @@ test("one proposal per name in a Workspace, only ever closed, and closed whole",
   await expect(propose(scan, "booke-ai", "bookeai")).rejects.toThrow(/competitor_proposals_name_key/);
   await expect(propose(scan, "Bad", "Bad Key")).rejects.toThrow(/competitor_proposals_name_check/);
   await expect(c.query("update competitor_proposals set closed_at = now(), closed_as = 'dismissed' where id = $1", [rows[0].id])).rejects.toThrow(/competitor_proposals_closed_check/);
+  await expect(c.query("update competitor_proposals set closed_at = now(), closed_by = $2 where id = $1", [rows[0].id, U])).rejects.toThrow(/competitor_proposals_closed_check/);
   await c.query("update competitor_proposals set closed_at = now(), closed_by = $2, closed_as = 'dismissed' where id = $1", [rows[0].id, U]);
   await expect(c.query("update competitor_proposals set name = 'Other' where id = $1", [rows[0].id])).rejects.toThrow(/permission denied/);
   await expect(c.query("delete from competitor_proposals where id = $1", [rows[0].id])).rejects.toThrow(/permission denied/);
+});
+
+test("a completed proposal closure cannot be reopened or changed", async () => {
+  const scan = (await find("own_site", "https://contoso.example/", null, null, null)).rows[0].id;
+  const close = (id: string, outcome: string) =>
+    c.query("update competitor_proposals set closed_at = now(), closed_by = $2, closed_as = $3 where id = $1", [id, U, outcome]);
+  const dismissed = (await propose(scan, "Dismissed", "dismissed")).rows[0].id;
+  const added = (await propose(scan, "Added", "added")).rows[0].id;
+  await expect(close(dismissed, "dismissed")).resolves.toMatchObject({ rowCount: 1 });
+  await expect(close(added, "added")).resolves.toMatchObject({ rowCount: 1 });
+  await expect(c.query("update competitor_proposals set closed_at = null, closed_by = null, closed_as = null where id = $1", [dismissed])).rejects.toThrow(/closure is final/);
+  await expect(c.query("update competitor_proposals set closed_as = 'added' where id = $1", [dismissed])).rejects.toThrow(/closure is final/);
+  await expect(c.query("update competitor_proposals set closed_at = closed_at + interval '1 hour' where id = $1", [added])).rejects.toThrow(/closure is final/);
 });
 
 test("proposals and finds are invisible from another Workspace", async () => {

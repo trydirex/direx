@@ -4,7 +4,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, test, vi } from "vitest";
 import { mediaRows, TEST_SECRET, testIdentity } from "./fixtures/support";
 import { createMedia, diskStore, IMAGE_MAX_BYTES, mediaRoutes } from "./index";
 
@@ -96,6 +96,36 @@ test("a player seeks with a range", async () => {
   expect(part.headers.get("content-range")).toBe("bytes 100-199/500");
   expect(new Uint8Array(await part.arrayBuffer())).toEqual(bytes.slice(100, 200));
   expect((await get(m.id, owner, { range: "bytes=900-" })).status).toBe(416);
+});
+
+test("a partial media response with a renewed session cookie cannot be stored", async () => {
+  const cookie = await signIn();
+  const workspace = (await createOrg(cookie, "Renewal")).workspace.id;
+  const uploaded = await routes.request(`/api/w/${workspace}/media?kind=source`, {
+    method: "POST",
+    headers: { cookie, "content-type": "video/mp4", "x-file-name": "renewal.mp4" },
+    body: mp4(500),
+  });
+  expect(uploaded.status).toBe(201);
+  const { media } = (await uploaded.json()) as { media: { id: string } };
+  const read = () => routes.request(`/api/w/${workspace}/media/${media.id}`, { headers: { cookie, range: "bytes=100-199" } });
+  const fresh = await read();
+  expect(fresh.status).toBe(206);
+  expect(fresh.headers.get("cache-control")).toBe("private, max-age=0");
+  expect(fresh.headers.getSetCookie()).toHaveLength(0);
+  await fresh.arrayBuffer();
+
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.now() + 2 * 24 * 60 * 60_000);
+    const renewed = await read();
+    expect(renewed.status).toBe(206);
+    expect(renewed.headers.getSetCookie().some((value) => value.includes("session_token="))).toBe(true);
+    expect(renewed.headers.get("cache-control")).toBe("no-store");
+    await renewed.arrayBuffer();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("a deleted file is gone to readers; deleting twice is a 404", async () => {

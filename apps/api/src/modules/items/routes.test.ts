@@ -63,6 +63,16 @@ test("a snapshot or approver in the request is rejected, not ignored", async () 
   expect((await items.view(W, i.id))!.state).toBe("needs_approval");
 });
 
+test("the choice limit fits three fully escaped edits and rejects a larger payload", async () => {
+  const i = await needsApproval();
+  const choice = JSON.stringify({ add: [0, 1, 2].map((index) => ({ index, text: "\u0001".repeat(400) })) });
+  expect((await post_(url(`/${i.id}/approve`), owner, { revision: 1, choice: choice + " " })).status).toBe(400);
+  // A post rejects choices in the handler, proving the request passed the schema.
+  const accepted = await post_(url(`/${i.id}/approve`), owner, { revision: 1, choice });
+  expect(accepted.status).toBe(409);
+  expect(await accepted.json()).toEqual({ error: "choice_not_allowed" });
+});
+
 test("refusals are named", async () => {
   const i = await needsApproval();
   const stale = await post_(url(`/${i.id}/approve`), owner, { revision: 9 });

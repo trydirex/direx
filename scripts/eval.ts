@@ -11,12 +11,13 @@
 //   DIREX_EVAL_CLAUDE_CODE_TOKEN=... bun run eval --purpose ask --provider claude_code --runs 5
 //   DIREX_EVAL_CLAUDE_CODE_TOKEN=... bun run eval --purpose person_skeleton --provider claude_code --runs 3
 //   DIREX_EVAL_CLAUDE_CODE_TOKEN=... bun run eval --purpose result_why --provider claude_code --runs 5 [--model M]
+//   DIREX_EVAL_CLAUDE_CODE_TOKEN=... bun run eval --purpose campaign_write_up --provider claude_code --runs 3 [--model M]
 //   DIREX_EVAL_CLAUDE_CODE_TOKEN=... bun run eval --purpose names_read|terms_draft|strategy_draft|campaign_draft|social_draft --provider claude_code --runs 5
 //   bun run eval --skill cold-email-compliance --provider codex [--runs N] [--case ID]   (needs no database)
 import { parseArgs } from "node:util";
 import { evalSkill, type Provider, SKILLS } from "../test/skills/run";
 
-const USAGE = "usage: bun run eval --agent brand_reader [--provider claude_code] | --purpose claim_check|injection_check|hostile_pages|optout_detect|reply_label|seo_brief|clip_pick|lesson_check|voice_check|plan_draft|ask|person_skeleton|competitor_change|competitor_brief|competitor_post|result_why|names_read|terms_draft|strategy_draft|campaign_draft|social_draft --provider anthropic|claude_code [--runs N] [--model M, reply_label, claim_check, injection_check, competitor_change, competitor_brief, competitor_post, result_why, names_read, terms_draft, strategy_draft, campaign_draft and social_draft only] | --skill NAME --provider claude_code|codex [--runs N] [--model M] [--case ID]";
+const USAGE = "usage: bun run eval --agent brand_reader [--provider claude_code] | --purpose claim_check|injection_check|hostile_pages|optout_detect|reply_label|seo_brief|clip_pick|lesson_check|voice_check|plan_draft|ask|person_skeleton|competitor_change|competitor_brief|competitor_post|result_why|names_read|terms_draft|strategy_draft|campaign_draft|social_draft|campaign_write_up --provider anthropic|claude_code [--runs N] [--model M, reply_label, claim_check, injection_check, competitor_change, competitor_brief, competitor_post, result_why, names_read, terms_draft, strategy_draft, campaign_draft, social_draft and campaign_write_up only] | --skill NAME --provider claude_code|codex [--runs N] [--model M] [--case ID]";
 const { values } = parseArgs({ options: { agent: { type: "string" }, purpose: { type: "string" }, provider: { type: "string" }, runs: { type: "string" }, model: { type: "string" }, skill: { type: "string" }, case: { type: "string" } } });
 
 if (values.skill) {
@@ -34,12 +35,12 @@ if (values.agent === "brand_reader" && !values.purpose) {
   if (!process.env[needs]) throw new Error(`${needs} is not set`);
   vitest("apps/api/src/modules/agents/evals/real.test.ts", { DIREX_EVAL_PURPOSE: "brand_extract", DIREX_EVAL_PROVIDER: values.provider ?? "anthropic" });
 }
-const purposes = ["claim_check", "injection_check", "hostile_pages", "optout_detect", "reply_label", "seo_brief", "clip_pick", "lesson_check", "voice_check", "plan_draft", "ask", "person_skeleton", "competitor_change", "competitor_brief", "competitor_post", "result_why", "names_read", "terms_draft", "strategy_draft", "campaign_draft", "social_draft"];
+const purposes = ["claim_check", "injection_check", "hostile_pages", "optout_detect", "reply_label", "seo_brief", "clip_pick", "lesson_check", "voice_check", "plan_draft", "ask", "person_skeleton", "competitor_change", "competitor_brief", "competitor_post", "result_why", "names_read", "terms_draft", "strategy_draft", "campaign_draft", "social_draft", "campaign_write_up"];
 const providers = { anthropic: "DIREX_EVAL_ANTHROPIC_KEY", claude_code: "DIREX_EVAL_CLAUDE_CODE_TOKEN" } as const;
 if (values.agent || !values.purpose || !purposes.includes(values.purpose) || !values.provider || !(values.provider in providers)) throw new Error(USAGE);
 const needs = providers[values.provider as keyof typeof providers];
 if (!process.env[needs]) throw new Error(`${needs} is not set`);
-if (values.model && values.purpose !== "reply_label" && values.purpose !== "claim_check" && values.purpose !== "injection_check" && values.purpose !== "competitor_change" && values.purpose !== "competitor_brief" && values.purpose !== "competitor_post" && values.purpose !== "result_why" && values.purpose !== "names_read" && values.purpose !== "terms_draft" && values.purpose !== "strategy_draft" && values.purpose !== "campaign_draft" && values.purpose !== "social_draft") throw new Error(USAGE);
+if (values.model && values.purpose !== "reply_label" && values.purpose !== "claim_check" && values.purpose !== "injection_check" && values.purpose !== "competitor_change" && values.purpose !== "competitor_brief" && values.purpose !== "competitor_post" && values.purpose !== "result_why" && values.purpose !== "names_read" && values.purpose !== "terms_draft" && values.purpose !== "strategy_draft" && values.purpose !== "campaign_draft" && values.purpose !== "social_draft" && values.purpose !== "campaign_write_up") throw new Error(USAGE);
 const FILES: Record<string, string> = {
   hostile_pages: "apps/api/src/modules/agents/hostile.real.test.ts",
   optout_detect: "apps/api/src/modules/outreach/optout.real.test.ts",
@@ -60,6 +61,7 @@ const FILES: Record<string, string> = {
   strategy_draft: "apps/api/src/modules/agents/strategy-drafter.real.test.ts",
   campaign_draft: "apps/api/src/modules/agents/campaign-copy.real.test.ts",
   social_draft: "apps/api/src/modules/agents/campaign-copy.real.test.ts",
+  campaign_write_up: "apps/api/src/modules/agents/campaign-writer.real.test.ts",
 };
 const file = FILES[values.purpose] ?? "apps/api/src/modules/campaigns/checks.real.test.ts";
 vitest(file, { DIREX_EVAL_PURPOSE: values.purpose, DIREX_EVAL_PROVIDER: values.provider, DIREX_EVAL_RUNS: values.runs ?? "5", ...(values.model && { DIREX_EVAL_MODEL: values.model }) });

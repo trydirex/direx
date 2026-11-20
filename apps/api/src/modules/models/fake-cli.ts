@@ -3,6 +3,7 @@
 import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { useCodexBinaryForTests } from "./adapters/runtime/codex";
 
 export type FakeMode = "success" | "tool" | "bad_answer" | "signed_out" | "limit" | "crash" | "garbage";
 
@@ -40,7 +41,10 @@ const CODEX: Record<FakeMode, string> = {
 export const pathWithoutRealClis = (path = ""): string =>
   path.split(":").filter((dir) => !existsSync(join(dir, "claude")) && !existsSync(join(dir, "codex"))).join(":");
 
-/** Puts stubs that always fail first on PATH. Dropping the real ones isn't enough, since one can sit in /usr/bin beside git. */
+/**
+ * Puts stubs that always fail first on PATH, and points Codex at its stub, since Direx ships a real one
+ * (ADR 0036). Dropping the real ones isn't enough, since one can sit in /usr/bin beside git.
+ */
 export function blockRealClis(): string {
   const dir = mkdtempSync(join(tmpdir(), "direx-no-real-cli-"));
   for (const name of ["claude", "codex"]) {
@@ -48,6 +52,7 @@ export function blockRealClis(): string {
     chmodSync(join(dir, name), 0o755);
   }
   process.env.PATH = `${dir}:${process.env.PATH ?? ""}`;
+  useCodexBinaryForTests(join(dir, "codex"));
   return dir;
 }
 

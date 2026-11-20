@@ -29,5 +29,7 @@ export type SocialNetworkInfo = {
   noIdenticalAcrossAccounts?: boolean;
   angleForEachAccount?: boolean;
   fields?: readonly { name: string; label: string; optional?: boolean }[];
+  /** Shown under "can do" while the Workspace's own app is in use. */
+  ownAppLimits?: readonly string[];
   wizard?: { consoleUrl: string; scopes: readonly string[]; steps: readonly string[] };
 };

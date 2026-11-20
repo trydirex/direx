@@ -379,3 +379,38 @@ test("the vault from env connects the Google apps its composition root passes, w
   expect(started.ok && new URL(started.url).searchParams.get("client_id")).toBe("id-1");
   expect(await vaultFromEnv({ baseURL: "http://localhost:3000" }, undefined, { googleApps: [GOOGLE_SEARCH_CONSOLE_PROVIDER] }).start(a)).toEqual({ ok: false, reason: "unknown_connection" });
 });
+
+test("Search Console uses the Workspace's own Google app, else the sign-in pair, and is unknown with neither", async () => {
+  process.env.DIREX_MASTER_KEY = "11".repeat(32);
+  const { ws, owner } = await newWorkspace();
+  const connection = GOOGLE_SEARCH_CONSOLE_PROVIDER.connection;
+  const clientOf = async (v: ReturnType<typeof vaultFromEnv>) => {
+    const r = await v.start({ workspaceId: ws, userId: owner, connection });
+    return r.ok ? new URL(r.url).searchParams.get("client_id") : r.reason;
+  };
+  const signIn = vaultFromEnv({ baseURL: "http://localhost:3000", google: { clientId: "id-1", clientSecret: "secret-1" } }, undefined, { googleAppProviders: [GOOGLE_SEARCH_CONSOLE_PROVIDER] });
+  const bare = vaultFromEnv({ baseURL: "http://localhost:3000" }, undefined, { googleAppProviders: [GOOGLE_SEARCH_CONSOLE_PROVIDER] });
+  expect(await clientOf(signIn)).toBe("id-1");
+  expect(await signIn.appSource(ws, connection)).toBe("system");
+  // The sign-in pair stands in only for the connections passed as Google app providers.
+  expect(await signIn.appSource(ws, "google")).toBeNull();
+  expect(await clientOf(bare)).toBe("unknown_connection");
+
+  const app = await signIn.create({ workspaceId: ws, actorUserId: owner, scope: "workspace", kind: "basic", key: `oauth_app:${connection}`, name: "Search Console app", meta: { username: "own-id" }, value: { password: "own-secret" } });
+  expect(app.ok).toBe(true);
+  expect(await clientOf(signIn)).toBe("own-id");
+  expect(await clientOf(bare)).toBe("own-id");
+  expect(await signIn.appSource(ws, connection)).toBe("own");
+});
+
+test("a provider that names its client id differently gets that name on the consent URL", async () => {
+  const fake = startFakeProvider();
+  fakes.push(fake);
+  const p = fake.provider();
+  const vault = createVault({ rootKey: masterRootKey(Buffer.alloc(32, 9)), now: () => new Date(), providers: [{ ...p, clientIdParam: "client_key" }], callbackUrl: "http://direx.test/api/connections/callback", timeoutMs: 300 });
+  const { ws, owner } = await newWorkspace();
+  const started = await vault.start({ workspaceId: ws, userId: owner, connection: p.connection });
+  if (!started.ok) throw new Error(started.reason);
+  const query = new URL(started.url).searchParams;
+  expect([query.get("client_key"), query.get("client_id")]).toEqual([p.clientId, null]);
+});

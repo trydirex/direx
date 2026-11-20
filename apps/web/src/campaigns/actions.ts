@@ -375,6 +375,17 @@ export type Overlaps = S["CampaignOverlaps"];
 export const overlapsQuery = (workspaceId: string, id: string) =>
   queryOptions({ refetchOnMount: "always", queryKey: inWorkspace(workspaceId, "campaigns", id, "overlaps"), queryFn: () => call(api.GET("/api/w/{workspaceId}/campaigns/{id}/overlaps", inC(workspaceId, id))) });
 
+export type WriteUp = NonNullable<S["CampaignWriteUp"]["writeUp"]>;
+/** The Campaign's write-up, null before one exists. While it's being written, read again every 5 seconds. */
+export const writeUpQuery = (workspaceId: string, id: string) =>
+  queryOptions({
+    queryKey: inWorkspace(workspaceId, "campaigns", id, "write-up"),
+    queryFn: async () => (await call(api.GET("/api/w/{workspaceId}/campaigns/{id}/write-up", inC(workspaceId, id)))).writeUp,
+    refetchInterval: (q) => (q.state.data?.status === "writing" ? 5000 : false),
+  });
+/** Write it again: null once it's being written, else the refusal's code (`writing`, `not_ended`, ...). */
+export const writeAgain = async (workspaceId: string, id: string) => code(await api.POST("/api/w/{workspaceId}/campaigns/{id}/write-up", inC(workspaceId, id)));
+
 const NETWORKS: Record<string, string> = { linkedin: "LinkedIn", x: "X", bluesky: "Bluesky", threads: "Threads", mastodon: "Mastodon", facebook: "Facebook", instagram: "Instagram" };
 /** A network's name as people write it, such as "LinkedIn". An unknown one reads as it is stored. */
 export const networkWords = (channel: string) => NETWORKS[channel] ?? channel;

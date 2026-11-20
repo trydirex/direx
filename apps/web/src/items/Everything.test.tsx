@@ -3,7 +3,7 @@
 // the filters read from and written to the route, and both empty states.
 import { afterEach, expect, test, vi } from "vitest";
 import { useState } from "react";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { openDialog, pick, withQueries } from "../testing";
@@ -66,7 +66,7 @@ function show(o: { filters?: ListFilters; item?: string; role?: Role } = {}) {
 }
 
 /** Answers approve-clean with `refuse` refused and the rest approved, and each cancel but `stuck`; returns the calls. */
-function act(o: { refuse?: string[]; stuck?: string[] } = {}) {
+function answer(o: { refuse?: string[]; stuck?: string[] } = {}) {
   return vi.spyOn(api, "POST").mockImplementation(((path: string, init: { params: { path: { id?: string } }; body?: { items: { id: string }[] } }) => {
     if (path === "/api/w/{workspaceId}/items/approve-clean")
       return reply(200, { results: init.body!.items.map(({ id }) => (o.refuse?.includes(id) ? { id, ok: false, reason: "stale" } : { id, ok: true })) });
@@ -185,7 +185,7 @@ test("Approve sends only the clean rows that need approval, then says what went 
   ];
   // The list reads again after approving; the second read answers the same rows.
   serve([{ items: rows, nextCursor: null }, { items: rows, nextCursor: null }]);
-  const posts = act({ refuse: ["d"] });
+  const posts = answer({ refuse: ["d"] });
   show();
   await userEvent.click(await screen.findByRole("checkbox", { name: "Select all shown" }));
   expect(screen.getByText("4 selected")).toBeTruthy();
@@ -216,7 +216,7 @@ test("Withdraw cancels each ticked row that can still be withdrawn, and counts t
       nextCursor: null,
     },
   ]);
-  const posts = act({ stuck: ["b"] });
+  const posts = answer({ stuck: ["b"] });
   show();
   await userEvent.click(await screen.findByRole("checkbox", { name: "Select all shown" }));
   expect(screen.queryByRole("button", { name: /^Approve/ })).toBeNull();
@@ -232,7 +232,7 @@ test("Withdraw cancels each ticked row that can still be withdrawn, and counts t
 
 test("Keep them closes the confirm with nothing withdrawn, and Clear selection unticks everything", async () => {
   serve([{ items: [item({ id: "a", state: "draft" })], nextCursor: null }]);
-  const posts = act();
+  const posts = answer();
   show();
   await userEvent.click(await screen.findByRole("checkbox", { name: "Select Email to Dana" }));
   await userEvent.click(screen.getByRole("button", { name: "Withdraw 1" }));
@@ -277,4 +277,35 @@ test("Select all shown stops at 200, and a filter drops the ticks on rows it hid
   expect(await screen.findByRole("checkbox", { name: "Select Hidden" })).toBeTruthy();
   expect((screen.getByRole("checkbox", { name: "Select Hidden" }) as HTMLInputElement).checked).toBe(false);
   expect(screen.getByText("1 selected")).toBeTruthy();
+});
+
+test("Clear discards pending search text even when the route has no search", async () => {
+  serve([{ items: [item()], nextCursor: null }]);
+  const { onFilters } = show({ filters: { state: "sent" } });
+  await screen.findByRole("list", { name: "Everything" });
+  vi.useFakeTimers();
+  try {
+    const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "pending" } });
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(input.value).toBe("");
+    act(() => vi.advanceTimersByTime(300));
+    expect(onFilters).toHaveBeenCalledTimes(1);
+    expect(onFilters).toHaveBeenCalledWith({ state: undefined, channel: undefined, type: undefined, campaign: undefined, q: undefined });
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("search limits pasted text to 100 characters and explains the limit", async () => {
+  serve([{ items: [item()], nextCursor: null }]);
+  const { onFilters } = show();
+  await screen.findByRole("list", { name: "Everything" });
+  const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+  expect(input.maxLength).toBe(100);
+  expect(screen.getByText("Up to 100 characters")).toBeTruthy();
+  await userEvent.click(input);
+  await userEvent.paste("x".repeat(101));
+  expect(input.value).toBe("x".repeat(100));
+  await waitFor(() => expect(onFilters).toHaveBeenCalledWith({ q: "x".repeat(100) }));
 });

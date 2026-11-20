@@ -61,6 +61,7 @@ export function Everything(p: {
   const filtered = Boolean(f.state || f.channel || f.type || f.campaign || f.q);
   const clear = () => {
     clearTimeout(wait.current);
+    setWords("");
     p.onFilters({ state: undefined, channel: undefined, type: undefined, campaign: undefined, q: undefined });
   };
   const channels = [{ value: "email", label: "Email" }, ...networks.map((n) => ({ value: n.connection, label: n.label }))];
@@ -125,7 +126,7 @@ export function Everything(p: {
             ))}
           </Select>
         )}
-        <Input type="search" aria-label="Search titles and campaigns" placeholder="Search titles and campaigns" value={words} onChange={(e) => type(e.target.value)} />
+        <Input type="search" aria-label="Search titles and campaigns" placeholder="Search titles and campaigns" maxLength={100} hint="Up to 100 characters" value={words} onChange={(e) => type(e.target.value)} />
         {filtered && (
           <Button variant="ghost" size="sm" onClick={clear}>
             Clear filters

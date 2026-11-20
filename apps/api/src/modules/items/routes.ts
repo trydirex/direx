@@ -68,8 +68,8 @@ const ItemResult = z.object({ id: z.uuid(), ok: z.boolean(), reason: z.string().
 const Results = z.object({ results: z.array(ItemResult) });
 const One = z.object({ item: Item });
 
-/** A comma list of values matching `one`, such as "sent,held", at most 20 of them. */
-const commaList = (one: string) => z.string().regex(new RegExp(`^(${one})(,(${one})){0,19}$`));
+/** A bounded comma list of values matching `one`, such as "sent,held". */
+const commaList = (one: string, max = 20) => z.string().regex(new RegExp(`^(${one})(,(${one})){0,${max - 1}}$`));
 const split = <T extends string>(s: string | undefined) => (s ? (s.split(",") as T[]) : undefined);
 
 const listRoute = createRoute({
@@ -82,7 +82,7 @@ const listRoute = createRoute({
       needsYou: z.enum(["true", "false"]).optional(),
       state: commaList(State.options.join("|")).optional().openapi({ description: "One state or several, comma separated" }),
       channel: commaList("[a-z_]{1,32}").optional(),
-      type: commaList("[a-z_]{1,32}").optional().openapi({ description: "Work areas of Actions and kinds of other Items, comma separated" }),
+      type: commaList("[a-z_]{1,32}", 32).optional().openapi({ description: "Work areas of Actions and kinds of other Items, comma separated, at most 32" }),
       campaign: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).optional(),
       q: z.string().trim().min(1).max(100).optional().openapi({ description: "Words in the title or group label" }),
       from: z.iso.datetime().optional(),

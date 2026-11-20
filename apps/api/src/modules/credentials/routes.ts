@@ -534,8 +534,13 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
       const cookie = getCookie(c, STATE_COOKIE);
       // A connect started from a link comes back with no session and no cookie; its state names the link.
       const query = c.req.valid("query");
+      // The network's own words go to the log for whoever runs Direx, never into the page or its address.
+      const logAnswer = (network: string) =>
+        query.error && console.warn(`credentials: ${network} answered the connect with ${oneLine(query.error)}${query.error_description ? `: ${oneLine(query.error_description)}` : ""}`);
       if (!cookie && linkWorkspace(query.state)) {
-        const r = await vault().linkCallback(query);
+        const r = await vault().linkCallback({ state: query.state, code: query.code, error: query.error });
+        // Only for a real link, as the session path logs only for a signed-in person.
+        if (!r.ok && r.reason !== "link_gone") logAnswer("a network on a connect link");
         const page = r.ok
           ? linkPage(html`<p>Connected ${r.credential.name}. Finish on the device you made the link on.</p>`)
           : r.reason === "denied" || r.reason === "network_refused"
@@ -547,8 +552,7 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const connection = vault().connectionOf(cookie);
       const page = landingPage?.(connection) ?? "credentials";
-      // The network's own words go to the log for whoever runs Direx, never into the page's address.
-      if (query.error) console.warn(`credentials: ${connection ?? "a network"} answered the connect with ${oneLine(query.error)}${query.error_description ? `: ${oneLine(query.error_description)}` : ""}`);
+      logAnswer(connection ?? "a network");
       const r = await vault().callback({ state: query.state, code: query.code, error: query.error, cookie, sessionUserId: s.user.id });
       deleteCookie(c, STATE_COOKIE, { path: "/api/connections" });
       if (r.ok) return c.redirect(`${baseURL()}/?workspace=${r.workspaceId}&page=${page}&connected=${r.credential.id}`, 302);

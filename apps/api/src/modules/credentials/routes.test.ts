@@ -17,7 +17,8 @@ const vault = createVault({
   callbackUrl: "http://direx.test/api/connections/callback",
   timeoutMs: 500,
 });
-const { call, signIn, workspace } = testApp(vault);
+// Connect links are on for the fake provider, so the link callback is checked here too.
+const { call, signIn, workspace } = testApp(vault, "http://direx.test", undefined, undefined, (c) => (c === "google" ? "Google" : undefined));
 const MIN = 60_000;
 afterEach(() => vi.useRealTimers());
 afterAll(() => {
@@ -164,4 +165,19 @@ test("connect: start sets the state cookie and the callback stores the mailbox, 
   expect(res.headers.get("set-cookie")).toMatch(/^direx_oauth=;.*Max-Age=0/);
   const list = (await (await call(`${base}/${ws}/credentials`, contributor.cookie)).json()) as { credentials: { kind: string; ownerUserId: string }[] };
   expect(list.credentials).toMatchObject([{ kind: "oauth2", ownerUserId: contributor.userId }]);
+});
+
+test("a network refusing a link's connect logs its words on one line, and the page carries none", async () => {
+  const { ws, owner } = await workspace();
+  const { url } = (await (await call(`${base}/${ws}/connections/google/links`, owner.cookie, { method: "POST" })).json()) as { url: string };
+  const consent = (await call(new URL(url).pathname, undefined, { method: "POST" })).headers.get("location")!;
+  const state = new URL((await fetch(consent, { redirect: "manual" })).headers.get("location")!).searchParams.get("state")!;
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const res = await call(`/api/connections/callback?state=${encodeURIComponent(state)}&error=invalid_client&error_description=${encodeURIComponent("Bad secret\nforged line")}`);
+  expect(res.status).toBe(400);
+  const text = await res.text();
+  expect(text).toContain("Nothing was connected");
+  expect(text).not.toContain("Bad secret");
+  expect(warn).toHaveBeenCalledWith("credentials: a network on a connect link answered the connect with invalid_client: Bad secret forged line");
+  warn.mockRestore();
 });

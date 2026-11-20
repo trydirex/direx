@@ -108,7 +108,14 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
   const [offered, setOffered] = useState(p.offered ?? []);
   const [login, setLogin] = useState(p.connected);
   const [open, setOpen] = useState<string | null>(null);
-  const [error, setError] = useState(p.notice && (p.noticeCode ? `${message(p.notice)} ${codeHint(p.noticeCode)}` : message(p.notice)));
+  const notice = p.notice && (p.noticeCode ? `${message(p.notice)} ${codeHint(p.noticeCode)}` : message(p.notice));
+  const [error, setError] = useState(notice);
+  // A new refusal in the address on the same page replaces the notice shown.
+  const [noticed, setNoticed] = useState(notice);
+  if (notice !== noticed) {
+    setNoticed(notice);
+    setError(notice);
+  }
   const [stepUp, setStepUp] = useState(false);
   const [starting, setStarting] = useState<string>();
   const [confirming, setConfirming] = useState<string | null>(null);

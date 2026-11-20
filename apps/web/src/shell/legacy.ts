@@ -56,9 +56,20 @@ function route(page: string | null, q: URLSearchParams): [string, URLSearchParam
   }
 }
 
+// The router reads each search value as JSON when it parses, so connect_code=190 would arrive as a
+// number. A value that parses is quoted, the router's own form for a string, and arrives as written.
+const parses = (v: string) => {
+  try {
+    JSON.parse(v);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 function pick(q: URLSearchParams, ...keys: string[]) {
   const out = new URLSearchParams();
-  for (const k of keys) if (q.has(k)) out.set(k, q.get(k)!);
+  for (const k of keys) if (q.has(k)) out.set(k, parses(q.get(k)!) ? JSON.stringify(q.get(k)) : q.get(k)!);
   return out;
 }
 const withQuery = (path: string, q: URLSearchParams) => (q.size ? `${path}?${q}` : path);

@@ -82,6 +82,38 @@ test("reading an address starts a read, clears the field and lists the new read"
   expect(screen.queryByText(/already read this today/)).toBeNull();
 });
 
+test.each(["embedded", "compact"] as const)("a new read restores the %s summary and keeps the model caution", async (mode) => {
+  let list = [run()];
+  serveRuns(() => list);
+  vi.spyOn(api, "POST")
+    .mockImplementationOnce((() => reply(409, { error: "disabled" })) as never)
+    .mockImplementationOnce((() => reply(201, {})) as never)
+    .mockImplementationOnce((() => {
+      list = [run({ id: "r2", address: "https://new.test/", unevaluated: true }), ...list];
+      return reply(201, {});
+    }) as never);
+  render(withQueries(<Runs workspaceId={W} role="marketer" initial={list} embedded={mode === "embedded"} compact={mode === "compact"} />));
+  expect(screen.queryByText(/hasn't tested this model/)).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "Read your website again" }));
+  const address = screen.getByLabelText("Address") as HTMLInputElement;
+  await userEvent.type(address, "https://shop.test/");
+  await userEvent.click(screen.getByRole("button", { name: "Read shop.test" }));
+  expect(await screen.findByText("Reading websites is turned off for this Workspace.")).toBeTruthy();
+  expect(address.value).toBe("https://shop.test/");
+
+  await userEvent.click(screen.getByRole("button", { name: "Read shop.test" }));
+  expect(await screen.findByText(/already read this today/)).toBeTruthy();
+  expect(screen.getByRole("list", { name: "Latest reads" })).toBeTruthy();
+
+  await userEvent.type(address, "https://new.test/");
+  await userEvent.click(screen.getByRole("button", { name: "Read new.test" }));
+  expect(await screen.findByText("Last read https://new.test/: Finished, 2 proposed.")).toBeTruthy();
+  expect(screen.getByText(/hasn't tested this model/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Read your website again" })).toBeTruthy();
+  expect(screen.queryByLabelText("Address")).toBeNull();
+  expect(screen.queryByRole("list", { name: "Latest reads" })).toBeNull();
+});
+
 test("a website given earlier is filled in, and the button names it", () => {
   vi.spyOn(api, "GET").mockImplementation((() => reply(200, { runs: [] })) as never);
   render(withQueries(<Runs workspaceId={W} role="marketer" initial={[]} address="https://www.acmerota.com" />));

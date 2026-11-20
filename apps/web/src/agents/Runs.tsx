@@ -106,7 +106,10 @@ export function Runs(p: { workspaceId: string; role: Role; onSettled?: () => voi
       }
       setError(code ? sayChange(code) : undefined);
       const after = await reload();
-      if (!code && noNewRun(before, after)) toast.add({ title: "Direx already read this today, so it didn't read it again. The result is in the list below." });
+      if (!code) {
+        if (noNewRun(before, after)) toast.add({ title: "Direx already read this today, so it didn't read it again. The result is in the list below." });
+        else setOpen(false);
+      }
     } finally {
       setBusy(undefined);
     }
@@ -132,16 +135,19 @@ export function Runs(p: { workspaceId: string; role: Role; onSettled?: () => voi
         {untested(latest) && <Untested />}
       </div>
     );
-  if ((p.compact || (p.embedded && latest?.status === "succeeded")) && !open && runs.data && !anyLive)
+  if ((p.compact || (p.embedded && latest?.status === "succeeded")) && !open && !error && runs.data && !anyLive)
     return (
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
-        {latest ? `Last read ${latest.address ?? "pasted text"}: ${statusLabel(latest)}, ${latest.proposalCount} proposed.` : "Direx can read your website and propose facts for you to accept."}
-        {mayEdit(role) && (
-          <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-            {latest ? "Read your website again" : "Read your website"}
-          </Button>
-        )}
-      </p>
+      <>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+          {latest ? `Last read ${latest.address ?? "pasted text"}: ${statusLabel(latest)}, ${latest.proposalCount} proposed.` : "Direx can read your website and propose facts for you to accept."}
+          {mayEdit(role) && (
+            <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+              {latest ? "Read your website again" : "Read your website"}
+            </Button>
+          )}
+        </p>
+        {latest && untested(latest) && <Untested />}
+      </>
     );
 
   const Wrap = p.embedded ? EmbeddedWrap : Section;

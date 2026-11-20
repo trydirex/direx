@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The module's parts put together, apart from index.ts so routes can name the type.
 import type { PgBoss } from "pg-boss";
-import { memberEmail, type Mailer } from "../../identity/index";
+import { memberEmail, named, workspaceName, type Mailer } from "../../identity/index";
 import { isPinned, ranOnSubscription, runCost, type Deployment, type Models, type Route } from "../../models/index";
 import { digestOf } from "../adapters/digest";
 import { createFetchPage, createFetchSitemap, type FetchPage, type FetchSitemap } from "../adapters/fetch-page";
@@ -50,15 +50,19 @@ export const starterNotice =
   async (run, what) => {
     const to = run.startedBy && (await memberEmail(run.workspaceId, run.startedBy));
     if (!to) return;
+    const name = named(await workspaceName(run.workspaceId));
     if (run.agent !== brandReader.id) {
-      await mailer({ to, subject: "Direx hasn't finished a draft", text: what === "capped" ? "A draft reached its limit before it finished, so nothing changed. You can try again or write it yourself." : "A draft is waiting for this Workspace's run or budget limit to reset, and will carry on by itself." });
+      await mailer({ to, ...name({ subject: "Direx hasn't finished a draft", text: what === "capped" ? "A draft reached its limit before it finished, so nothing changed. You can try again or write it yourself." : "A draft is waiting for this Workspace's run or budget limit to reset, and will carry on by itself." }) });
       return;
     }
-    await mailer(
-      what === "capped"
-        ? { to, subject: "Direx stopped reading before it finished", text: "A read for Brand reached its limit. Anything it found is waiting on the Brand page, marked as coming from a read that didn't finish." }
-        : { to, subject: "Direx is waiting to finish a read", text: "A read for Brand is waiting for this Workspace's run or budget limit to reset, and will carry on by itself. You can cancel it on the Brand page." },
-    );
+    await mailer({
+      to,
+      ...name(
+        what === "capped"
+          ? { subject: "Direx stopped reading before it finished", text: "A read for Brand reached its limit. Anything it found is waiting on the Brand page, marked as coming from a read that didn't finish." }
+          : { subject: "Direx is waiting to finish a read", text: "A read for Brand is waiting for this Workspace's run or budget limit to reset, and will carry on by itself. You can cancel it on the Brand page." },
+      ),
+    });
   };
 
 export function createAgents(d: AgentsDeps) {

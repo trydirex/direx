@@ -3,7 +3,7 @@
 // purpose and hands typed context; it never picks a model or holds a key.
 import type { PgBoss } from "pg-boss";
 import type { Vault } from "../credentials/index";
-import type { Mailer } from "../identity/index";
+import { named, workspaceName, type Mailer } from "../identity/index";
 import { createKeys, type Keys } from "./adapters/keys";
 import { sendHoldWatch, workHoldWatch } from "./adapters/queue";
 import { withCliAdapters } from "./adapters/runtime/registry";
@@ -68,6 +68,26 @@ export function assertRoutes(deployment: Deployment, routes: Readonly<Record<str
   throw new Error(`models: bad route config: ${issues.map((i) => `${i.purpose}: ${i.reason}${i.model ? ` (${i.model})` : ""}`).join("; ")}`);
 }
 
+/** The two notices to a Workspace's Owners and Admins, each naming the Workspace. */
+export function adminNotices(a: { mailer: Mailer; adminEmails: (workspaceId: string) => Promise<string[]> }): Required<Pick<GenerateDeps, "notifyPaused" | "notifyAdmins">> {
+  const tell = async (workspaceId: string, mail: { subject: string; text: string }) => {
+    const sent = named(await workspaceName(workspaceId))(mail);
+    for (const to of await a.adminEmails(workspaceId)) await a.mailer({ to, ...sent });
+  };
+  return {
+    notifyPaused: (workspaceId, { agent, model }) =>
+      tell(workspaceId, {
+        subject: `Direx paused your choice of ${model} for ${agent}`,
+        text: `Your choice of ${model} for ${agent} is paused until it passes its eval for this version. Direx is using the default model. See AI models in Workspace settings.`,
+      }),
+    notifyAdmins: (workspaceId, { month, threshold }) =>
+      tell(workspaceId, {
+        subject: `Direx model cost reached ${threshold}% of this month's budget`,
+        text: `Model cost for ${month} has reached ${threshold}% of the monthly budget. See AI models in Workspace settings.`,
+      }),
+  };
+}
+
 /** The instance the API and the worker run with. */
 export function modelsFromEnv(a: { vault: () => Vault; boss: PgBoss; mailer: Mailer; adminEmails: (workspaceId: string) => Promise<string[]>; runGate?: RunGate; signInOutcome?: Keys["signInOutcome"]; overrideAllowed?: OverrideAllowed }): Models {
   const deployment = deploymentFromEnv();
@@ -79,24 +99,7 @@ export function modelsFromEnv(a: { vault: () => Vault; boss: PgBoss; mailer: Mai
     keys: createKeys({ deployment, vault: a.vault, signInOutcome: a.signInOutcome }),
     runGate: a.runGate,
     overrideAllowed: a.overrideAllowed,
-    notifyPaused: async (workspaceId, { agent, model }) => {
-      for (const to of await a.adminEmails(workspaceId)) {
-        await a.mailer({
-          to,
-          subject: `Direx paused your choice of ${model} for ${agent}`,
-          text: `Your choice of ${model} for ${agent} is paused until it passes its eval for this version. Direx is using the default model. See AI models in Workspace settings.`,
-        });
-      }
-    },
     watchHold: (tx, workspaceId, callId, at) => sendHoldWatch(a.boss, tx, { workspaceId, callId }, at),
-    notifyAdmins: async (workspaceId, { month, threshold }) => {
-      for (const to of await a.adminEmails(workspaceId)) {
-        await a.mailer({
-          to,
-          subject: `Direx model cost reached ${threshold}% of this month's budget`,
-          text: `Model cost for ${month} has reached ${threshold}% of the monthly budget. See AI models in Workspace settings.`,
-        });
-      }
-    },
+    ...adminNotices(a),
   });
 }

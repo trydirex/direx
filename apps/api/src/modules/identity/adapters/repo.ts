@@ -201,6 +201,12 @@ export async function inviteBy(tx: WorkspaceTx, where: { id: string } | { tokenH
   return row ? { ...row, role: row.role as Role } : null;
 }
 
+/** The Workspace's name, or null when it is empty or the Workspace can't be read. */
+export async function workspaceName(tx: WorkspaceTx): Promise<string | null> {
+  const [w] = await tx.select({ name: workspaces.name }).from(workspaces);
+  return w?.name || null;
+}
+
 /** What an invite page names: the Workspace, and whoever sent the invite (their name, else their email). */
 export async function inviteNames(tx: WorkspaceTx, invitedBy: string) {
   const [w] = await tx.select({ name: workspaces.name }).from(workspaces);

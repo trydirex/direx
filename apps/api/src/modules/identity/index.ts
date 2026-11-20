@@ -3,6 +3,7 @@
 // which Workspace.
 import { authConfigFromEnv, createAuth, type Auth, type AuthConfig } from "./adapters/auth";
 import { isDevOrTest } from "./adapters/mail";
+import * as repo from "./adapters/repo";
 import { pickAdmission } from "./application/admission";
 import { listMembers, type OnDelete, type OnMemberChange } from "./application/members";
 import type { Admission } from "./domain/admission";
@@ -23,6 +24,18 @@ export { adminSteppedUp, requireServerAdmin, type ServerAdminEnv } from "./serve
 /** Who to tell about the Workspace's settings: its Owners and Admins. */
 export const adminEmails = async (workspaceId: string): Promise<string[]> =>
   (await listMembers(workspaceId)).filter((m) => can(m.role, "workspace.settings")).map((m) => m.email);
+
+/** The Workspace's name for a notice, or null when it has none or can't be read. */
+export const workspaceName = (workspaceId: string): Promise<string | null> => repo.inWorkspace(workspaceId, repo.workspaceName);
+
+/**
+ * Names the Workspace in a notice, so an Admin of several Workspaces can tell which one it is about.
+ * Without a name the notice goes out as it is: a missing name never stops a notice.
+ */
+export const named =
+  (name: string | null) =>
+  (m: { subject: string; text: string }): { subject: string; text: string } =>
+    name ? { subject: `${name}: ${m.subject}`, text: `Workspace: ${name}\n\n${m.text}` } : m;
 
 /** One member's address, or undefined when they have left. */
 export const memberEmail = async (workspaceId: string, userId: string): Promise<string | undefined> =>

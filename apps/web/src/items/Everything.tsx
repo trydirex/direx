@@ -76,9 +76,7 @@ export function Everything(p: {
           <Select aria-label="Campaign" value={f.campaign ?? ALL} onChange={(e) => p.onFilters({ campaign: e.target.value || undefined })}>
             <option value={ALL}>All campaigns</option>
             {campaigns.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.title}
-              </option>
+              <option key={c.id} value={c.id}>{c.title}</option>
             ))}
           </Select>
         )}
@@ -106,11 +104,7 @@ export function Everything(p: {
                     <button type="button" className="flex w-full cursor-pointer flex-col items-start gap-1 border-0 bg-transparent px-4 py-3 text-left hover:bg-accent" aria-current={i.id === p.item || undefined} onClick={() => p.onItem(i.id)}>
                       <QueueRow item={i} workspaceId={p.workspaceId} />
                       {/* QueueRow leaves Needs approval out, since its queue holds nothing else; here every state shows. */}
-                      {i.state === "needs_approval" && (
-                        <span>
-                          <StateChip state={i.state} />
-                        </span>
-                      )}
+                      {i.state === "needs_approval" && <span><StateChip state={i.state} /></span>}
                       {!i.at && <span className="text-xs text-muted-foreground tabular-nums">{`Made ${listTime(new Date(i.createdAt))}`}</span>}
                     </button>
                   </li>

@@ -67,6 +67,8 @@ test("creditPhrase and claimsWinner catch credit and a winner without a comparis
   expect(claimsWinner("Email is not yet best.", false)).toBe(false);
   expect(claimsWinner("No rates are given. Email still did better.", false)).toBe(true);
   expect(claimsWinner("Not much changed, and LinkedIn DM worked best.", false)).toBe(true);
+  expect(claimsWinner("Email was not, in fact, better than LinkedIn DM.", false)).toBe(false);
+  expect(claimsWinner("No, email was best, really.", false)).toBe(true);
 });
 
 test.each(["No rates. Email was best.", "No rates; email was best.", "No rates, email was best.", "No rates but email was best."])(
@@ -75,6 +77,10 @@ test.each(["No rates. Email was best.", "No rates; email was best.", "No rates, 
     expect(writeUpProblem({ ...ok, paragraph }, brief)).toBe("winner_without_comparison");
   },
 );
+
+test("writeUpProblem passes a negation split by an aside", () => {
+  expect(writeUpProblem({ ...ok, paragraph: "Email was not, in fact, better than LinkedIn DM." }, brief)).toBeNull();
+});
 
 const brief: Brief = {
   text: "reading r1: Replies 12, counted by Direx, 2026-11-20\nemail: 40 reached, 3 with the outcome, too few to compare",

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Strategy and marketing plans: what a Workspace intends to do, and why, before anything is written
 // or sent. planKinds is registered with items, so items never imports this module.
-export { planKinds, type OnPlanApproved } from "./application/kinds";
+export { appendAssumptions, planKinds, type OnPlanApproved } from "./application/kinds";
 export { createPlans, type Plans } from "./application/create";
 export type { OnPlanCreated } from "./application/plans";
 // earlierResultsText renders readings and overlaps the same way in a Campaign's write-up brief.

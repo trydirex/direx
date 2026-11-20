@@ -23,7 +23,7 @@ const outreach = createOutreach({ items: () => items, send: noSend, baseUrl: () 
 const started: Parameters<StartDraft>[1][] = [];
 let startReply: Awaited<ReturnType<StartDraft>> = { ok: true, run: { id: crypto.randomUUID() } };
 const campaigns = createCampaigns({ plans, facts, items: () => items, outreach: () => outreach, startDraft: () => async (_w, a) => (started.push(a), startReply) });
-const sink = campaignSinks({ facts, writeUps: () => campaigns }).byKey[WRITE_UP_OUTPUT_KEY]!;
+const sink = campaignSinks({ facts, items: () => items, writeUps: () => campaigns }).byKey[WRITE_UP_OUTPUT_KEY]!;
 const actor = { userId: person.userId };
 const ok = <T extends { ok: boolean }>(r: T) => {
   if (!r.ok) throw new Error(JSON.stringify(r));
@@ -64,9 +64,9 @@ const body: PlanBody = {
   budget: [],
   assumptions: [],
 };
-async function newCampaign() {
+async function newCampaign(b = body) {
   const plan = await plans.createPlan(W, { title: "Q4 audits", createdBy: person.userId });
-  const { revision } = ok(await plans.savePlanDraft(W, plan.id, { revision: 0, body }));
+  const { revision } = ok(await plans.savePlanDraft(W, plan.id, { revision: 0, body: b }));
   const { item } = ok(await plans.submitPlan(W, plan.id, { revision, actor }));
   ok(await items.approve(W, item.id, item.revision, who));
   const id = (await campaigns.list(W)).find((c) => c.planId === plan.id)!.id;
@@ -92,7 +92,7 @@ const reading = async (planId: string, value: string, observedOn: string) => {
   ok(await plans.recordReading(W, planId, { measureKey: "m", value, observedOn, actor }));
   return (await q("select id from plan_measure_readings where plan_id = $1 and value = $2", [planId, value]))[0].id as string;
 };
-const writeUpOf = async (id: string, workspaceId = W) => (await q("select status, paragraph, cites, suggestions, failure, run_id, written_at from campaign_write_ups where campaign_id = $1", [id], workspaceId))[0];
+const writeUpOf = async (id: string, workspaceId = W) => (await q("select status, paragraph, cites, suggestions, failure, run_id, item_id, written_at from campaign_write_ups where campaign_id = $1", [id], workspaceId))[0];
 const context = (campaignId: string, runId = crypto.randomUUID()) => ({ runId, input: { writeUp: { campaignId } }, tainted: false, pagesRead: [], pages: [], producer: { agent: "campaign_writer", definitionVersion: 1, promptDigest: "d", routeHash: "r" } });
 const proposal = (o: WriteUpOutput) => ({ kind: "draft" as const, outputKey: WRITE_UP_OUTPUT_KEY, body: o });
 
@@ -169,19 +169,19 @@ test("the sink keeps a write-up that holds to its brief, and refuses an invented
     cites: [r],
     suggestions: [{ assumption: "Ops leads take a meeting after one email.", because: "Direx counted 1 meeting from 1 email.", readingIds: [r] }],
   };
-  expect(await sink(W, proposal(good), context(id, runId))).toEqual({ ok: true, itemId: null });
+  const kept = ok(await sink(W, proposal(good), context(id, runId)));
   const written = await writeUpOf(id);
-  expect(written).toMatchObject({ status: "written", paragraph: good.paragraph, cites: [r], suggestions: good.suggestions, failure: null, run_id: runId });
+  expect(written).toMatchObject({ status: "written", paragraph: good.paragraph, cites: [r], suggestions: good.suggestions, failure: null, run_id: runId, item_id: kept.itemId });
   expect(written.written_at).not.toBeNull();
-  // No Item yet: that comes with the trigger.
-  expect(await q("select id from items where kind = 'strategy_assumptions'")).toEqual([]);
+  // One suggestion, so one Item that says so.
+  expect(await q("select id, title from items where kind = 'strategy_assumptions' and group_key = $1", [`strategy_assumptions:${id}`])).toEqual([{ id: kept.itemId, title: "Add 1 assumption to your Strategy?" }]);
 
   // A late answer from another run can't overwrite it.
   expect(await sink(W, proposal({ ...good, paragraph: "Q4 audits sent 1 email." }), context(id))).toEqual({ ok: false, code: "not_found" });
   expect(await writeUpOf(id)).toMatchObject({ status: "written", paragraph: good.paragraph });
 
-  expect(await sink(W, proposal({ ...good, paragraph: "Q4 audits booked 37 meetings." }), context(id, runId))).toEqual({ ok: false, code: "number_not_in_brief:37" });
-  expect(await writeUpOf(id)).toMatchObject({ status: "failed", failure: "number_not_in_brief:37", paragraph: good.paragraph });
+  expect(await sink(W, proposal({ ...good, paragraph: "Q4 audits booked 37,000,000 meetings." }), context(id, runId))).toEqual({ ok: false, code: "number_not_in_brief:37000000" });
+  expect(await writeUpOf(id)).toMatchObject({ status: "failed", failure: "number_not_in_brief:37000000", paragraph: good.paragraph });
 });
 
 test("nothing crosses Workspaces, and a sink without write-ups wired in refuses", async () => {
@@ -196,4 +196,159 @@ test("nothing crosses Workspaces, and a sink without write-ups wired in refuses"
   expect(await campaignSinks({ facts }).byKey[WRITE_UP_OUTPUT_KEY]!(W, proposal(out), context(id))).toEqual({ ok: false, code: "no_write_ups" });
   // A Campaign with a brief but no write-up row has nothing to write to.
   expect(await sink(W, proposal(out), context(id))).toEqual({ ok: false, code: "not_found" });
+});
+
+// The trigger: dates relative to today, since a write-up waits for the end and the grace days after it.
+const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+const endedBy = (daysAgo: number): PlanBody => ({
+  ...body,
+  startsOn: day(-daysAgo - 20),
+  endsOn: day(-daysAgo),
+  steps: [
+    { key: "first", on: day(-daysAgo - 18), title: "First email" },
+    { key: "dm", on: day(-daysAgo - 17), title: "LinkedIn note" },
+  ],
+});
+/** An email still Held on the first step. */
+async function held(id: string) {
+  const touch = await newTouch(await newPerson(), null);
+  await q("update actions set state = 'held', hold_reason = 'cap' where id = $1", [await actionIdOf(W, touch.id)]);
+  await q("update items set group_key = $1 where id = $2", [`campaign:${id}:step:first`, touch.id]);
+}
+const runsFor = (id: string) => started.filter((s) => (s.input as { writeUp?: { campaignId: string } }).writeUp?.campaignId === id).length;
+
+test("the daily pass starts one write-up for an ended, settled Campaign, and two at once start one", async () => {
+  startReply = { ok: true, run: { id: crypto.randomUUID() } };
+  const { id } = await newCampaign(endedBy(2));
+  await reached(id, false);
+  await campaigns.countReadings();
+  expect(runsFor(id)).toBe(1);
+  expect(await writeUpOf(id)).toMatchObject({ status: "writing" });
+  // Already written or being written: nothing more.
+  expect(await campaigns.maybeWriteUp(W, id)).toBe(false);
+  expect(runsFor(id)).toBe(1);
+
+  const twice = await newCampaign(endedBy(2));
+  await reached(twice.id, false);
+  expect((await Promise.all([campaigns.maybeWriteUp(W, twice.id), campaigns.maybeWriteUp(W, twice.id)])).sort()).toEqual([false, true]);
+  expect(runsFor(twice.id)).toBe(1);
+});
+
+test("running, Held under 14 days, or never sent gets no write-up; Held past 14 days gets one", async () => {
+  const running = await newCampaign(endedBy(-3));
+  await reached(running.id, false);
+  const heldRecently = await newCampaign(endedBy(13));
+  await reached(heldRecently.id, false);
+  await held(heldRecently.id);
+  const neverSent = await newCampaign(endedBy(2));
+  await held(neverSent.id);
+  const heldLong = await newCampaign(endedBy(15));
+  await reached(heldLong.id, false);
+  await held(heldLong.id);
+
+  for (const c of [running, heldRecently, neverSent]) expect(await campaigns.maybeWriteUp(W, c.id)).toBe(false);
+  expect(await campaigns.maybeWriteUp(W, heldLong.id)).toBe(true);
+  for (const c of [running, heldRecently, neverSent]) expect(await writeUpOf(c.id)).toBeUndefined();
+  // Another Workspace can't see it.
+  expect(await campaigns.maybeWriteUp(crypto.randomUUID(), heldLong.id)).toBe(false);
+});
+
+// The suggestions Item.
+// Each test adds to the one Strategy, so each suggests for another sector, never repeating an assumption.
+const suggested = (sector: string) => [`Ops leads in ${sector} answer a short first email.`, `Ops leads in ${sector} book a meeting within a week.`, `A LinkedIn note adds little for ops leads in ${sector}.`];
+const SUGGESTED = suggested("retail");
+const itemOf = async (id: string) => (await q("select id, state, title, group_label, payload from items where kind = 'strategy_assumptions' and group_key = $1 order by created_at", [`strategy_assumptions:${id}`])).at(-1);
+const assumptionsNow = async (workspaceId = W) => (await plans.strategy(workspaceId)).current!.assumptions.map((a) => a.text);
+/** A Campaign whose write-up was written with these suggestions. */
+async function writtenUp(texts: string[]) {
+  const { id, planId } = await newCampaign();
+  await reached(id, false);
+  const r = await reading(planId, "1", "2026-11-29");
+  const runId = crypto.randomUUID();
+  startReply = { ok: true, run: { id: runId } };
+  await campaigns.startWriteUp(W, id);
+  const out: WriteUpOutput = { schemaVersion: 1, paragraph: "Q4 audits sent 1 email.", cites: [r], suggestions: texts.map((assumption) => ({ assumption, because: "Direx counted 1 meeting from 1 email.", readingIds: [r] })) };
+  const kept = ok(await sink(W, proposal(out), context(id, runId)));
+  return { id, r, runId, out, itemId: kept.itemId! };
+}
+const approveWith = async (itemId: string, choice?: unknown, workspaceId = W) => items.approve(workspaceId, itemId, (await items.view(workspaceId, itemId))!.revision, who, choice === undefined ? undefined : JSON.stringify(choice));
+
+test("approving two of three, one edited, adds exactly those to a new Strategy version and marks each suggestion; a draft is left alone", async () => {
+  const { id, itemId, out } = await writtenUp(SUGGESTED);
+  expect(await itemOf(id)).toEqual({ id: itemId, state: "needs_approval", title: "Add 3 assumptions to your Strategy?", group_label: "Q4 audits", payload: { campaignId: id, suggestions: out.suggestions } });
+  expect((await writeUpOf(id)).item_id).toBe(itemId);
+
+  const before = await plans.strategy(W);
+  const draft = { ...before.current!, positioning: "A draft nobody submitted" };
+  const { revision } = ok(await plans.saveStrategyDraft(W, { revision: before.draftRevision, body: draft }));
+  const versions = (await plans.strategyVersions(W)).length;
+
+  ok(await approveWith(itemId, { add: [{ index: 0 }, { index: 2, text: "  A LinkedIn note adds little.  " }] }));
+  const after = await plans.strategy(W);
+  expect(after.current!.assumptions.map((a) => a.text)).toEqual([...before.current!.assumptions.map((a) => a.text), SUGGESTED[0], "A LinkedIn note adds little."]);
+  expect(after.currentVersion).toBe(versions + 1);
+  expect(await plans.strategyVersions(W)).toHaveLength(versions + 1);
+  expect((await plans.strategyVersions(W)).at(-1)).toMatchObject({ baseVersion: before.currentVersion, actorUserId: person.userId });
+  expect(after.draft).toEqual(draft);
+  expect(after.draftRevision).toBe(revision);
+  expect((await writeUpOf(id)).suggestions.map((s: { outcome: string }) => s.outcome)).toEqual(["added", "not_added", "added"]);
+  expect((await itemOf(id)).state).toBe("applied");
+});
+
+test("a choice must tick at least one suggestion in range, with texts of 1 to 400 characters", async () => {
+  const { id, itemId } = await writtenUp(suggested("finance").slice(0, 2));
+  const before = await assumptionsNow();
+  const refusals = [undefined, "not json", { add: "all" }, { add: [] }, { add: [{ index: 2 }] }, { add: [{ index: 0 }, { index: 0 }] }, { add: [{ index: 0, text: " " }] }, { add: [{ index: 0, text: "x".repeat(401) }] }];
+  const reasons = [];
+  for (const c of refusals) reasons.push((await (typeof c === "string" ? items.approve(W, itemId, (await items.view(W, itemId))!.revision, who, c) : approveWith(itemId, c))) as { reason?: string });
+  expect(reasons.map((r) => r.reason)).toEqual(["choice_required", "invalid_choice", "invalid_choice", "choice_required", "invalid_choice", "invalid_choice", "invalid_choice", "invalid_choice"]);
+  expect(await assumptionsNow()).toEqual(before);
+  expect((await itemOf(id)).state).toBe("needs_approval");
+});
+
+test("dismissing adds nothing and marks every suggestion not added", async () => {
+  const { id, itemId } = await writtenUp(suggested("logistics").slice(0, 2));
+  const versions = (await plans.strategyVersions(W)).length;
+  ok(await items.cancel(W, itemId, actor));
+  expect((await writeUpOf(id)).suggestions.map((s: { outcome: string }) => s.outcome)).toEqual(["not_added", "not_added"]);
+  expect(await plans.strategyVersions(W)).toHaveLength(versions);
+});
+
+test("a rewritten write-up replaces the open Item, and one with no suggestions leaves none", async () => {
+  const { id, r, out, itemId } = await writtenUp(suggested("health"));
+  const rewrite = async (suggestions: WriteUpOutput["suggestions"]) => {
+    const runId = crypto.randomUUID();
+    await q("update campaign_write_ups set status = 'writing', run_id = $2 where campaign_id = $1", [id, runId]);
+    return ok(await sink(W, proposal({ ...out, suggestions }), context(id, runId))).itemId;
+  };
+  const next = await rewrite([{ assumption: "Ops leads reply on Mondays.", because: "Direx counted 1 meeting.", readingIds: [r] }]);
+  expect(next).not.toBe(itemId);
+  expect((await q("select state from items where id = $1", [itemId]))[0].state).toBe("cancelled");
+  expect(await q("select state, title, group_key from items where id = $1", [next])).toEqual([{ state: "needs_approval", title: "Add 1 assumption to your Strategy?", group_key: `strategy_assumptions:${id}` }]);
+  expect((await writeUpOf(id)).item_id).toBe(next);
+
+  expect(await rewrite([])).toBeNull();
+  expect((await q("select state from items where id = $1", [next]))[0].state).toBe("cancelled");
+  expect((await writeUpOf(id)).item_id).toBeNull();
+});
+
+test("it refuses with no approved Strategy, and past 20 assumptions, saying how many there are", async () => {
+  const suggestion = { assumption: "Ops leads read email.", because: "Seen.", readingIds: [] };
+  const offer = async (workspaceId: string) =>
+    ok(await items.createItem(workspaceId, { kind: "strategy_assumptions", payload: { campaignId: crypto.randomUUID(), suggestions: [suggestion, suggestion] }, actor: { system: "campaigns" }, details: { title: "Add 2 assumptions to your Strategy?", workArea: "Plans", warnings: [] } })).item.id;
+
+  const empty = crypto.randomUUID();
+  await seedMember(empty, person.userId);
+  expect(await approveWith(await offer(empty), { add: [{ index: 0 }] }, empty)).toMatchObject({ ok: false, reason: "no_strategy" });
+
+  const full = crypto.randomUUID();
+  await seedMember(full, person.userId);
+  const nineteen = Array.from({ length: 19 }, (_, i) => ({ text: `Assumption ${i}` }));
+  const saved = ok(await plans.saveStrategyDraft(full, { revision: 0, body: { ...(await plans.strategy(W)).current!, assumptions: nineteen } }));
+  const version = ok(await plans.submitStrategy(full, { revision: saved.revision, actor })).item;
+  ok(await items.approve(full, version.id, version.revision, who));
+  const itemId = await offer(full);
+  expect(await approveWith(itemId, { add: [{ index: 0 }, { index: 1 }] }, full)).toMatchObject({ ok: false, reason: "too_many_assumptions:19" });
+  ok(await approveWith(itemId, { add: [{ index: 1, text: "The twentieth." }] }, full));
+  expect(await assumptionsNow(full)).toEqual([...nineteen.map((a) => a.text), "The twentieth."]);
 });

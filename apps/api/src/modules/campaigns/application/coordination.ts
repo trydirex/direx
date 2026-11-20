@@ -6,6 +6,7 @@ import type { Check } from "../../ledger";
 import type { InboundEvent } from "../../outreach";
 import type { Plans } from "../../plans";
 import { PLAN_CHANGED, planChangeKinds } from "./plan-change";
+import { strategyAssumptionKinds } from "./write-up";
 import { setStallWaitFrom, activePosts, activeActions, campaignOfAction, inWorkspace, markReplied, markRepliedEverywhere, readCampaign, setPaused, settleConflict, postCounts, stepCounts, type CampaignsTx } from "../adapters/repo";
 
 export const CONFLICT_KIND = "campaign_conflict";
@@ -56,6 +57,7 @@ export function campaignKinds(deps: { now?: () => Date } = {}): Record<string, I
       apply: async () => ({ ok: true }),
     },
     ...planChangeKinds({ now }),
+    ...strategyAssumptionKinds({ now }),
     [STALL_KIND]: {
       permission: "item.edit",
       // Keep waiting, go ahead or cancel is a person's choice, not part of approve-all.

@@ -61,9 +61,15 @@ export function createCampaigns(deps: { plans: Plans; facts: Facts; items: () =>
     ...changes,
     ...campaignReadings({ plans: deps.plans, now }),
   };
+  const writeUps = campaignWriteUps({ plans: deps.plans, overlaps: api.overlaps, startDraft: deps.startDraft, now });
   return {
     ...api,
-    ...campaignWriteUps({ plans: deps.plans, overlaps: api.overlaps, startDraft: deps.startDraft, now }),
+    ...writeUps,
+    // The 06:00 pass: readings first, then the write-ups that are due once they're in.
+    countReadings: async () => {
+      await api.countReadings();
+      await writeUps.writeUpsDue();
+    },
     addPeople: refreshed(api.addPeople),
     addPeopleRows: refreshed(api.addPeopleRows),
     setupStep: refreshed(api.setupStep),

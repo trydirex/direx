@@ -18,6 +18,7 @@ import { approveClean, mayApprove, message, needsYouQuery, STATE_LABEL, toApprov
 import { ItemDialog } from "../items/ItemPanel";
 import { CampaignChip, StateChip } from "../items/StateChip";
 import { Activity } from "./Activity";
+import { Overlaps } from "./Overlaps";
 import { kindWords } from "./Setup";
 import { campaignsQuery, dayWords, networkWords, progressLine, progressQuery, resultsQuery, stepCountsQuery, type Listed, type Loaded, type Results, type Step, type StepCounts } from "./actions";
 
@@ -364,6 +365,7 @@ export function Overview(p: { workspaceId: string; campaign: Loaded; edit: boole
         </section>
         {/* In the wide column, so its four columns keep their words. */}
         <ByStep steps={results?.steps} />
+        <Overlaps workspaceId={workspaceId} id={c.id} />
       </div>
       <div className="flex min-w-0 flex-col gap-8">
         {/* The goal comes first, above what was sent (marketer UX pass, D1). */}

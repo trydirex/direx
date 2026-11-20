@@ -14,7 +14,7 @@ import { EmptyState, Notice, Page } from "../components/layout";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { campaignsQuery } from "../campaigns/actions";
 import { networksQuery } from "../social/actions";
-import { approveClean, BULK, cancelAll, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
+import { approveClean, BULK, cancel, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
 import type { ItemDialog } from "./ItemPanel";
 import { ApproveList, approvedToast, QueueRow } from "./QueueRow";
 import { StateChip } from "./StateChip";
@@ -25,6 +25,8 @@ const listOf = (s: string | undefined) => (s ? s.split(",") : []);
 const joined = (v: string[]) => (v.length ? v.join(",") : undefined);
 /** The states an Item can still be withdrawn from: an own Item's and the ledger's alike. */
 const WITHDRAWABLE: ItemState[] = ["draft", "needs_approval", "scheduled", "held"];
+// These Items need their own decision, as in ItemPanel's Don't send control.
+const CHOICE_KINDS = ["opt_out_review", "reply", "company_review", "plan_change"];
 
 export function Everything(p: {
   workspaceId: string;
@@ -79,7 +81,7 @@ export function Everything(p: {
   if (kept.length !== chosen.length) setChosen(kept);
   const ticked = items.filter((i) => chosen.includes(i.id));
   const approvable = approver ? ticked.filter((i) => i.state === "needs_approval" && i.clean) : [];
-  const withdrawable = editor ? ticked.filter((i) => WITHDRAWABLE.includes(i.state)) : [];
+  const withdrawable = editor ? ticked.filter((i) => WITHDRAWABLE.includes(i.state) && i.reasonCode !== "outcome_unknown" && !CHOICE_KINDS.includes(i.kind)) : [];
   const firstShown = items.slice(0, BULK).map((i) => i.id);
   const allShown = firstShown.length > 0 && firstShown.every((id) => chosen.includes(id));
   const tick = (id: string, on: boolean) => setChosen(on ? (chosen.length < BULK ? [...chosen, id] : chosen) : chosen.filter((c) => c !== id));
@@ -95,10 +97,16 @@ export function Everything(p: {
         approvedToast(p.workspaceId, r.ids, editor, refresh);
         setRefused(r.refused.length > 0 ? `${r.refused.length} didn't go through: ${message(r.refused[0]!.reason)}` : undefined);
       } else {
-        const done = await cancelAll(p.workspaceId, withdrawable.map((i) => i.id));
+        // Wait for every request, even if one loses its connection, before reading the list again.
+        const results = await Promise.allSettled(withdrawable.map((i) => cancel(p.workspaceId, i.id)));
+        const done = results.filter((r) => r.status === "fulfilled" && r.value === null).length;
+        const failed = results.filter((r) => r.status === "rejected").length;
+        const late = results.length - done - failed;
         if (done > 0) toast.add({ title: `Withdrew ${done}.` });
-        const late = withdrawable.length - done;
-        setRefused(late > 0 ? `${late} couldn't be withdrawn. They may have gone out already.` : undefined);
+        setRefused([
+          late > 0 ? `${late} couldn't be withdrawn. They may have gone out already.` : "",
+          failed > 0 ? `Couldn't confirm ${failed} withdrawal${failed === 1 ? "" : "s"}. Check the refreshed list before trying again.` : "",
+        ].filter(Boolean).join(" ") || undefined);
       }
       setChosen([]);
       await refresh();

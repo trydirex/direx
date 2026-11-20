@@ -230,6 +230,46 @@ test("Withdraw cancels each ticked row that can still be withdrawn, and counts t
   expect((await screen.findByRole("alert")).textContent).toBe("1 couldn't be withdrawn. They may have gone out already.");
 });
 
+test("Withdraw excludes rows that need a decision or have an unknown outcome", async () => {
+  const rows = [
+    item({ id: "a", state: "draft", title: "Draft" }),
+    ...["reply", "plan_change", "company_review", "opt_out_review"].map((kind) => item({ id: kind, kind, state: "needs_approval", title: kind })),
+    item({ id: "unknown", state: "held", reasonCode: "outcome_unknown", title: "Unknown outcome" }),
+  ];
+  serve([{ items: rows, nextCursor: null }, { items: rows, nextCursor: null }]);
+  const posts = act();
+  show();
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Select all shown" }));
+  expect(screen.getByText("6 selected")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Withdraw 1" }));
+  const dialog = within(openDialog("Withdraw 1?")!);
+  expect(dialog.getByRole("list", { name: "To withdraw" }).textContent).toBe("Draft");
+  await userEvent.click(dialog.getByRole("button", { name: "Withdraw 1" }));
+  await waitFor(() => expect(posts).toHaveBeenCalledTimes(1));
+  expect(posts).toHaveBeenCalledWith("/api/w/{workspaceId}/items/{id}/cancel", expect.objectContaining({ params: { path: { workspaceId: W, id: "a" } } }));
+});
+
+test("Withdraw reports connection failures and refreshes after the other requests finish", async () => {
+  const rows = [item({ id: "a", state: "draft", title: "First" }), item({ id: "b", state: "draft", title: "Second" })];
+  const asked = serve([{ items: rows, nextCursor: null }, { items: [item({ id: "a", state: "cancelled", title: "First" }), rows[1]!], nextCursor: null }]);
+  let finish!: (value: unknown) => void;
+  const later = new Promise((resolve) => { finish = resolve; });
+  const posts = vi.spyOn(api, "POST").mockImplementation(((_path: string, init: { params: { path: { id: string } } }) =>
+    init.params.path.id === "a" ? later : Promise.reject(new Error("connection lost"))) as never);
+  show();
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Select all shown" }));
+  await userEvent.click(screen.getByRole("button", { name: "Withdraw 2" }));
+  await userEvent.click(within(openDialog("Withdraw 2?")!).getByRole("button", { name: "Withdraw 2" }));
+  await waitFor(() => expect(posts).toHaveBeenCalledTimes(2));
+  expect(asked).toHaveLength(1);
+  finish(await reply(200, { item: rows[0] }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Couldn't confirm 1 withdrawal. Check the refreshed list before trying again.");
+  await waitFor(() => expect(asked).toHaveLength(2));
+  expect(await within(screen.getByRole("list", { name: "Everything" })).findByText("Cancelled")).toBeTruthy();
+  expect(await screen.findByText("Withdrew 1.")).toBeTruthy();
+  expect(screen.queryByText(/selected$/)).toBeNull();
+});
+
 test("Keep them closes the confirm with nothing withdrawn, and Clear selection unticks everything", async () => {
   serve([{ items: [item({ id: "a", state: "draft" })], nextCursor: null }]);
   const posts = act();

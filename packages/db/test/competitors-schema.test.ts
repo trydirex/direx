@@ -167,3 +167,54 @@ test("another Workspace sees none of it, and can't write into this one", async (
   await expect(add("Xenett")).rejects.toThrow(/row-level security/);
   await c.query("select set_config('app.workspace_id', $1, false)", [W]);
 });
+
+const find = (kind: string, site: string | null, terms: string[] | null, micros: number | null, by: string | null) =>
+  c.query(`insert into competitor_finds (workspace_id, kind, site, terms, confirmed_micros, confirmed_by, at) values ($1, $2, $3, $4, $5, $6, now()) returning id`, [W, kind, site, terms, micros, by]);
+const propose = (findId: string, name: string, key: string) =>
+  c.query(`insert into competitor_proposals (workspace_id, find_id, name, name_key, found_at) values ($1, $2, $3, $4, now()) returning id`, [W, findId, name, key]);
+
+test("a find is a site scan or a confirmed search, never a mix, and is never changed or deleted", async () => {
+  const scan = (await find("own_site", "https://contoso.example/", null, null, null)).rows[0].id;
+  await expect(find("search", null, ["bank rec software"], 120000, U)).resolves.toBeDefined();
+  await expect(find("search", null, ["bank rec software"], 0, U)).resolves.toBeDefined();
+  await expect(find("search", null, ["bank rec software"], null, U)).rejects.toThrow(/competitor_finds_kind_check/);
+  await expect(find("search", null, ["bank rec software"], 120000, null)).rejects.toThrow(/competitor_finds_kind_check/);
+  await expect(find("own_site", "https://contoso.example/", ["x"], null, null)).rejects.toThrow(/competitor_finds_kind_check/);
+  await expect(find("blog", "https://contoso.example/", null, null, null)).rejects.toThrow(/competitor_finds_kind_check/);
+  await expect(c.query("update competitor_finds set site = 'https://other.example/' where id = $1", [scan])).rejects.toThrow(/permission denied/);
+  await expect(c.query("delete from competitor_finds where id = $1", [scan])).rejects.toThrow(/permission denied/);
+});
+
+test("one proposal per name in a Workspace, only ever closed, and closed whole", async () => {
+  const scan = (await find("own_site", "https://contoso.example/", null, null, null)).rows[0].id;
+  const { rows } = await propose(scan, "Booke AI", "bookeai");
+  await expect(propose(scan, "booke-ai", "bookeai")).rejects.toThrow(/competitor_proposals_name_key/);
+  await expect(propose(scan, "Bad", "Bad Key")).rejects.toThrow(/competitor_proposals_name_check/);
+  await expect(c.query("update competitor_proposals set closed_at = now(), closed_as = 'dismissed' where id = $1", [rows[0].id])).rejects.toThrow(/competitor_proposals_closed_check/);
+  await expect(c.query("update competitor_proposals set closed_at = now(), closed_by = $2 where id = $1", [rows[0].id, U])).rejects.toThrow(/competitor_proposals_closed_check/);
+  await c.query("update competitor_proposals set closed_at = now(), closed_by = $2, closed_as = 'dismissed' where id = $1", [rows[0].id, U]);
+  await expect(c.query("update competitor_proposals set name = 'Other' where id = $1", [rows[0].id])).rejects.toThrow(/permission denied/);
+  await expect(c.query("delete from competitor_proposals where id = $1", [rows[0].id])).rejects.toThrow(/permission denied/);
+});
+
+test("a completed proposal closure cannot be reopened or changed", async () => {
+  const scan = (await find("own_site", "https://contoso.example/", null, null, null)).rows[0].id;
+  const close = (id: string, outcome: string) =>
+    c.query("update competitor_proposals set closed_at = now(), closed_by = $2, closed_as = $3 where id = $1", [id, U, outcome]);
+  const dismissed = (await propose(scan, "Dismissed", "dismissed")).rows[0].id;
+  const added = (await propose(scan, "Added", "added")).rows[0].id;
+  await expect(close(dismissed, "dismissed")).resolves.toMatchObject({ rowCount: 1 });
+  await expect(close(added, "added")).resolves.toMatchObject({ rowCount: 1 });
+  await expect(c.query("update competitor_proposals set closed_at = null, closed_by = null, closed_as = null where id = $1", [dismissed])).rejects.toThrow(/closure is final/);
+  await expect(c.query("update competitor_proposals set closed_as = 'added' where id = $1", [dismissed])).rejects.toThrow(/closure is final/);
+  await expect(c.query("update competitor_proposals set closed_at = closed_at + interval '1 hour' where id = $1", [added])).rejects.toThrow(/closure is final/);
+});
+
+test("proposals and finds are invisible from another Workspace", async () => {
+  const scan = (await find("own_site", "https://contoso.example/", null, null, null)).rows[0].id;
+  await propose(scan, "Karbon", "karbon");
+  await c.query("select set_config('app.workspace_id', $1, false)", [crypto.randomUUID()]);
+  expect((await c.query("select id from competitor_proposals")).rows).toEqual([]);
+  expect((await c.query("select id from competitor_finds")).rows).toEqual([]);
+  await c.query("select set_config('app.workspace_id', $1, false)", [W]);
+});

@@ -1121,6 +1121,13 @@
       "when": 1795201437666,
       "tag": "0159_campaign_write_ups",
       "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1795209313490,
+      "tag": "0160_competitor_proposals",
+      "breakpoints": true
     }
   ]
 }

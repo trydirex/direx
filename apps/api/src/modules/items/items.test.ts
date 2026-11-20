@@ -4,11 +4,12 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { appClient } from "../../../../../test/db";
+import { encodeListCursor, orderOf, parseListCursor } from "./domain/list-cursor";
 import { POST, actionIdOf, itemsWorld, person } from "./fixtures/items";
 
 const w = await itemsWorld({ kinds: { fact_edit: { permission: "item.approve", apply: async () => ({ ok: true }) } } });
 const { W, items, ledger, clock, hours, newPost, submit, who } = w;
-const needsYou = async () => (await items.list(W, { needsYou: true, offset: 0, limit: 100 })).items.map((i) => i.id);
+const needsYou = async () => (await items.list(W, { needsYou: true, limit: 100 })).items.map((i) => i.id);
 
 test("creating twice with one idempotency key gives one Action and one Item, and a retry heals a lost Item", async () => {
   const key = crypto.randomUUID();
@@ -87,7 +88,7 @@ test("no production code creates or revises an Action around its Item", () => {
 
 test("Needs you holds what needs a person, oldest decide-by first, and the count matches", async () => {
   const fresh = await itemsWorld();
-  const list = () => fresh.items.list(fresh.W, { needsYou: true, offset: 0, limit: 100 });
+  const list = () => fresh.items.list(fresh.W, { needsYou: true, limit: 100 });
   const draft = await fresh.newPost();
   const later = await fresh.submit(await fresh.newPost());
   const soon = await fresh.submit(await fresh.newPost());
@@ -107,7 +108,7 @@ test("a Held Item with a retry pending stays out of Needs you until the retries 
   const i = await fresh.submit(await fresh.newPost());
   await fresh.items.approve(fresh.W, i.id, 1, fresh.who);
   const actionId = await actionIdOf(fresh.W, i.id);
-  const ids = async () => (await fresh.items.list(fresh.W, { needsYou: true, offset: 0, limit: 10 })).items.map((x) => x.id);
+  const ids = async () => (await fresh.items.list(fresh.W, { needsYou: true, limit: 10 })).items.map((x) => x.id);
   await fresh.ledger.run(fresh.W, actionId);
   expect((await fresh.items.view(fresh.W, i.id))!.state).toBe("held");
   expect(await ids()).toEqual([]);
@@ -146,13 +147,111 @@ test("a non-Action Item keeps its own triage and history", async () => {
 
 test("the Calendar query uses the time shown, and an Item with no time isn't on it", async () => {
   const fresh = await itemsWorld();
-  const week = { from: fresh.hours(0), to: fresh.hours(7 * 24), offset: 0, limit: 100 };
+  const week = { from: fresh.hours(0), to: fresh.hours(7 * 24), limit: 100 };
   const planned = await fresh.submit(await fresh.newPost({ plannedAt: fresh.hours(48) }));
   await fresh.newPost();
   await fresh.newPost({ plannedAt: fresh.hours(10 * 24) });
   expect((await fresh.items.list(fresh.W, week)).items.map((i) => i.id)).toEqual([planned.id]);
   await fresh.items.approve(fresh.W, planned.id, 1, fresh.who);
   expect((await fresh.items.list(fresh.W, week)).items[0]).toMatchObject({ state: "scheduled", at: fresh.hours(48) });
+});
+
+/** Every id a filter reaches, `size` at a time, passing each page's cursor back. */
+async function pageThrough(world: Awaited<ReturnType<typeof itemsWorld>>, f: { needsYou?: boolean; from?: Date; to?: Date }, size: number, between?: () => Promise<void>) {
+  const ids: string[] = [];
+  let cursor: string | null = null;
+  do {
+    const after = cursor === null ? undefined : (parseListCursor(cursor, orderOf(f)) ?? undefined);
+    const page = await world.items.list(world.W, { ...f, after, limit: size });
+    ids.push(...page.items.map((i) => i.id));
+    cursor = page.nextCursor;
+    await between?.();
+  } while (cursor);
+  return ids;
+}
+
+test("paging newest first reaches every Item once, even made in one instant and changing state between pages", async () => {
+  const fresh = await itemsWorld();
+  // The clock stands still, so all five share one creation time and only the id orders them.
+  const made: Awaited<ReturnType<typeof fresh.newPost>>[] = [];
+  for (let n = 0; n < 5; n++) made.push(await fresh.newPost());
+  const whole = (await fresh.items.list(fresh.W, { limit: 100 })).items.map((i) => i.id);
+  expect([...whole].sort()).toEqual(made.map((i) => i.id).sort());
+  let moved = 0;
+  const paged = await pageThrough(fresh, {}, 2, async () => {
+    // An Item leaving the draft state between pages shifts no other row.
+    if (moved < made.length) await fresh.submit(made[moved++]!);
+  });
+  expect(paged).toEqual(whole);
+  expect((await fresh.items.list(fresh.W, { limit: 5 })).nextCursor).not.toBeNull();
+  expect((await fresh.items.list(fresh.W, { limit: 6 })).nextCursor).toBeNull();
+});
+
+test("paging Needs you keeps the soonest deadline first and the ones with none last, across page edges", async () => {
+  const fresh = await itemsWorld();
+  const later = await fresh.submit(await fresh.newPost());
+  const none = [await fresh.submit(await fresh.newPost()), await fresh.submit(await fresh.newPost())];
+  const soon = await fresh.submit(await fresh.newPost());
+  await fresh.items.setTriage(fresh.W, later.id, { decideBy: fresh.hours(48) });
+  await fresh.items.setTriage(fresh.W, soon.id, { decideBy: fresh.hours(1) });
+  const whole = (await fresh.items.list(fresh.W, { needsYou: true, limit: 100 })).items.map((i) => i.id);
+  expect(whole.slice(0, 2)).toEqual([soon.id, later.id]);
+  expect(whole.slice(2).sort()).toEqual(none.map((i) => i.id).sort());
+  expect(await pageThrough(fresh, { needsYou: true }, 1)).toEqual(whole);
+});
+
+test("paging the Calendar's range by the time shown gives the same Items as one read", async () => {
+  const fresh = await itemsWorld();
+  for (const h of [30, 5, 30, 70]) await fresh.newPost({ plannedAt: fresh.hours(h) });
+  const range = { from: fresh.hours(0), to: fresh.hours(7 * 24) };
+  const whole = (await fresh.items.list(fresh.W, { ...range, limit: 100 })).items.map((i) => i.id);
+  expect(whole).toHaveLength(4);
+  expect(await pageThrough(fresh, range, 1)).toEqual(whole);
+});
+
+test("the list filters by states, channel, type, Campaign and words, and the filters combine", async () => {
+  const fresh = await itemsWorld({ kinds: { fact_edit: { permission: "item.approve", apply: async () => ({ ok: true }) } } });
+  const action = (details: { title: string; channel: string; workArea: string; groupKey?: string; groupLabel?: string }) =>
+    fresh.items.createActionItem(fresh.W, { idempotencyKey: crypto.randomUUID(), capability: POST, dedupe: "blind", spec: { body: "x" }, actor: person, details: { ...details, warnings: [] } });
+  const email = await action({ title: "Email to Dana", channel: "email", workArea: "outreach", groupKey: "campaign:c1:step:s1", groupLabel: "Spring launch" });
+  const post = await fresh.submit(await action({ title: "100% off_sale", channel: "linkedin", workArea: "social", groupKey: "campaign:c1x:step:s1", groupLabel: "Other" }));
+  const fact = await fresh.items.createItem(fresh.W, { kind: "fact_edit", payload: {}, actor: person, details: { title: "Add this fact", warnings: [], groupKey: "campaign:c1" } });
+  if (!fact.ok) throw new Error(fact.reason);
+  const ids = async (f: Omit<Parameters<typeof fresh.items.list>[1], "limit">) => (await fresh.items.list(fresh.W, { ...f, limit: 100 })).items.map((i) => i.id).sort();
+  const of = (...xs: { id: string }[]) => xs.map((x) => x.id).sort();
+
+  expect(await ids({ state: ["draft", "needs_approval"] })).toEqual(of(email, post, fact.item));
+  expect(await ids({ state: "draft" })).toEqual(of(email));
+  expect(await ids({ channels: ["email", "linkedin"] })).toEqual(of(email, post));
+  // An Action by its work area, anything else by its kind.
+  expect(await ids({ types: ["social", "fact_edit"] })).toEqual(of(post, fact.item));
+  expect(await ids({ types: ["action"] })).toEqual([]);
+  // A Campaign's own group and its steps, never a Campaign whose id only starts the same.
+  expect(await ids({ campaign: "c1" })).toEqual(of(email, fact.item));
+  // Words match the title or the group label, case aside, and % and _ are only characters.
+  expect(await ids({ q: "spring" })).toEqual(of(email));
+  expect(await ids({ q: "100% off_" })).toEqual(of(post));
+  expect(await ids({ q: "0%" })).toEqual(of(post));
+  expect(await ids({ q: "%" })).toEqual(of(post));
+  expect(await ids({ q: "_" })).toEqual(of(post));
+  expect(await ids({ campaign: "c1", state: "needs_approval", q: "fact" })).toEqual(of(fact.item));
+  expect(await ids({ campaign: "c1", channels: ["linkedin"] })).toEqual([]);
+});
+
+test("a list cursor pages only the order that made it, and only as it was made", async () => {
+  const id = crypto.randomUUID();
+  const at = "2026-11-19T09:00:00.123456Z";
+  const newest = encodeListCursor({ order: "newest", key: [at], id });
+  expect(parseListCursor(newest, "newest")).toEqual({ order: "newest", key: [at], id });
+  expect(parseListCursor(newest, "time")).toBeNull();
+  expect(parseListCursor(encodeListCursor({ order: "needs_you", key: [null, at], id }), "needs_you")).toEqual({ order: "needs_you", key: [null, at], id });
+  // Only a needs-you deadline may be missing, and every time keeps its microseconds.
+  expect(parseListCursor(encodeListCursor({ order: "newest", key: [null], id }), "newest")).toBeNull();
+  expect(parseListCursor(encodeListCursor({ order: "newest", key: ["2026-11-19T09:00:00.123Z"], id }), "newest")).toBeNull();
+  expect(parseListCursor(encodeListCursor({ order: "newest", key: [at], id: "1 or 1=1" }), "newest")).toBeNull();
+  expect(parseListCursor(encodeListCursor({ order: "newest", key: [at, at], id }), "newest")).toBeNull();
+  for (const bad of ["500", "", "not base64 at all!", Buffer.from("[\"newest\"").toString("base64url"), `${newest}=`])
+    expect(parseListCursor(bad, "newest")).toBeNull();
 });
 
 test("creating with replace cancels the one still waiting in its group, and leaves other groups and decided ones alone", async () => {
@@ -176,7 +275,7 @@ test("creating with replace cancels the one still waiting in its group, and leav
 test("settling a group keeps one waiting Item: the same title changes nothing, a new one replaces it, none closes it", async () => {
   const group = `g:${crypto.randomUUID()}`;
   const settle = (title: string | null) => items.settleGroup(W, { kind: "fact_edit", groupKey: group, actor: person, next: title === null ? null : { payload: {}, details: { title, warnings: [] } } });
-  const live = async () => (await items.list(W, { needsYou: true, offset: 0, limit: 500 })).items.filter((i) => i.groupKey === group).map((i) => i.title);
+  const live = async () => (await items.list(W, { needsYou: true, limit: 500 })).items.filter((i) => i.groupKey === group).map((i) => i.title);
   expect(await settle("3 waiting")).toEqual({ ok: true, changed: true });
   expect(await settle("3 waiting")).toEqual({ ok: true, changed: false });
   expect(await live()).toEqual(["3 waiting"]);
@@ -193,7 +292,7 @@ test("settling a group with the same words still moves the date it's due by", as
   const settle = (decideBy: Date) => items.settleGroup(W, { kind: "fact_edit", groupKey: group, actor: person, next: { payload: {}, details: { title: "2 waiting", warnings: [] }, decideBy } });
   await settle(new Date("2026-11-09T09:00:00Z"));
   await settle(new Date("2026-11-12T09:00:00Z"));
-  const [live] = (await items.list(W, { needsYou: true, offset: 0, limit: 500 })).items.filter((i) => i.groupKey === group);
+  const [live] = (await items.list(W, { needsYou: true, limit: 500 })).items.filter((i) => i.groupKey === group);
   expect((await items.view(W, live!.id))!.decideBy).toEqual(new Date("2026-11-12T09:00:00Z"));
 });
 

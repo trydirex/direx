@@ -143,3 +143,15 @@ export async function dismissProposal(workspaceId: string, id: string): Promise<
 
 /** Where a proposal came from, in words. */
 export const proposalSource = (p: Proposal) => (p.source === "search" ? `Search: ${(p.terms ?? []).join(", ")}` : "Your page compares you");
+
+/** What a paid search costs at most, or the refusal's code. */
+export async function estimateSearch(workspaceId: string, terms: string[]): Promise<{ usd: number } | { code: string }> {
+  const r = await api.POST("/api/w/{workspaceId}/competitors/proposals/estimate", { params: at(workspaceId), body: { terms } });
+  return r.data ?? { code: r.error?.error ?? "failed" };
+}
+
+/** Runs the paid search for the amount the person confirmed; the error code, or null. */
+export async function searchCompetitors(workspaceId: string, terms: string[], confirmedUsd: number): Promise<string | null> {
+  const { error } = await api.POST("/api/w/{workspaceId}/competitors/proposals/search", { params: at(workspaceId), body: { terms, confirmedUsd } });
+  return error ? error.error : null;
+}

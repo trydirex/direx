@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A draft may rest a target or a channel on an earlier Campaign's reading. The sinks keep that only
 // while the reading is this Workspace's, on another plan, and still the newest for its Measure.
-import { expect, test } from "vitest";
+import { citedReadings } from "./application/plans";
+import { inWorkspace } from "./adapters/repo";
+import { expect, test, vi } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { createFacts, factKinds } from "../facts/index";
 import { seedMember } from "../identity/fixtures/member";
@@ -191,4 +193,40 @@ test("the Strategy view shows its cited readings and notes one a newer reading r
     citedReadings: [shown(cited, "3", "2026-11-12", { newer: true }), shown(correction, "2", "2026-11-12", { source: "person" })],
     notes: [{ kind: "reading_changed", readingId: cited }],
   });
+});
+
+
+test("a thousand draft citations use one query, preserving order and deduplicating", async () => {
+  const { cited } = await citing();
+  const ids = [cited.toUpperCase(), ...Array.from({ length: 1000 }, () => crypto.randomUUID()), cited];
+  await inWorkspace(W, async (tx) => {
+    const spy = vi.spyOn(tx, "select");
+    try {
+      const result = await citedReadings(tx, [...ids, cited, "bad-id"]);
+      expect(result).toEqual([shown(ids[0]!, "3", "2026-11-12"), ...ids.slice(1, -1).map(missing), shown(cited, "3", "2026-11-12"), missing("bad-id")]);
+      // One outer SELECT and its NOT EXISTS subquery, independent of citation count.
+      expect(spy).toHaveBeenCalledTimes(2);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+test("empty and invalid citations need no reading query", async () => {
+  expect(await inWorkspace(W, (tx) => citedReadings(tx, []))).toEqual([]);
+  expect(await inWorkspace(W, (tx) => citedReadings(tx, ["bad-id", "bad-id"])) ).toEqual([missing("bad-id")]);
+});
+
+test("cited labels follow the approved plan and fall back to the key if removed", async () => {
+  const { source, cited } = await citing();
+  const replace = async (body: PlanBody) => {
+    const p = (await plans.plan(W, source))!;
+    const { revision } = ok(await plans.savePlanDraft(W, source, { revision: p.draftRevision, body }));
+    const { item } = ok(await plans.submitPlan(W, source, { revision, actor }));
+    ok(await items.approve(W, item.id, item.revision, who));
+  };
+  await replace({ ...planDraft(), measures: [measure("meetings", "New label")] });
+  expect(await inWorkspace(W, (tx) => citedReadings(tx, [cited]))).toEqual([{ ...shown(cited, "3", "2026-11-12"), measureLabel: "New label" }]);
+  await replace({ ...planDraft(), measures: [measure("replies", "Replies")] });
+  expect(await inWorkspace(W, (tx) => citedReadings(tx, [cited]))).toEqual([{ ...shown(cited, "3", "2026-11-12"), measureLabel: "meetings" }]);
 });

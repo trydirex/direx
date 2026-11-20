@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Every plans SQL statement. Versions, progress and readings are only inserted. Items are read,
 // never written, to find the Item still waiting on a version.
-import { and, asc, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, ne, notExists, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { items } from "@direx/db/schema";
 import { marketingPlans, marketingPlanVersions, planMeasureReadings, planStepProgress, strategies, strategyVersions } from "@direx/db/schema-plans";
@@ -121,6 +122,26 @@ export async function readingStanding(tx: PlansTx, id: string): Promise<(Pick<Re
     .where(and(eq(t.planId, r.planId), eq(t.measureKey, r.measureKey), ne(t.id, r.id), or(gt(t.observedOn, r.observedOn), and(eq(t.observedOn, r.observedOn), gt(t.at, r.at)))))
     .limit(1);
   return { planId: r.planId, measureKey: r.measureKey, value: r.value, source: r.source as Reading["source"], observedOn: r.observedOn, isNewest: newer.length === 0 };
+}
+
+/** Cited readings and their current plan labels in one query, with RLS on every table. */
+export async function citedReadingRows(tx: PlansTx, ids: string[]) {
+  if (!ids.length) return [];
+  const r = planMeasureReadings;
+  const newer = alias(planMeasureReadings, "newer_reading");
+  return tx
+    .select({
+      id: r.id, measureKey: r.measureKey, value: r.value, source: sql<Reading["source"]>`${r.source}`, observedOn: r.observedOn,
+      body: marketingPlanVersions.body,
+      isNewest: notExists(tx.select({ id: newer.id }).from(newer).where(and(
+        eq(newer.planId, r.planId), eq(newer.measureKey, r.measureKey), ne(newer.id, r.id),
+        or(gt(newer.observedOn, r.observedOn), and(eq(newer.observedOn, r.observedOn), gt(newer.at, r.at))),
+      ))),
+    })
+    .from(r)
+    .leftJoin(marketingPlans, eq(marketingPlans.id, r.planId))
+    .leftJoin(marketingPlanVersions, and(eq(marketingPlanVersions.planId, marketingPlans.id), eq(marketingPlanVersions.version, marketingPlans.currentVersion)))
+    .where(inArray(r.id, ids));
 }
 
 /** The Items still waiting on a version of this Strategy or plan, newest last. */

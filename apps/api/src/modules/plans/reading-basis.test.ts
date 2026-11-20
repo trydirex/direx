@@ -103,6 +103,7 @@ test("a plan can't rest on its own reading", async () => {
   const own = await approvedPlan(W);
   const id = await reading(W, own, "2", "2026-11-12");
   expect(await planSinkKeeps(cite(id), own)).toEqual({ kind: "assumption" });
+  expect(await planSinkKeeps(cite(id), own.toUpperCase())).toEqual({ kind: "assumption" });
 });
 
 test("a reading stops standing once a later day, or a later write for its day, is recorded", async () => {

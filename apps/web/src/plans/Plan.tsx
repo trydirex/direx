@@ -329,7 +329,7 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
               <legend className="px-1 text-sm font-medium">Measures</legend>
               {draft.measures.map((m, i) => (
                 <div key={m.key} className="flex flex-wrap items-center gap-2">
-                  <Input aria-label="Measure" className="flex-1" value={m.label} onChange={(e) => setLine("measures", i, { label: e.target.value })} />
+                  <Input aria-label="Measure" className="min-w-48 flex-1" value={m.label} onChange={(e) => setLine("measures", i, { label: e.target.value })} />
                   <Input aria-label="Target" className="w-48 max-w-full" value={m.target} onChange={(e) => setLine("measures", i, { target: e.target.value })} />
                   <BasisField value={m.basis} facts={facts} cited={plan.citedReadings} onChange={(basis) => setLine("measures", i, { basis })} />
                   {/* A different source starts a new reading history; old readings stay with the old key. */}

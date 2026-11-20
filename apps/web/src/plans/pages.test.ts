@@ -99,7 +99,7 @@ test("what moved under a plan shows as a note", () => {
   expect(page).toContain("A brand fact this plan relies on has changed.<");
   const cited = [reading({ newer: true })];
   const changed = planPage("viewer", { notes: [{ kind: "reading_changed", readingId: READING }], citedReadings: cited });
-  expect(changed).toContain("An earlier Campaign reading this plan relies on has changed. It said Interested replies 3, counted by Direx, 12 November 2026.");
+  expect(changed).toContain("An earlier Campaign reading this plan relies on has changed. It said Interested replies 3, counted by Direx, Thu 12 Nov.");
   expect(changed).not.toContain("A brand fact");
 });
 
@@ -165,9 +165,9 @@ const reading = (o: Partial<CitedReading> = {}): CitedReading => ({ id: READING,
 const byReading = { kind: "reading", readingId: READING } as const;
 
 test("a reading basis reads as words naming the Measure, value, who counted it and the day, never its id", () => {
-  expect(basisLabel(byReading, undefined, [reading()])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026");
-  expect(basisLabel(byReading, undefined, [reading({ source: "person", value: "5" })])).toBe("From an earlier Campaign: Interested replies 5, entered by a person, 12 November 2026");
-  expect(basisLabel(byReading, undefined, [reading({ newer: true })])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026 (since changed)");
+  expect(basisLabel(byReading, undefined, [reading()])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, Thu 12 Nov");
+  expect(basisLabel(byReading, undefined, [reading({ source: "person", value: "5" })])).toBe("From an earlier Campaign: Interested replies 5, entered by a person, Thu 12 Nov");
+  expect(basisLabel(byReading, undefined, [reading({ newer: true })])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, Thu 12 Nov, since changed");
   for (const cited of [[reading({ found: false, measureLabel: null, value: null, source: null, observedOn: null })], []]) {
     expect(basisLabel(byReading, undefined, cited)).toBe("From a Campaign reading that isn't in this Workspace");
   }
@@ -176,13 +176,13 @@ test("a reading basis reads as words naming the Measure, value, who counted it a
 
 test("an uppercase reading basis names the cited reading and preserves its changed warning", () => {
   const basis = { ...byReading, readingId: READING.toUpperCase() };
-  expect(basisLabel(basis, undefined, [reading()])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026");
-  expect(basisLabel(basis, undefined, [reading({ newer: true })])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026 (since changed)");
+  expect(basisLabel(basis, undefined, [reading()])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, Thu 12 Nov");
+  expect(basisLabel(basis, undefined, [reading({ newer: true })])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, Thu 12 Nov, since changed");
 });
 
 test("a plan names its reading basis in the draft view and once approved", () => {
   const measures = [{ ...body.measures[0]!, basis: byReading }];
-  const words = "From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026";
+  const words = "From an earlier Campaign: Interested replies 3, counted by Direx, Thu 12 Nov";
   const draft = planPage("viewer", { current: null, currentVersion: null, draft: { ...body, measures }, citedReadings: [reading()] });
   expect(draft).toContain("A draft. It isn't approved yet.");
   expect(draft).toContain(words);
@@ -194,8 +194,8 @@ test("a plan names its reading basis in the draft view and once approved", () =>
 test("the Strategy names its reading basis and says when the reading changed", () => {
   const current = { ...strategyBody, channels: [{ ...strategyBody.channels[0]!, basis: byReading }] };
   const page = strategyPage("marketer", { current, draft: current, notes: [{ kind: "reading_changed", readingId: READING }], citedReadings: [reading({ newer: true })] });
-  expect(page).toContain("An earlier Campaign reading this Strategy relies on has changed. It said Interested replies 3, counted by Direx, 12 November 2026.");
-  expect(page).toContain("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026 (since changed)");
+  expect(page).toContain("An earlier Campaign reading this Strategy relies on has changed. It said Interested replies 3, counted by Direx, Thu 12 Nov.");
+  expect(page).toContain("From an earlier Campaign: Interested replies 3, counted by Direx, Thu 12 Nov, since changed");
   expect(page).not.toContain(READING);
 });
 

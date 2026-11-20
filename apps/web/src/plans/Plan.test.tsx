@@ -112,7 +112,7 @@ test("the basis field keeps a reading basis and names it, until the person picks
   serve(() => reply(200, plan({ current: null, currentVersion: null, draft, citedReadings })));
   const put = vi.spyOn(api, "PUT").mockImplementation((() => reply(200, { revision: 6, missing: [] })) as never);
   show();
-  const words = "From an earlier Campaign: Interested replies 3, entered by a person, 12 November 2026";
+  const words = "From an earlier Campaign: Interested replies 3, entered by a person, Thu 12 Nov";
   const field = await screen.findByRole("combobox", { name: "Comes from" });
   expect(field.textContent).toContain(words);
   expect(screen.getByText(`Where does this number come from? (${words})`)).toBeTruthy();

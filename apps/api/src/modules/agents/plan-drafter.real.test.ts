@@ -13,6 +13,7 @@ import { CHECK_CANDIDATES, createModels } from "../models/index";
 import { testKeys } from "../models/fixtures/provider";
 import { planDefinitions, planDrafter, type PlanBody } from "../plans/index";
 import { earlierResultsText, type EarlierResult } from "../plans/evals";
+import { unsupportedChannelComparison } from "./evals/plan-comparison";
 import { digestOf } from "./adapters/digest";
 import { inWorkspace, readRun } from "./adapters/repo";
 import { createLoop } from "./application/loop";
@@ -120,11 +121,6 @@ const CASES: Case[] = [
 // A call's length ("a 15-minute call") is the sender's ask, which the person reads, not a claim about the business.
 const numbersIn = (text: string) => (text.replace(/\d+[- ]minutes?\b/gi, "").match(/\d[\d,.]*%?/g) ?? []).map((n) => n.replace(/[.,]$/, ""));
 
-// A sentence naming a channel with one of these, and no hedge, claims a winner the rows can't support.
-const COMPARES = /\b(better|best|outperform\w*|more effective|stronger|strongest|higher|beat|won|winner|worked)\b/i;
-const CHANNEL = /e-?mail|linkedin|\bdms?\b|channel/i;
-const HEDGED = /too few|not enough|can't|cannot|no clear|unclear|isn't|not yet|don't know|unknown|test/i;
-
 /** What makes one run's templates unusable as written. Empty means a person could approve them. */
 function templateProblems(c: Case, plan: PlanBody): string[] {
   const problems: string[] = [];
@@ -161,7 +157,7 @@ function templateProblems(c: Case, plan: PlanBody): string[] {
   if (c.mustCite && cited.length === 0) problems.push("cites no reading");
   if (c.results?.every((r) => r.overlaps?.kinds.every((k) => k.rows.every((w) => w.rate === null)))) {
     const said = [plan.goal, plan.audience, ...plan.assumptions.map((a) => a.text), ...plan.steps.map((s) => s.title), ...plan.measures.map((m) => `${m.label}: ${m.target}`)];
-    for (const sentence of said.flatMap((t) => t.split(/(?<=[.!?;])\s/))) if (COMPARES.test(sentence) && CHANNEL.test(sentence) && !HEDGED.test(sentence)) problems.push(`says one channel did better: "${sentence}"`);
+    for (const sentence of said.flatMap((t) => t.split(/(?<=[.!?;])\s/))) if (unsupportedChannelComparison(sentence)) problems.push(`says one channel did better: "${sentence}"`);
   }
   const openers = templates.map((t) => t.text.split(/(?<=[.!?])\s/)[0]?.trim().toLowerCase());
   if (new Set(openers).size !== openers.length) problems.push("two templates open with the same sentence");

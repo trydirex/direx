@@ -10,6 +10,7 @@ test.each([
   "We cannot delay: LinkedIn worked better.",
   "We cannot really delay: LinkedIn worked better.",
   "LinkedIn worked better than email, but there are too few meetings to set a target.",
+  "Email worked better, there are too few meetings to set a target.",
   "Email worked better.",
 ])("rejects an unsupported claim: %s", (sentence) => {
   expect(unsupportedChannelComparison(sentence)).toBe(true);
@@ -19,6 +20,9 @@ test.each([
   "There are too few replies to say LinkedIn worked better.",
   "There is no clear winner between email and LinkedIn.",
   "We cannot tell whether email worked better.",
+  "We cannot tell whether email, LinkedIn, or both worked better.",
+  "We cannot tell whether email, LinkedIn, or DMs worked better.",
+  "We cannot tell whether email, LinkedIn or DMs worked better.",
   "We cannot yet say whether LinkedIn worked better than email.",
   "We can't really tell whether email worked better than LinkedIn.",
   "We cannot really yet determine whether LinkedIn worked better.",

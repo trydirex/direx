@@ -25,6 +25,8 @@ jobs:
       DIREX_INSTALL_MAIL_FROM: Direx <signin@example.com>
       # Throwaway login for the CI greenmail only.
       DIREX_INSTALL_SMTP_URL: smtp://alice%40example.com:secret@greenmail:3025
+      # The install sends one test email before storing mail; greenmail takes it.
+      DIREX_INSTALL_MAIL_TEST_TO: alice@example.com
     steps:
       - uses: actions/checkout@v4
       - run: shellcheck -s sh deploy/compose/install.sh

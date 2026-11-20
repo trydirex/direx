@@ -78,17 +78,21 @@ bun run doctor
 
 ## Run it on a server
 
-You need a Linux server with Docker and Compose, and an SMTP account for sign-in mail. From a
-checkout of this repository on the server:
+You need a Linux server with Docker and Compose, and an account with a service that sends email
+over SMTP, such as Gmail, Resend, Postmark or Amazon SES. Direx uses it for sign-in links, invites
+and notices to Admins. Campaign email doesn't use it: each Workspace sends from its own email
+accounts. From a checkout of this repository on the server:
 
 ```
 sh deploy/compose/install.sh --version v0.1.0
 ```
 
-It asks for the address people will open, the From address of mail and your SMTP URL. Then it
-starts Postgres and Direx, prepares the database, checks the install and prints a link. Open the
-link to become the server's first Server admin; it works once. The SMTP URL goes into Direx's
-vault, not into a file, and nothing the installer prints holds a password.
+It asks for the address people will open and the From address of mail. Then you pick the service
+that sends it and type its sign-in. Before storing anything, the installer logs in and sends one
+test email to an address you give. If a step fails, it says which one and asks again, up to three
+times. Then it starts Postgres and Direx, prepares the database, checks the install and prints a
+link. Open the link to become the server's first Server admin; it works once. The mail sign-in goes
+into Direx's vault, not into a file, and nothing the installer prints holds a password.
 
 There are two ways to reach it:
 
@@ -99,7 +103,7 @@ There are two ways to reach it:
   proxy you run yourself.
 
 The installer is safe to run again: it keeps `.env` and every password, and skips what is already
-done. Back up the `direx-data` volume, which holds the vault's root key, apart from the database.
+done. To change the mail service later, run `sh deploy/compose/install.sh --mail`. Back up the `direx-data` volume, which holds the vault's root key, apart from the database.
 
 To run code newer than the latest release, build the image on the server and install that:
 

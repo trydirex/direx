@@ -114,7 +114,9 @@ function productionChecks(owner: string, smtpUrl: () => Promise<string | null>):
     {
       name: "mail server accepts the login",
       run: async () => mailLogsIn(await smtpUrl()),
-      fix: () => "the SMTP server didn't connect and accept the login within 10 seconds. Check the URL, then run: bun apps/api/src/secrets.ts set smtp.url",
+      // Doctor can't tell how it was installed, so it names both ways to store mail again.
+      fix: () =>
+        "the SMTP server didn't connect and accept the login within 10 seconds. On a Compose install, run: sh install.sh --mail. Elsewhere, run: printf %s '<SMTP URL>' | bun apps/api/src/secrets.ts set smtp.url",
     },
     {
       name: "this server has a Server admin",

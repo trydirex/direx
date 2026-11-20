@@ -69,9 +69,11 @@ const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
 export function writeUpProblem(o: WriteUpOutput, brief: Brief): string | null {
   if (words(o.paragraph) > MAX_WORDS) return `too_long:${words(o.paragraph)}`;
   if (o.suggestions.length > MAX_SUGGESTIONS) return `too_many_suggestions:${o.suggestions.length}`;
+  // The brief renders citations as "- reading <id>: <data>". Only the data supplies numbers.
+  const briefData = brief.text.replace(/^- reading (\S+): /gm, (line, id: string) => brief.readingIds.has(id) ? "- reading: " : line);
   const texts = [o.paragraph, ...o.suggestions.flatMap((s) => [s.assumption, s.because])];
   for (const t of texts) {
-    const invented = numbersOutsideBrief(t, brief.text);
+    const invented = numbersOutsideBrief(t, briefData);
     if (invented.length) return `number_not_in_brief:${invented[0]}`;
     const credit = creditPhrase(t);
     if (credit) return `credit:${credit.toLowerCase()}`;

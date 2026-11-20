@@ -23,6 +23,9 @@ import {
   checkWords,
   competitorsQuery,
   editCompetitor,
+  findPages,
+  findWords,
+  foundWords,
   labelWords,
   MAX_COMPETITORS,
   readWords,
@@ -77,6 +80,10 @@ const PAGES = [
   ["changelogUrl", "changelog", "Changelog"],
   ["landingUrl", "landing", "Landing page"],
 ] as const;
+/** The form asks for the landing page first, since Find pages starts from it. */
+const FORM_PAGES = [PAGES[2], PAGES[0], PAGES[1]] as const;
+type Found = "pricingUrl" | "changelogUrl";
+const WEB = /^https?:\/\/\S+\.\S+/i;
 const BLANK: CompetitorFields = { name: "", pricingUrl: "", changelogUrl: "", landingUrl: "", comparisonUrl: "" };
 const COMPARISON = "Our comparison page (optional)";
 
@@ -90,6 +97,12 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
   const [editing, setEditing] = useState<string | null>(null);
   // The latest check of each competitor, by id: shown, never stored.
   const [checks, setChecks] = useState<Record<string, Check[]>>({});
+  // What Find pages gave: where each filled page came from, pages found for a field already typed, and why it found nothing.
+  const [notes, setNotes] = useState<Partial<Record<Found, string>>>({});
+  const [offers, setOffers] = useState<Partial<Record<Found, string>>>({});
+  const [also, setAlso] = useState<string[]>([]);
+  const [findNote, setFindNote] = useState<string | null>(null);
+  const [looking, setLooking] = useState(false);
   const manage = p.role === "owner" || p.role === "admin";
 
   /** Runs a change, keeps its checks over the row's older ones source by source, and reloads the list. */
@@ -106,9 +119,49 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
       },
       say ? { say } : undefined,
     );
+  const forget = () => {
+    setNotes({});
+    setOffers({});
+    setAlso([]);
+    setFindNote(null);
+  };
   const reset = () => {
     setForm(BLANK);
     setEditing(null);
+    forget();
+  };
+  /** A page the person types is theirs: the note saying where Direx found it no longer applies. */
+  const typed = (key: keyof CompetitorFields, value: string) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    if (key === "pricingUrl" || key === "changelogUrl") setNotes(({ [key]: _, ...rest }) => rest);
+  };
+  /** Fills only empty fields; a typed one keeps its value and gets the found page as an offer. Nothing is saved. */
+  const look = async () => {
+    // Pages an earlier Find pages filled, and nobody edited since, belong to that address: they go.
+    const start = { ...form };
+    for (const key of Object.keys(notes) as Found[]) start[key] = "";
+    setForm(start);
+    forget();
+    setLooking(true);
+    const r = await findPages(p.workspaceId, form.landingUrl ?? "").finally(() => setLooking(false));
+    if (!r.ok) return setFindNote(findWords(r.reason));
+    const pages: [Found, (typeof r)["pricing"]][] = [
+      ["pricingUrl", r.pricing],
+      ["changelogUrl", r.changelog],
+    ];
+    for (const [key, page] of pages) {
+      if (!page) continue;
+      if (!start[key]?.trim()) {
+        setForm((f) => ({ ...f, [key]: page.url }));
+        setNotes((n) => ({ ...n, [key]: foundWords(page) }));
+      } else if (start[key]!.trim() !== page.url) setOffers((o) => ({ ...o, [key]: page.url }));
+    }
+    setAlso(r.alsoPricing);
+    if (!r.pricing && !r.changelog) setFindNote("No pricing page or changelog found. Add them by hand if they exist.");
+  };
+  const use = (key: Found) => {
+    setForm((f) => ({ ...f, [key]: offers[key] ?? "" }));
+    setOffers(({ [key]: _, ...rest }) => rest);
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -118,6 +171,7 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
   const remove = (c: Competitor) => change(async () => ({ code: await removeCompetitor(p.workspaceId, c.id), id: null, checks: [] }), "Removed.");
   const edit = (c: Competitor) => {
     setEditing(c.id);
+    forget();
     setForm({ name: c.name, pricingUrl: c.pricingUrl ?? "", changelogUrl: c.changelogUrl ?? "", landingUrl: c.landingUrl ?? "", comparisonUrl: c.comparisonUrl ?? "" });
   };
 
@@ -204,15 +258,34 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
             {manage && (
               <form onSubmit={submit} aria-label={editing ? "Edit competitor" : "Add a competitor"} className="flex flex-col gap-2 border-t border-border pt-4">
                 <Field label="Name">
-                  <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} maxLength={100} />
+                  <Input value={form.name} onChange={(e) => typed("name", e.target.value)} maxLength={100} />
                 </Field>
-                {PAGES.map(([key, , label]) => (
-                  <Field key={key} label={label}>
-                    <Input type="url" value={form[key] ?? ""} onChange={(e) => setForm({ ...form, [key]: e.target.value })} maxLength={2000} placeholder="https://" />
-                  </Field>
+                {FORM_PAGES.map(([key, , label]) => (
+                  <div key={key} className="flex flex-col gap-1">
+                    <Field label={label} hint={key === "landingUrl" ? undefined : notes[key]}>
+                      <Input type="url" value={form[key] ?? ""} onChange={(e) => typed(key, e.target.value)} maxLength={2000} placeholder="https://" />
+                    </Field>
+                    {key === "landingUrl" && (
+                      <div>
+                        <Button type="button" size="sm" variant="outline" onClick={() => void look()} pending={looking} disabled={!WEB.test(form.landingUrl ?? "")}>
+                          Find pages
+                        </Button>
+                      </div>
+                    )}
+                    {key !== "landingUrl" && offers[key] && (
+                      <p className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="break-all">Direx found {offers[key]}</span>
+                        <Button type="button" size="sm" variant="outline" onClick={() => use(key)} aria-label={`Use the found ${label.toLowerCase()}`}>
+                          Use
+                        </Button>
+                      </p>
+                    )}
+                    {key === "pricingUrl" && also.length > 0 && <p className="break-all text-sm text-muted-foreground">Other pricing pages: {also.join(", ")}</p>}
+                  </div>
                 ))}
+                {findNote && <Notice tone="info">{findNote}</Notice>}
                 <Field label={COMPARISON}>
-                  <Input type="url" value={form.comparisonUrl ?? ""} onChange={(e) => setForm({ ...form, comparisonUrl: e.target.value })} maxLength={2000} placeholder="https://" />
+                  <Input type="url" value={form.comparisonUrl ?? ""} onChange={(e) => typed("comparisonUrl", e.target.value)} maxLength={2000} placeholder="https://" />
                 </Field>
                 {!editing && list.length >= MAX_COMPETITORS && <p className="text-sm text-muted-foreground">{WORDS.too_many}</p>}
                 <div className="flex gap-2">

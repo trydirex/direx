@@ -180,3 +180,87 @@ test("a competitor with no name is asked for one, without the length limit", asy
   fireEvent.submit(await screen.findByRole("form", { name: "Add a competitor" }));
   expect(await screen.findByText("Give the competitor a name.")).toBeTruthy();
 });
+
+const findReply = (body: object, status = 200) => vi.spyOn(api, "POST").mockImplementation(((path: string) => (path.endsWith("/find-pages") ? reply(status, body) : reply(500, { error: "unexpected" }))) as never);
+
+test("Find pages fills only empty fields, says where each was found, and offers the rest; nothing is saved", async () => {
+  serve([]);
+  const post = findReply({
+    ok: true,
+    pricing: { url: "https://doublehq.com/pricing-plans/", via: "homepage", text: "Pricing" },
+    changelog: { url: "https://doublehq.canny.io/changelog", via: "homepage", text: "Product Releases" },
+    alsoPricing: ["https://doublehq.com/firm-pricing"],
+  });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  const find = form.getByRole("button", { name: "Find pages" });
+  expect((find as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.type(form.getByRole("textbox", { name: "Landing page" }), "https://doublehq.com");
+  await userEvent.type(form.getByRole("textbox", { name: "Changelog" }), "https://mine.example/changes");
+  await userEvent.click(find);
+
+  const pricing = form.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement;
+  await vi.waitFor(() => expect(pricing.value).toBe("https://doublehq.com/pricing-plans/"));
+  expect(form.getByText("Found through the link “Pricing” on the homepage.")).toBeTruthy();
+  expect(form.getByText("Other pricing pages: https://doublehq.com/firm-pricing")).toBeTruthy();
+  const changelog = form.getByRole("textbox", { name: "Changelog" }) as HTMLInputElement;
+  expect(changelog.value).toBe("https://mine.example/changes");
+  expect(form.getByText("Direx found https://doublehq.canny.io/changelog")).toBeTruthy();
+  await userEvent.click(form.getByRole("button", { name: "Use the found changelog" }));
+  expect(changelog.value).toBe("https://doublehq.canny.io/changelog");
+  expect(form.queryByText(/^Direx found/)).toBeNull();
+
+  // Editing a filled page makes it the person's: the note goes.
+  fireEvent.change(pricing, { target: { value: "https://doublehq.com/other" } });
+  expect(form.queryByText(/^Found through/)).toBeNull();
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/find-pages", { params: { path: { workspaceId: W } }, body: { landingUrl: "https://doublehq.com" } });
+});
+
+test("pages found in the sitemap or through the roadmap say so", async () => {
+  serve([]);
+  findReply({ ok: true, pricing: { url: "https://acme.example/plans", via: "sitemap", text: "" }, changelog: { url: "https://roadmap.acme.example/announcements", via: "roadmap", text: "" }, alsoPricing: [] });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  await userEvent.type(form.getByRole("textbox", { name: "Landing page" }), "https://acme.example");
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  expect(await form.findByText("Found in the site's sitemap.")).toBeTruthy();
+  expect(form.getByText("Found through a link on the roadmap page.")).toBeTruthy();
+});
+
+test.each([
+  [{ ok: false, reason: "other_site" }, 200, "This address goes to another company's site, so Direx has nothing to suggest."],
+  [{ ok: false, reason: "robots_disallowed" }, 200, "This site's robots.txt asks Direx not to read it."],
+  [{ ok: true, pricing: null, changelog: null, alsoPricing: [] }, 200, "No pricing page or changelog found. Add them by hand if they exist."],
+  [{ error: "busy" }, 409, "Already looking. Try again in a moment."],
+  [{ error: "boom" }, 500, "Direx couldn't look just now. Try again."],
+])("Find pages that finds nothing says why (%#)", async (body, status, words) => {
+  serve([]);
+  findReply(body, status);
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  await userEvent.type(form.getByRole("textbox", { name: "Landing page" }), "https://keeper.app");
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  expect(await form.findByText(words)).toBeTruthy();
+  expect((form.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement).value).toBe("");
+});
+
+test("a second Find pages clears the pages the first one filled, but not a page the person typed", async () => {
+  serve([]);
+  const post = findReply({ ok: true, pricing: { url: "https://doublehq.com/pricing-plans/", via: "homepage", text: "Pricing" }, changelog: null, alsoPricing: [] });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  const landing = form.getByRole("textbox", { name: "Landing page" });
+  await userEvent.type(landing, "https://doublehq.com");
+  await userEvent.type(form.getByRole("textbox", { name: "Changelog" }), "https://mine.example/changes");
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  const pricing = form.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement;
+  await vi.waitFor(() => expect(pricing.value).toBe("https://doublehq.com/pricing-plans/"));
+
+  post.mockImplementation((() => reply(200, { ok: false, reason: "other_site" })) as never);
+  fireEvent.change(landing, { target: { value: "https://keeper.app" } });
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  expect(await form.findByText("This address goes to another company's site, so Direx has nothing to suggest.")).toBeTruthy();
+  expect(pricing.value).toBe("");
+  expect((form.getByRole("textbox", { name: "Changelog" }) as HTMLInputElement).value).toBe("https://mine.example/changes");
+});

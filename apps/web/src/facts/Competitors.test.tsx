@@ -19,7 +19,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-type Served = { list: object[]; reads?: object[]; changes?: Record<string, object[]>; facts?: object[] };
+type Served = { list: object[]; reads?: object[]; changes?: Record<string, object[]>; facts?: object[]; found?: object };
 /** The list route and each competitor's Changes route, from one table the test can change. */
 const serve = (list: object[], more: Omit<Served, "list"> = {}) => {
   const table: Served = { list, ...more };
@@ -28,6 +28,8 @@ const serve = (list: object[], more: Omit<Served, "list"> = {}) => {
       ? reply(200, { changes: table.changes?.[init.params.path.id!] ?? [] })
       : path.endsWith("/facts")
         ? reply(200, { facts: table.facts ?? [] })
+        : path.endsWith("/proposals")
+          ? reply(200, table.found ?? { proposals: [], site: null, scannedAt: null })
         : reply(200, { competitors: table.list, reads: table.reads ?? [] })) as never);
   return table;
 };
@@ -263,4 +265,54 @@ test("a second Find pages clears the pages the first one filled, but not a page 
   expect(await form.findByText("This address goes to another company's site, so Direx has nothing to suggest.")).toBeTruthy();
   expect(pricing.value).toBe("");
   expect((form.getByRole("textbox", { name: "Changelog" }) as HTMLInputElement).value).toBe("https://mine.example/changes");
+});
+
+const found = (over: object = {}) => ({ id: "00000000-0000-4000-8000-0000000000b1", name: "Botkeeper", site: "https://www.botkeeper.com/", comparisonUrl: "https://acme.example/botkeeper-alternative", source: "own_site", terms: null, foundAt: "2026-11-20T10:00:00.000Z", ...over });
+const scanned = { site: "https://acme.example/", scannedAt: "2026-11-20T10:00:00.000Z" };
+
+test("a proposed competitor fills the form with Use, and adding sends the proposal it came from", async () => {
+  const table = serve([], { found: { proposals: [found(), found({ id: "00000000-0000-4000-8000-0000000000b2", name: "Double", site: null, comparisonUrl: null, source: "search", terms: ["bank rec software"] })], ...scanned } });
+  const post = vi.spyOn(api, "POST").mockImplementation((() => reply(200, { competitor: double, checks: [] })) as never);
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const proposed = within(await screen.findByRole("region", { name: "Proposed competitors" }));
+  expect(proposed.getByRole("link", { name: "Your page compares you" }).getAttribute("href")).toBe("https://acme.example/botkeeper-alternative");
+  expect(proposed.getByText("Search: bank rec software")).toBeTruthy();
+  await userEvent.click(proposed.getByRole("button", { name: "Use Botkeeper" }));
+  const form = within(screen.getByRole("form", { name: "Add a competitor" }));
+  expect((form.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe("Botkeeper");
+  expect((form.getByRole("textbox", { name: "Landing page" }) as HTMLInputElement).value).toBe("https://www.botkeeper.com/");
+  expect((form.getByRole("textbox", { name: "Our comparison page (optional)" }) as HTMLInputElement).value).toBe("https://acme.example/botkeeper-alternative");
+  expect(post).not.toHaveBeenCalled();
+  table.found = { proposals: [], ...scanned };
+  await userEvent.click(form.getByRole("button", { name: "Add competitor" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors", expect.objectContaining({ body: expect.objectContaining({ name: "Botkeeper", proposalId: "00000000-0000-4000-8000-0000000000b1" }) }));
+  await vi.waitFor(() => expect(screen.queryByRole("region", { name: "Proposed competitors" })).toBeNull());
+});
+
+test("Dismiss and Look again call their routes; a full list disables Use; a viewer sees proposals with nothing to press", async () => {
+  const five = [1, 2, 3, 4, 5].map((n) => competitor(n));
+  serve(five, { found: { proposals: [found()], ...scanned } });
+  const post = vi.spyOn(api, "POST").mockImplementation((() => reply(200, { ok: true })) as never);
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const proposed = within(await screen.findByRole("region", { name: "Proposed competitors" }));
+  expect((proposed.getByRole("button", { name: "Use Botkeeper" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(proposed.getByText("5 of 5 set. Remove one to add another.")).toBeTruthy();
+  await userEvent.click(proposed.getByRole("button", { name: "Dismiss Botkeeper" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/{id}/dismiss", { params: { path: { workspaceId: W, id: "00000000-0000-4000-8000-0000000000b1" } } });
+  await userEvent.click(screen.getByRole("button", { name: "Look on your site again" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/scan", { params: { path: { workspaceId: W } } });
+  cleanup();
+  serve([], { found: { proposals: [found()], ...scanned } });
+  render(withQueries(<Competitors workspaceId={W} role="viewer" />));
+  expect(await screen.findByText("Botkeeper")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Use Botkeeper" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Look on your site again" })).toBeNull();
+});
+
+test("a site never scanned is scanned once when the panel opens", async () => {
+  serve([], { found: { proposals: [], site: "https://acme.example/", scannedAt: null } });
+  const post = vi.spyOn(api, "POST").mockImplementation((() => reply(200, { proposals: [], ...scanned })) as never);
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await vi.waitFor(() => expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/scan", { params: { path: { workspaceId: W } } }));
+  expect(post).toHaveBeenCalledTimes(1);
 });

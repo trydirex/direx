@@ -66,7 +66,8 @@ export function labelWords(c: Change, others: Change[]): string | null {
   return `${head}. ${c.reason ?? ""}${same}`.trim();
 }
 
-export const addCompetitor = async (workspaceId: string, body: CompetitorFields) => result(await api.POST("/api/w/{workspaceId}/competitors", { params: at(workspaceId), body }));
+/** `proposalId` is the proposal used to fill the form, which adding closes. */
+export const addCompetitor = async (workspaceId: string, body: CompetitorFields & { proposalId?: string }) => result(await api.POST("/api/w/{workspaceId}/competitors", { params: at(workspaceId), body }));
 
 export const editCompetitor = async (workspaceId: string, id: string, body: CompetitorFields) => result(await api.PATCH("/api/w/{workspaceId}/competitors/{id}", { params: one(workspaceId, id), body }));
 
@@ -118,3 +119,23 @@ const FIND_WORDS: Record<string, string> = {
   busy: "Already looking. Try again in a moment.",
 };
 export const findWords = (reason: string) => FIND_WORDS[reason] ?? "Direx couldn't look just now. Try again.";
+
+export type Proposal = S["CompetitorProposal"];
+
+/** Competitors Direx found that wait for a person, the site they came from, and when it was last scanned. */
+export const proposalsQuery = (workspaceId: string) =>
+  queryOptions({ queryKey: inWorkspace(workspaceId, "competitors", "proposals"), queryFn: () => call(api.GET("/api/w/{workspaceId}/competitors/proposals", { params: at(workspaceId) })) });
+
+/** Reads the Workspace's site again for competitor names; the error code, or null. */
+export async function scanProposals(workspaceId: string): Promise<string | null> {
+  const { error } = await api.POST("/api/w/{workspaceId}/competitors/proposals/scan", { params: at(workspaceId) });
+  return error ? error.error : null;
+}
+
+export async function dismissProposal(workspaceId: string, id: string): Promise<string | null> {
+  const { error } = await api.POST("/api/w/{workspaceId}/competitors/proposals/{id}/dismiss", { params: one(workspaceId, id) });
+  return error ? error.error : null;
+}
+
+/** Where a proposal came from, in words. */
+export const proposalSource = (p: Proposal) => (p.source === "search" ? `Search: ${(p.terms ?? []).join(", ")}` : "Your page compares you");

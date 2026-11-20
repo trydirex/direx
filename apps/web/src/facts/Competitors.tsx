@@ -2,7 +2,7 @@
 // Brand's Competitors section (Beta): the competitors the watch reads, the pages given for each one,
 // and what Direx could read on each page when it was last checked. Anyone in the Workspace reads it;
 // adding, editing, checking and removing need an Owner or Admin.
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { inWorkspace } from "../api/query";
@@ -20,6 +20,7 @@ import {
   changesQuery,
   changeWords,
   checkCompetitor,
+  dismissProposal,
   checkWords,
   competitorsQuery,
   editCompetitor,
@@ -28,13 +29,47 @@ import {
   foundWords,
   labelWords,
   MAX_COMPETITORS,
+  proposalsQuery,
+  proposalSource,
   readWords,
   removeCompetitor,
+  scanProposals,
   type Check,
   type Competitor,
   type CompetitorFields,
+  type Proposal,
   type Result,
 } from "./competitors-actions";
+
+/** Asks once for a scan of the Workspace's site when it has one that was never scanned. */
+function useFirstScan(workspaceId: string, manage: boolean) {
+  const client = useQueryClient();
+  const { data } = useQuery(proposalsQuery(workspaceId));
+  const asked = useRef(false);
+  useEffect(() => {
+    if (!manage || asked.current || !data?.site || data.scannedAt) return;
+    asked.current = true;
+    void scanProposals(workspaceId).then(() => client.invalidateQueries({ queryKey: inWorkspace(workspaceId, "competitors", "proposals") }));
+  }, [data?.site, data?.scannedAt, manage]);
+  return data;
+}
+
+const listed = (names: string[]) => (names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+
+/** Setup's line naming the competitors Direx found on the Workspace's site, with a way to add them. */
+export function CompetitorsFound(p: { workspaceId: string; role: Role }) {
+  const data = useFirstScan(p.workspaceId, p.role === "owner" || p.role === "admin");
+  const names = data?.proposals.slice(0, 5).map((x) => x.name) ?? [];
+  if (names.length === 0) return null;
+  return (
+    <p className="text-sm">
+      Your site compares you with {listed(names)}.{" "}
+      <Link to="/w/$workspaceId/brand/competitors" params={{ workspaceId: p.workspaceId }} className="underline">
+        Add them as competitors
+      </Link>
+    </p>
+  );
+}
 
 /** The last 4 weeks of Changes, behind a disclosure; nothing at all when there are none. */
 function Changes(p: { workspaceId: string; competitor: Competitor }) {
@@ -103,6 +138,9 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
   const [also, setAlso] = useState<string[]>([]);
   const [findNote, setFindNote] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
+  // The proposal used to fill the form, which adding closes.
+  const [proposalId, setProposalId] = useState<string | null>(null);
+  const found = useFirstScan(p.workspaceId, p.role === "owner" || p.role === "admin");
   const manage = p.role === "owner" || p.role === "admin";
 
   /** Runs a change, keeps its checks over the row's older ones source by source, and reloads the list. */
@@ -128,8 +166,19 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
   const reset = () => {
     setForm(BLANK);
     setEditing(null);
+    setProposalId(null);
     forget();
   };
+  /** Fills the form from a proposal; nothing is saved until Add competitor. */
+  const fillFrom = (x: Proposal) => {
+    reset();
+    setForm({ ...BLANK, name: x.name, landingUrl: x.site ?? "", comparisonUrl: x.comparisonUrl ?? "" });
+    setProposalId(x.id);
+  };
+  const reloadProposals = () => client.invalidateQueries({ queryKey: inWorkspace(p.workspaceId, "competitors", "proposals") });
+  const dismiss = (x: Proposal) =>
+    void action.run(async () => (await dismissProposal(p.workspaceId, x.id)) ?? (await reloadProposals(), null), { say: `${x.name} dismissed.` });
+  const lookAgain = () => void action.run(async () => (await scanProposals(p.workspaceId)) ?? (await reloadProposals(), null));
   /** A page the person types is theirs: the note saying where Direx found it no longer applies. */
   const typed = (key: keyof CompetitorFields, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -166,7 +215,7 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (editing) change(() => editCompetitor(p.workspaceId, editing, form), "Saved.", reset);
-    else change(() => addCompetitor(p.workspaceId, form), "Competitor added.", reset);
+    else change(() => addCompetitor(p.workspaceId, proposalId ? { ...form, proposalId } : form), "Competitor added.", reset);
   };
   const remove = (c: Competitor) => change(async () => ({ code: await removeCompetitor(p.workspaceId, c.id), id: null, checks: [] }), "Removed.");
   const edit = (c: Competitor) => {
@@ -189,6 +238,47 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
       <QueryBoundary query={query} skeleton={<Skeleton className="h-32 w-full" />}>
         {({ competitors: list, reads }) => (
           <div className="flex flex-col gap-4">
+            {(found?.proposals.length ?? 0) > 0 && (
+              <section aria-label="Proposed competitors" className="flex flex-col gap-2">
+                <h3 className="font-medium">Proposed</h3>
+                <ul className="flex flex-col gap-2">
+                  {found!.proposals.map((x) => (
+                    <li key={x.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                      <span>
+                        <span className="font-medium">{x.name}</span>{" "}
+                        <span className="text-muted-foreground">
+                          {x.comparisonUrl ? (
+                            <a href={x.comparisonUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                              {proposalSource(x)}
+                            </a>
+                          ) : (
+                            proposalSource(x)
+                          )}
+                        </span>
+                      </span>
+                      {manage && (
+                        <span className="flex gap-2">
+                          <Button size="sm" variant="outline" disabled={list.length >= MAX_COMPETITORS} onClick={() => fillFrom(x)} aria-label={`Use ${x.name}`}>
+                            Use
+                          </Button>
+                          <Button size="sm" variant="outline" pending={action.pending} onClick={() => dismiss(x)} aria-label={`Dismiss ${x.name}`}>
+                            Dismiss
+                          </Button>
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {manage && list.length >= MAX_COMPETITORS && <p className="text-sm text-muted-foreground">5 of 5 set. Remove one to add another.</p>}
+              </section>
+            )}
+            {manage && found?.site && (
+              <div>
+                <Button size="sm" variant="outline" pending={action.pending} onClick={lookAgain}>
+                  Look on your site again
+                </Button>
+              </div>
+            )}
             {list.length === 0 && <p className="text-sm text-muted-foreground">No competitors yet.</p>}
             <ul className="flex flex-col gap-4">
               {list.map((c) => (

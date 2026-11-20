@@ -16,6 +16,7 @@ import { Button, buttonVariants } from "@/components/Button";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import { toast } from "@/components/toast";
 import { factItemsQuery, factsQuery } from "../facts/actions";
+import { CompetitorsFound } from "../facts/Competitors";
 import { approve, cancel, mayEdit, message, type Item, type Role } from "../items/actions";
 import { Adapters } from "../models/Adapters";
 import { adaptersQuery, modelsQuery, type AdapterList } from "../models/actions";
@@ -168,6 +169,7 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
               ))}
             </ul>
           )}
+          <CompetitorsFound workspaceId={workspaceId} role={role} />
           <Link to="/w/$workspaceId/brand" params={w} className="self-start text-sm underline">
             Open Brand
           </Link>

@@ -21,8 +21,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function serve(o: { deployment?: "cloud" | "self_host"; adapters?: unknown[]; facts?: unknown[]; items?: unknown[]; plans?: unknown[]; runs?: unknown[]; failFacts?: boolean }) {
+function serve(o: { deployment?: "cloud" | "self_host"; adapters?: unknown[]; facts?: unknown[]; items?: unknown[]; plans?: unknown[]; runs?: unknown[]; failFacts?: boolean; found?: () => unknown }) {
   vi.spyOn(api, "GET").mockImplementation(((path: string) => {
+    if (path === "/api/w/{workspaceId}/competitors/proposals" && o.found) return reply(200, o.found());
     if (path === "/api/w/{workspaceId}/models/connections") return reply(200, { deployment: o.deployment ?? "cloud", providers: [] });
     if (path === "/api/w/{workspaceId}/models/usage" || path === "/api/w/{workspaceId}/models/settings") return reply(200, {});
     if (path === "/api/w/{workspaceId}/models/adapters") return reply(200, { choice: null, agents: [], adapters: o.adapters ?? [] });
@@ -180,4 +181,24 @@ test("an empty Home in a Workspace with nothing on Brand points to setup", async
   render(withQueries(<Home workspaceId={W} role="owner" />));
   expect(await screen.findByText("Set up this Workspace")).toBeTruthy();
   expect(screen.getByRole("link", { name: "Start setup" }).getAttribute("href")).toBe(`/w/${W}/setup`);
+});
+
+test("Check names the competitors Direx found on the site, after one scan, and links to them on Brand", async () => {
+  const proposed = (name: string) => ({ id: crypto.randomUUID(), name, site: null, comparisonUrl: null, source: "own_site", terms: null, foundAt: "2026-11-20T10:00:00.000Z" });
+  let scanned = false;
+  serve({
+    facts: [fact],
+    items: [proposal],
+    found: () => (scanned ? { proposals: ["Botkeeper", "Double", "Karbon"].map(proposed), site: "https://acme.example/", scannedAt: "2026-11-20T10:00:00.000Z" } : { proposals: [], site: "https://acme.example/", scannedAt: null }),
+  });
+  const post = vi.spyOn(api, "POST").mockImplementation(((path: string) => {
+    scanned ||= path.endsWith("/proposals/scan");
+    return reply(200, {});
+  }) as never);
+  show();
+  await steps();
+  const check = current("Check what Direx understood");
+  expect(await check.findByText(/Your site compares you with Botkeeper, Double and Karbon\./)).toBeTruthy();
+  expect(check.getByRole("link", { name: "Add them as competitors" }).getAttribute("href")).toBe(`/w/${W}/brand/competitors`);
+  expect((post.mock.calls as unknown[][]).filter((c) => c[0] === "/api/w/{workspaceId}/competitors/proposals/scan")).toHaveLength(1);
 });

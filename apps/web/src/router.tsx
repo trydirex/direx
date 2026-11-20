@@ -627,6 +627,11 @@ const lessonsRoute = page("brand/lessons", function LessonsRoute() {
   const w = useWorkspace();
   return <Brand workspaceId={w.workspaceId} role={w.role} open="lessons" />;
 }, Brand);
+// Setup's link to the competitors Direx found opens Brand on Competitors.
+const brandCompetitorsRoute = page("brand/competitors", function BrandCompetitorsRoute() {
+  const w = useWorkspace();
+  return <Brand workspaceId={w.workspaceId} role={w.role} open="competitors" />;
+}, Brand);
 
 // Settings.
 function SettingsNav() {
@@ -822,6 +827,7 @@ export const routeTree = rootRoute.addChildren([
       cohortRoute,
       handoverRoute,
       brandRoute,
+      brandCompetitorsRoute,
       lessonsRoute,
       settingsRoute,
       sendingRoute,

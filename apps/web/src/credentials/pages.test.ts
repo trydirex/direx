@@ -25,7 +25,7 @@ test("each tab renders for the roles that see it, with write-only value fields",
 
   const mine = page("marketer", "mine");
   expect(mine).toContain("Add a credential");
-  expect(mine).toMatch(/<input type="password" autoComplete="new-password" required="" value=""/);
+  expect(mine).toMatch(/<input(?=[^>]*type="password")(?=[^>]*autoComplete="new-password")(?=[^>]*required="")(?=[^>]*value="")[^>]*>/);
   expect(page("viewer", "mine")).not.toContain("Add a credential");
 
   expect(page("owner", "mailboxes", "missing_scope")).toContain("Google didn&#x27;t grant permission to send email");
@@ -116,7 +116,7 @@ test("a service's key: connected or not, with save, replace, check and disconnec
     renderToString(createElement(ServiceKey, { workspaceId: W, service, c, manage, settle: async () => true })).replaceAll("<!-- -->", "");
   const none = key(undefined, true);
   expect(none).toContain("Not connected");
-  expect(none).toMatch(/<input type="password" autoComplete="new-password" required="" value=""/);
+  expect(none).toMatch(/<input(?=[^>]*type="password")(?=[^>]*autoComplete="new-password")(?=[^>]*required="")(?=[^>]*value="")[^>]*>/);
   expect(none).toContain(">Connect<");
   expect(none).not.toContain("Disconnect");
 

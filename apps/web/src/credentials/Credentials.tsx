@@ -115,19 +115,11 @@ const mailboxCheckWords = (c: Pick<MailboxCheck, "state" | "reason">) => {
 export const message = (code: string) => messageForCode(code, MESSAGES);
 const STATUS: Record<Credential["status"], string> = { active: "Working", needs_reauth: "Reconnect needed", revoked: "Revoked" };
 
-// Styles the bare password input inside it like ui Input. The input stays plain markup so its
-// write-only attributes are exactly what the page tests check.
-const SECRET_BOX =
-  "flex *:h-11 *:w-full *:min-w-0 *:rounded-full *:border *:border-input *:bg-transparent *:px-4 *:text-base *:font-normal *:outline-none *:focus-visible:border-ring *:focus-visible:outline-solid *:focus-visible:outline-2 *:focus-visible:outline-offset-2 *:focus-visible:outline-ring";
-
-/** A write-only value field: typed once, sent once, cleared. */
-export function Secret(p: { value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void }) {
-  return (
-    <span className={SECRET_BOX}>
-      <input type="password" autoComplete="new-password" required value={p.value} onChange={p.onChange} />
-    </span>
-  );
+/** A write-only value field: typed once, sent once, cleared. The same field as every other, so Field labels it the same way. */
+export function Secret(p: { value: string; onChange: (e: ChangeEvent<HTMLInputElement>) => void; label?: string; hint?: ReactNode }) {
+  return <Input type="password" autoComplete="new-password" required label={p.label} hint={p.hint} value={p.value} onChange={p.onChange} />;
 }
+Object.assign(Secret, { astryxField: true });
 
 /**
  * A Workspace's credentials, in three tabs. A value is typed into a password field, sent
@@ -670,9 +662,7 @@ export function MailboxForm(p: { workspaceId: string; provider: MailboxProvider;
         <Input required autoComplete="username" spellCheck={false} value={username} onChange={(e) => setUsername(e.target.value)} />
       </Field>
       <Field label="App password">
-        <span className={SECRET_BOX}>
-          <input type="password" required autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-        </span>
+        <Secret value={password} onChange={(e) => setPassword(e.target.value)} />
       </Field>
       <p className="text-sm text-muted-foreground">
         When you connect, Direx sends one test email to {username || "this email account"} to check that your email provider leaves unsubscribe links unchanged. The unsubscribe link in that test does nothing.

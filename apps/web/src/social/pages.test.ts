@@ -69,7 +69,7 @@ test("the wizard shows the callback URL and scopes, and takes the secret in a pa
   const owner = page("owner", { networks });
   expect(owner).toContain("https://direx.example/api/connections/callback");
   expect(owner).toContain("Make an app");
-  expect(owner).toMatch(/<input type="password" autoComplete="new-password" required="" value=""/);
+  expect(owner).toMatch(/<input(?=[^>]*type="password")(?=[^>]*autoComplete="new-password")(?=[^>]*required="")(?=[^>]*value="")[^>]*>/);
   const marketer = page("marketer", { networks });
   expect(marketer).not.toContain("Client secret");
   expect(marketer).toContain("An Owner or Admin can set this up");

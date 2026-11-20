@@ -18,7 +18,7 @@ export const planReadings = (b: PlanBody): string[] => readingsCited(b.measures.
 // A reading citation stands only while it is still the newest reading for its Measure, on another plan.
 // A Strategy is drafted for no plan, so it passes null and any plan's newest reading may stand.
 export function readingStands(r: { planId: string; isNewest: boolean } | null, draftingPlanId: string | null): boolean {
-  return r !== null && r.isNewest && r.planId !== draftingPlanId;
+  return r !== null && r.isNewest && r.planId.toLowerCase() !== draftingPlanId?.toLowerCase();
 }
 
 /** All the words a person would read, for the banned-claims check. */

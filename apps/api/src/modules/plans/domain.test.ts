@@ -59,6 +59,8 @@ test("a reading stands only when it exists, is still the newest, and is on anoth
   expect(readingStands({ planId: "p1", isNewest: true }, "p2")).toBe(true);
   expect(readingStands({ planId: "p1", isNewest: true }, null)).toBe(true);
   expect(readingStands({ planId: "p1", isNewest: true }, "p1")).toBe(false);
+  expect(readingStands({ planId: factId, isNewest: true }, factId.toUpperCase())).toBe(false);
+  expect(readingStands({ planId: factId.toUpperCase(), isNewest: true }, factId)).toBe(false);
   expect(readingStands({ planId: "p1", isNewest: false }, "p2")).toBe(false);
   expect(readingStands(null, "p2")).toBe(false);
 });

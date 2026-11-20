@@ -456,7 +456,8 @@ test("over HTTP: needs the permission and step-up to grant, refuses a named gran
   expect((await post("", cookie, { ...grantBody, grantedBy: crypto.randomUUID() })).status).toBe(400);
 
   vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(Date.now() + 11 * 60_000);
+  // Granting is an everyday approval: the long step-up window (ADR 0037 rule 004).
+  vi.setSystemTime(Date.now() + 61 * 60_000);
   try {
     expect(await (await post("", cookie, grantBody)).json()).toEqual({ error: "step_up_required" });
     const made = await grant(id);

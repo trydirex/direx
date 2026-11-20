@@ -204,7 +204,7 @@ const suppressRoute = createRoute({
 const undoOptOutRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/outreach/people/{personId}/undo-opt-out",
-  middleware: [requirePermission("outreach.undo_optout"), requireStepUp()],
+  middleware: [requirePermission("outreach.undo_optout"), requireStepUp("long")],
   request: { params: personParams, ...body(z.strictObject({ reason: z.string().trim().min(1).max(1000) })) },
   responses: { 200: json(z.object({ ok: z.literal(true), undone: z.number().int() }), "Undone and recorded; a Blocked send stays Blocked"), ...errors },
 });
@@ -272,14 +272,14 @@ const hookStatusRoute = createRoute({
 const hookCreateRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/outreach/hold-hook",
-  middleware: [requirePermission("workspace.settings"), requireStepUp()],
+  middleware: [requirePermission("workspace.settings"), requireStepUp("short")],
   request: { params: ws },
   responses: { 200: json(HookMade, "Made; the secret is shown this once"), ...errors },
 });
 const hookRotateRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/outreach/hold-hook/{hookId}/rotate",
-  middleware: [requirePermission("workspace.settings"), requireStepUp()],
+  middleware: [requirePermission("workspace.settings"), requireStepUp("short")],
   request: { params: ws.extend({ hookId: z.uuid() }) },
   responses: { 200: json(HookMade, "A new secret, shown this once; the old one stops working"), ...errors },
 });

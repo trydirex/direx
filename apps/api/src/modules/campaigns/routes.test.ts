@@ -326,7 +326,8 @@ test("run is granted like a rule: an owner after a recent sign-in, with a real z
 
   vi.useFakeTimers({ toFake: ["Date"] });
   try {
-    vi.setSystemTime(Date.now() + 11 * 60_000);
+    // The long step-up window (ADR 0037 rule 004).
+    vi.setSystemTime(Date.now() + 61 * 60_000);
     const stale = await advance(owner, { advance: "offer" });
     expect([stale.status, await stale.json()]).toEqual([403, { error: "step_up_required" }]);
   } finally {

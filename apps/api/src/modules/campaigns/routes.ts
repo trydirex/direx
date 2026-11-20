@@ -294,7 +294,7 @@ const modeRoute = createRoute({
 const outsideContentRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/campaigns/{id}/outside-content",
-  middleware: [requirePermission("rule.grant"), requireStepUp()],
+  middleware: [requirePermission("rule.grant"), requireStepUp("long")],
   request: { params: one, body: { required: true, content: { "application/json": { schema: z.strictObject({ allowed: z.boolean() }) } } } },
   responses: { 200: json(Ok, "Saved"), ...errors },
 });
@@ -302,7 +302,7 @@ const outsideContentRoute = createRoute({
 const advanceRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/campaigns/{id}/advance",
-  middleware: [requirePermission("rule.grant"), requireStepUp()],
+  middleware: [requirePermission("rule.grant"), requireStepUp("long")],
   request: { params: one, ...body(z.strictObject({ advance: z.enum(["offer", "run"]), timeZone: z.string().max(64).optional() })) },
   responses: { 200: json(Ok, "Saved"), ...errors },
 });

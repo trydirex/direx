@@ -42,6 +42,8 @@ export async function sessionWithinCap(auth: () => Auth, headers: Headers): Prom
   return withinCap(auth, await auth().api.getSession({ headers }));
 }
 
+export type { StepUpWindow };
+
 export type Member = {
   userId: string;
   email: string;

@@ -4,7 +4,7 @@
   "promptDigest": "0c9d0c4e9f91fae1ce533a4ccf3e9c3c05c2ac91c4b1e0a0ae1644858a9f198b",
   "provider": "claude_code",
   "model": "claude-haiku-5-5",
-  "at": "2026-11-20T22:31:48.706Z",
+  "at": "2026-11-20T23:00:46.687Z",
   "runs": 3,
   "passed": true,
   "cases": [

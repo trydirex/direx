@@ -117,7 +117,7 @@ test("the brief holds each Measure's newest reading, the overlaps, the steps and
   expect(brief.text).toContain('Campaign "Q4 audits". Goal: 4 meetings. It ran from 2026-11-01, its launch, to 2026-11-30.');
   expect(brief.text).toContain("- First email (email, 2026-11-03): 20 sent");
   // The overlap rows include sent DMs even though this step has no Items.
-  expect(brief.text).toContain("- LinkedIn note (linkedin DM, 2026-11-04): no recorded item states for this step");
+  expect(brief.text).toContain("- LinkedIn note (linkedin DM, 2026-11-04): nothing counted by Direx for this step");
   // The overlap rows say which count is part of which, in words with no digits of their own.
   expect(brief.text).toContain("The outcome count is part of the reached count, never the other way round:");
   expect(brief.text).not.toContain("by the channels each Person got before their first outcome");

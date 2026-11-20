@@ -32,8 +32,11 @@ export type WriteUpView = {
 };
 type Overlaps = (workspaceId: string, campaignId: string) => Promise<{ kinds: { kind: string; rows: OverlapRow[] }[] } | undefined>;
 
-/** No states were counted from the step's Items; sent DMs can be recorded separately. */
-export const NOTHING_RECORDED = "no recorded item states for this step";
+/**
+ * A step Direx counted nothing for: a manual step, or one where nothing went out. Not "none", which the
+ * writer read as "no result", and not "no DMs": DMs a person marked sent aren't in these counts.
+ */
+export const NOTHING_RECORDED = "nothing counted by Direx for this step";
 
 // The plans drafter's heading for overlap rows. The writer read "80 reached, 4 with the outcome" the wrong
 // way round under it (real eval, 2026-11-20), so the write-up says plainly which number is part of which.

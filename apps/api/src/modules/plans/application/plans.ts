@@ -41,7 +41,7 @@ export type OnPlanCreated = (tx: PlansTx, p: { workspaceId: string; planId: stri
  * reading's plan as approved now, or its key when that version no longer has it.
  */
 export async function citedReadings(tx: PlansTx, ids: string[]) {
-  const unique = [...new Set(ids.map((id) => id.toLowerCase()))];
+  const unique = [...new Set(ids.map((id) => z.uuid().safeParse(id).success ? id.toLowerCase() : id))];
   const rows = await citedReadingRows(tx, unique.filter((id) => z.uuid().safeParse(id).success));
   const byId = new Map(rows.map((r) => [r.id, r]));
   const out = [];

@@ -214,8 +214,8 @@ test("a thousand draft citations use one query, preserving order and deduplicati
   await inWorkspace(W, async (tx) => {
     const spy = vi.spyOn(tx, "select");
     try {
-      const result = await citedReadings(tx, [...ids, cited, "bad-id"]);
-      expect(result).toEqual([shown(cited, "3", "2026-11-12"), ...ids.slice(1, -1).map(missing), missing("bad-id")]);
+      const result = await citedReadings(tx, [...ids, cited, "Legacy-A", "legacy-a", "Legacy-A"]);
+      expect(result).toEqual([shown(cited, "3", "2026-11-12"), ...ids.slice(1, -1).map(missing), missing("Legacy-A"), missing("legacy-a")]);
       // One outer SELECT and its NOT EXISTS subquery, independent of citation count.
       expect(spy).toHaveBeenCalledTimes(2);
     } finally {
@@ -226,7 +226,15 @@ test("a thousand draft citations use one query, preserving order and deduplicati
 
 test("empty and invalid citations need no reading query", async () => {
   expect(await inWorkspace(W, (tx) => citedReadings(tx, []))).toEqual([]);
-  expect(await inWorkspace(W, (tx) => citedReadings(tx, ["bad-id", "bad-id"])) ).toEqual([missing("bad-id")]);
+  await inWorkspace(W, async (tx) => {
+    const spy = vi.spyOn(tx, "select");
+    try {
+      expect(await citedReadings(tx, ["Legacy-A", "legacy-a", "Legacy-A"])).toEqual([missing("Legacy-A"), missing("legacy-a")]);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 test("cited labels follow the approved plan and fall back to the key if removed", async () => {

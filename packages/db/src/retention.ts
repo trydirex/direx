@@ -239,6 +239,11 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "public.touch_reservations": audit,
   "public.trigger_cursors": audit,
   "public.unsubscribe_tokens": auditDeletable,
+  // Tracked links (ADR 0035): kept while the Workspace exists, so links already sent keep redirecting
+  // (rule 017). A domain may be removed while no link uses it (rule 008).
+  "public.tracking_domains": auditDeletable,
+  "public.tracked_links": audit,
+  "public.tracked_link_uses": audit,
   "public.voice_entries": audit,
   "public.voice_versions": audit,
   "public.workspace_audit": audit,

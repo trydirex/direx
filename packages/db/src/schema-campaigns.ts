@@ -43,12 +43,26 @@ export const campaigns = pgTable(
     notesRevision: integer("notes_revision").notNull().default(0),
     notesUpdatedBy: uuid("notes_updated_by").references(() => user.id),
     notesUpdatedAt: tz("notes_updated_at"),
+    // Tracked links (ADR 0035 rules 001, 012, 016): off until a person turns them on and confirms the
+    // notice; the per-Person switch only while tracking is on. The domain's foreign key is in migration
+    // 0158, since schema-tracking imports this file.
+    trackingDomainId: uuid("tracking_domain_id"),
+    trackingOn: boolean("tracking_on").notNull().default(false),
+    trackingSetBy: uuid("tracking_set_by").references(() => user.id),
+    trackingSetAt: tz("tracking_set_at"),
+    trackingWordingVersion: integer("tracking_wording_version"),
+    perPersonOn: boolean("per_person_on").notNull().default(false),
+    perPersonSetBy: uuid("per_person_set_by").references(() => user.id),
+    perPersonSetAt: tz("per_person_set_at"),
+    perPersonWordingVersion: integer("per_person_wording_version"),
     createdAt: tz("created_at").notNull(),
     updatedAt: tz("updated_at").notNull(),
   },
   (t) => [
     unique("campaigns_workspace_id_id_key").on(t.workspaceId, t.id),
     unique("campaigns_one_per_plan").on(t.workspaceId, t.planId),
+    check("campaigns_tracking_check", sql`not ${t.trackingOn} or (${t.trackingDomainId} is not null and ${t.trackingSetBy} is not null and ${t.trackingWordingVersion} is not null)`),
+    check("campaigns_per_person_check", sql`not ${t.perPersonOn} or (${t.trackingOn} and ${t.perPersonSetBy} is not null and ${t.perPersonWordingVersion} is not null)`),
     foreignKey({ name: "campaigns_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
     foreignKey({ name: "campaigns_plan_fk", columns: [t.workspaceId, t.planId], foreignColumns: [marketingPlans.workspaceId, marketingPlans.id] }),
     check("campaigns_drafting_mode_check", sql`${t.draftingMode} in ('template', 'per_person')`),

@@ -602,7 +602,7 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
       ) : i.kind === "lesson_proposal" || i.kind === "lesson_fact" ? (
         <ProposalView workspaceId={p.workspaceId} kind={i.kind} content={d.content} />
       ) : i.kind === "strategy_assumptions" ? (
-        <AssumptionsChoice key={i.revision} workspaceId={p.workspaceId} item={i} suggestions={(d.content as { suggestions: ComponentProps<typeof AssumptionsChoice>["suggestions"] }).suggestions} approve={mayApprove(p.role)} onDone={() => void settle(null)} />
+        <AssumptionsChoice key={i.revision} workspaceId={p.workspaceId} item={i} suggestions={(d.content as { suggestions: ComponentProps<typeof AssumptionsChoice>["suggestions"] }).suggestions} approve={mayApprove(p.role)} keys={p.keys} onDone={() => void settle(null)} />
       ) : i.kind === "company_review" ? (
         <CompanyReview key={i.revision} workspaceId={p.workspaceId} item={i} review={d.content as Review} role={p.role} keys={p.keys} onSettle={() => void settle(null)} />
       ) : (

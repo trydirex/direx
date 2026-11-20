@@ -30,6 +30,9 @@ export type Tracking = { planned: number; done: number; skipped: number; steps: 
 const COUNTED_FROM: Record<Exclude<MeasureSource, "external">, string> = { replies: "email replies", interested_replies: "replies labelled interested", meetings: "meetings marked on People", deals: "deals marked on People" };
 /** What Direx counts a Measure from, such as "email replies"; null when a person enters its readings. */
 export const countedFrom = (source: MeasureSource | undefined) => (source && source !== "external" ? COUNTED_FROM[source] : null);
+/** The choices for where a Measure's number comes from, entered by a person first: a hand-written Measure starts there. */
+export const MEASURE_SOURCES: readonly MeasureSource[] = ["external", "replies", "interested_replies", "meetings", "deals"];
+export const sourceWords = (source: MeasureSource) => (source === "external" ? "Entered by a person" : `Counted by Direx from ${COUNTED_FROM[source]}`);
 
 export const emptyStrategy = (): StrategyBody => ({ schemaVersion: 1, whoFor: "", personas: [], positioning: "", channels: [], assumptions: [] });
 export const emptyPlan = (): PlanBody => ({ schemaVersion: 1, goal: "", audience: "", startsOn: "", endsOn: "", steps: [], measures: [], budget: [], assumptions: [] });

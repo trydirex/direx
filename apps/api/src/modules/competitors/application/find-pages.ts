@@ -20,28 +20,34 @@ export function createFindPages(deps: { fetchHtml?: FetchHtml; fetchSitemap?: Fe
   const running = new Set<string>();
 
   async function find(given: string, signal: AbortSignal): Promise<FindResult> {
-    const robotsByHost = new Map<string, Promise<{ text: string; may: (url: URL) => boolean }>>();
+    const robotsByOrigin = new Map<string, Promise<{ text: string; may: (url: URL) => boolean }>>();
     const robotsOf = (url: URL) => {
-      const hit = robotsByHost.get(url.host);
+      signal.throwIfAborted();
+      const hit = robotsByOrigin.get(url.origin);
       if (hit) return hit;
       const read = fetchHtml(given, `${url.origin}/robots.txt`, signal).then((r) => {
+        signal.throwIfAborted();
         const robots = robotsFrom(r.ok ? r : { ok: false, status: r.status });
         return { text: r.ok ? r.html : "", may: (u: URL) => allowed(robots, PAGE_READER_AGENT, u.pathname + u.search) };
       });
-      robotsByHost.set(url.host, read);
+      robotsByOrigin.set(url.origin, read);
       return read;
     };
+    const mayRead = async (url: URL) => (await robotsOf(url)).may(url);
     const readLinks = async (url: string): Promise<Link[] | null> => {
       const u = new URL(url);
-      if (!(await robotsOf(u)).may(u)) return null;
-      const page = await fetchHtml(given, url, signal);
+      if (!(await mayRead(u))) return null;
+      const page = await fetchHtml(given, url, signal, mayRead);
+      signal.throwIfAborted();
       return page.ok ? linksIn(page.html, page.url) : null;
     };
 
     const home = new URL(given);
     const robots = await robotsOf(home);
     if (!robots.may(home)) return { ok: false, reason: "robots_disallowed" };
-    const page = await fetchHtml(given, given, signal);
+    const page = await fetchHtml(given, given, signal, mayRead);
+    signal.throwIfAborted();
+    if (!page.ok && page.reason === "robots_disallowed") return { ok: false, reason: page.reason };
     if (!page.ok) return page.reason === "other_site" ? { ok: false, reason: "other_site" } : { ok: false, reason: "unreadable", detail: page.status ? `${page.reason} ${page.status}` : page.reason };
 
     const sitemaps = sitemapsIn(robots.text);
@@ -50,6 +56,7 @@ export function createFindPages(deps: { fetchHtml?: FetchHtml; fetchSitemap?: Fe
     let children = 0;
     for (let i = 0; i < sitemaps.length && i < MAX_SITEMAP_FILES; i++) {
       const map = await fetchSitemap(given, sitemaps[i]!, signal);
+      signal.throwIfAborted();
       if (!map.ok) continue;
       if (!map.index) locs.push(...map.locs);
       else for (const loc of map.locs) if (children++ < MAX_CHILD_SITEMAPS) sitemaps.push(loc);
@@ -63,14 +70,17 @@ export function createFindPages(deps: { fetchHtml?: FetchHtml; fetchSitemap?: Fe
     if (!found.ok || found.changelog) return found;
     const roadmap = roadmapOf(candidates);
     const onRoadmap = roadmap ? await readLinks(roadmap) : null;
-    return onRoadmap ? { ...found, changelog: changelogOf(keep(given, onRoadmap, "roadmap")) } : found;
+    return onRoadmap ? { ...found, changelog: changelogOf(keep(given, onRoadmap, "roadmap").filter(mayPropose)) } : found;
   }
 
   return async (workspaceId, landingUrl) => {
     if (running.has(workspaceId)) return { ok: false, reason: "busy" };
     running.add(workspaceId);
     try {
-      return await find(landingUrl, AbortSignal.timeout(deps.timeoutMs ?? TIMEOUT_MS));
+      const signal = AbortSignal.timeout(deps.timeoutMs ?? TIMEOUT_MS);
+      const result = await find(landingUrl, signal);
+      signal.throwIfAborted();
+      return result;
     } catch (e) {
       if (e instanceof DOMException && e.name === "TimeoutError") return { ok: false, reason: "unreadable", detail: "timed_out" };
       throw e;

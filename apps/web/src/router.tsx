@@ -204,7 +204,7 @@ const claimRoute = createRoute({
   path: "/claim/$token",
   component: function ClaimRoute() {
     // A full load, so every screen sees the new Server admin.
-    return <ClaimServer token={claimRoute.useParams().token} onClaimed={() => location.assign("/new-org")} />;
+    return <ClaimServer token={claimRoute.useParams().token} email={useContext(MeContext)!.email} onClaimed={() => location.assign("/new-org")} />;
   },
 });
 
@@ -213,7 +213,9 @@ const heldClaimRoute = createRoute({
   getParentRoute: () => signedInRoute,
   loader: preloading(ClaimServer),
   path: "/claim",
-  component: () => <ClaimServer onClaimed={() => location.assign("/new-org")} />,
+  component: function HeldClaimRoute() {
+    return <ClaimServer email={useContext(MeContext)!.email} onClaimed={() => location.assign("/new-org")} />;
+  },
 });
 
 const newOrgRoute = createRoute({

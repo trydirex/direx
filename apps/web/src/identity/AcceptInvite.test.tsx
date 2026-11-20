@@ -16,10 +16,21 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+test("the claim page shows the address it signs in as, and 'Use a different email' signs out back to it", async () => {
+  const assign = vi.fn();
+  vi.spyOn(window, "location", "get").mockReturnValue({ ...window.location, pathname: "/claim", assign } as Location);
+  const fetched = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+  render(<ClaimServer email="sam@example.com" onClaimed={vi.fn()} />);
+  expect(screen.getByText("sam@example.com")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Use a different email" }));
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/claim"));
+  expect(fetched).toHaveBeenCalledWith("/api/auth/sign-out", expect.anything());
+});
+
 test("claiming sends the link's token and moves on", async () => {
   const post = vi.spyOn(api, "POST").mockImplementation((() => reply(200, { ok: true })) as never);
   const onClaimed = vi.fn();
-  render(<ClaimServer token={TOKEN} onClaimed={onClaimed} />);
+  render(<ClaimServer token={TOKEN} email="sam@example.com" onClaimed={onClaimed} />);
   await userEvent.click(screen.getByRole("button", { name: "Become Server admin" }));
   await vi.waitFor(() => expect(onClaimed).toHaveBeenCalled());
   expect(post).toHaveBeenCalledWith("/api/server/claim", { body: { token: TOKEN } });
@@ -27,7 +38,7 @@ test("claiming sends the link's token and moves on", async () => {
 
 test("with no token in the URL, claiming leaves it to the held cookie, and says to reopen the link when none is held", async () => {
   const post = vi.spyOn(api, "POST").mockImplementation((() => reply(409, { error: "link_needed" })) as never);
-  render(<ClaimServer onClaimed={vi.fn()} />);
+  render(<ClaimServer email="sam@example.com" onClaimed={vi.fn()} />);
   await userEvent.click(screen.getByRole("button", { name: "Become Server admin" }));
   expect((await screen.findByRole("alert")).textContent).toBe("Open the setup link again in this browser to claim this server.");
   expect(post).toHaveBeenCalledWith("/api/server/claim", { body: {} });
@@ -36,7 +47,7 @@ test("with no token in the URL, claiming leaves it to the held cookie, and says 
 test("an expired or used link says so and asks for a new one", async () => {
   vi.spyOn(api, "POST").mockImplementation((() => reply(409, { error: "link_unusable" })) as never);
   const onClaimed = vi.fn();
-  render(<ClaimServer token={TOKEN} onClaimed={onClaimed} />);
+  render(<ClaimServer token={TOKEN} email="sam@example.com" onClaimed={onClaimed} />);
   await userEvent.click(screen.getByRole("button", { name: "Become Server admin" }));
   expect((await screen.findByRole("alert")).textContent).toBe("This link has expired or has already been used. Ask whoever runs this server for a new one.");
   expect(onClaimed).not.toHaveBeenCalled();
@@ -78,7 +89,7 @@ test("a link with a cut-short or mistyped token says the link isn't valid, on th
   cleanup();
   vi.restoreAllMocks();
   vi.spyOn(api, "POST").mockImplementation((() => reply(400, { error: "token: Invalid string" })) as never);
-  render(<ClaimServer token="abc" onClaimed={vi.fn()} />);
+  render(<ClaimServer token="abc" email="sam@example.com" onClaimed={vi.fn()} />);
   await userEvent.click(screen.getByRole("button", { name: "Become Server admin" }));
   expect((await screen.findByRole("alert")).textContent).toBe(BAD);
 });

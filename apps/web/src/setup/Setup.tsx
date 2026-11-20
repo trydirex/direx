@@ -3,13 +3,14 @@
 // (self-host only), reading the website, checking what Direx understood, and a first goal. Each step
 // is done when the Workspace shows it, so the page can be left and come back to; it opens on the
 // first step not yet done. The router shows it without the rail and menu.
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { inWorkspace } from "../api/query";
 import { messageFor, messageForCode } from "../api/messages";
-import { Runs } from "../agents/Runs";
-import { runsQuery } from "../agents/actions";
+import { POLL_MS, Runs } from "../agents/Runs";
+import { isLive, runsQuery } from "../agents/actions";
+import { Step as StepItem, Stepper } from "@astryxdesign/core/Stepper";
 import { EmptyState, Notice, Page } from "../components/layout";
 import { Button, buttonVariants } from "@/components/Button";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
@@ -24,7 +25,8 @@ import { SignIn } from "../identity/SignIn";
 /** A sign-in the person may use: their own, or one shared with the Workspace. */
 export const aiConnected = (a: AdapterList | undefined) => !!a?.adapters.some((x) => (x.mine || x.shared) && !x.signedOut);
 
-type Step = { key: string; title: string; done: boolean; summary: string; preview: string; allowed: boolean; body: ReactNode };
+/** `label` is the short name in the step list; `title` heads the step's card. */
+type Step = { key: string; label: string; title: string; done: boolean; summary: string; preview: string; allowed: boolean; body: ReactNode };
 
 export function Setup(p: { workspaceId: string; workspaceName: string; role: Role }) {
   const { workspaceId, role } = p;
@@ -46,7 +48,14 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
   const [facts, waiting, plans] = [reads[0].data, reads[1].data, reads[2].data];
   // The same list the read step shows, so a finished read marks the step done without a second call.
   // ponytail: only the latest runs come back, so a finish followed by that many failed reads reads as not done.
-  const runs = useQuery(runsQuery(workspaceId, "brand_reader"));
+  // Polled here, not only in the read step, so moving on mid-read still sees what it proposes.
+  const runs = useQuery({ ...runsQuery(workspaceId, "brand_reader"), refetchInterval: (q) => (q.state.data?.some(isLive) ? POLL_MS : false) });
+  const reading = !!runs.data?.some(isLive);
+  const wasReading = useRef(reading);
+  useEffect(() => {
+    if (wasReading.current && !reading) void client.invalidateQueries({ queryKey: inWorkspace(workspaceId) });
+    wasReading.current = reading;
+  }, [reading]);
   const failed = [...reads, ...(deployment === "self_host" ? [adapters] : [])].find((q) => q.isError);
 
   if (stepUp) {
@@ -98,6 +107,7 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
       ? [
           {
             key: "ai",
+            label: "Connect your AI",
             title: "Connect the AI that writes for you",
             done: aiConnected(adapters.data),
             summary: "Connected.",
@@ -115,21 +125,23 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
       : []),
     {
       key: "read",
+      label: "Read your website",
       title: "Read your website",
       // A read that finished, or one whose proposals wait; facts typed on Brand are no read.
       done: suggestions > 0 || runs.data.some((r) => r.status === "succeeded"),
-      summary: "Read.",
+      summary: "Direx read your site.",
       preview: "Direx reads your site and proposes what you sell and how you sound.",
       allowed: mayEdit(role),
       body: (
         <>
           <p className="text-muted-foreground">Direx reads your site and proposes what you sell, who buys it and how you sound. Nothing is used until you accept it.</p>
-          <Runs workspaceId={workspaceId} role={role} embedded address={new URLSearchParams(location.search).get("site") ?? undefined} onSettled={() => void client.invalidateQueries({ queryKey: inWorkspace(workspaceId) })} />
+          <Runs workspaceId={workspaceId} role={role} embedded address={new URLSearchParams(location.search).get("site") ?? undefined} />
         </>
       ),
     },
     {
       key: "check",
+      label: "Check the facts",
       title: "Check what Direx understood",
       done: facts.length > 0 && suggestions === 0,
       summary: `${facts.length} ${facts.length === 1 ? "fact" : "facts"} on Brand.`,
@@ -137,7 +149,7 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
       allowed: mayEdit(role),
       body: (
         <>
-          <p className="text-muted-foreground">{suggestions > 0 ? "Accept what is right and dismiss what isn't. To change one, accept it and edit it on Brand." : "When the read finishes, what it proposes shows here."}</p>
+          <p className="text-muted-foreground">{suggestions > 0 ? "Accept what is right and dismiss what isn't. To change one, accept it and edit it on Brand." : reading ? "Direx is still reading. What it proposes shows here when it finishes." : "When a read finishes, what it proposes shows here."}</p>
           {/* Decided here, so setup never sends a person away mid-way; Brand is there for changing words. */}
           {suggestions > 0 && (
             <ul aria-label="Proposed brand facts" className="flex flex-col divide-y divide-border">
@@ -156,7 +168,7 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
               ))}
             </ul>
           )}
-          <Link to="/w/$workspaceId/brand" params={w} className={`self-start ${buttonVariants({ variant: "outline" })}`}>
+          <Link to="/w/$workspaceId/brand" params={w} className="self-start text-sm underline">
             Open Brand
           </Link>
         </>
@@ -164,6 +176,7 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
     },
     {
       key: "goal",
+      label: "Pick a first goal",
       title: "Pick a first goal",
       done: plans.length > 0,
       summary: "A campaign is started.",
@@ -184,65 +197,67 @@ export function Setup(p: { workspaceId: string; workspaceName: string; role: Rol
   const step = steps[open];
   const last = open === steps.length - 1;
 
+  // Forward: Next once the step is done, Continue while a read runs, otherwise a quiet skip.
+  const forward = step?.done ? (last ? "Finish" : "Next") : step?.key === "read" && reading ? "Continue while it reads" : "Skip this step";
+
   return (
     <Page
       title={`Set up ${p.workspaceName}`}
       description="A few steps so Direx knows your business. You can leave and come back; a finished step stays finished."
       actions={
-        <Link to="/w/$workspaceId" params={w} className="text-sm underline">
-          {next === -1 ? "Go to Home" : "Skip setup for now"}
+        <Link to="/w/$workspaceId" params={w} className={buttonVariants({ variant: "outline", size: "sm" })}>
+          {next === -1 ? "Go to Home" : "Finish setup later"}
         </Link>
       }
     >
       {error && <Notice tone="error">{error}</Notice>}
-      <ol aria-label="Setup steps" className="flex flex-row flex-wrap gap-x-6 gap-y-2 text-sm">
-        {steps.map((s, n) => (
-          <li key={s.key} aria-current={n === open ? "step" : undefined} className={n === open ? "font-medium text-foreground" : "text-muted-foreground"}>
-            {`${n + 1}. ${s.title}`}
-            <span className="sr-only">{s.done ? `, finished. ${s.summary}` : `. ${s.preview}`}</span>
-            {s.done && <span aria-hidden> ✓</span>}
-          </li>
-        ))}
-      </ol>
-      {step ? (
-        <section aria-label={step.title} className="flex flex-col gap-4 rounded-card border border-border p-6">
-          <div className="flex flex-wrap items-baseline justify-between gap-3">
-            <h2 className="text-md font-medium">{step.title}</h2>
-            <span className="text-sm text-muted-foreground">{`Step ${open + 1} of ${steps.length}${step.done ? ` · Finished. ${step.summary}` : ""}`}</span>
-          </div>
-          {step.allowed ? step.body : <p className="text-muted-foreground">Ask an Owner or Admin to run this step.</p>}
-          <div className="flex flex-wrap justify-between gap-3 border-t border-border pt-4">
-            {open > 0 ? (
-              <Button variant="outline" onClick={() => setAt(open - 1)}>
-                Back
-              </Button>
-            ) : (
-              <span />
-            )}
-            <Button variant={step.done ? undefined : "outline"} onClick={() => setAt(open + 1)}>
-              {step.done ? (last ? "Finish" : "Next") : "Skip for now"}
-            </Button>
-          </div>
-        </section>
-      ) : (
-        <EmptyState
-          title={next === -1 ? "You're set up" : "That's all the steps"}
-          action={
-            <span className="flex flex-wrap gap-3">
-              {next !== -1 && (
-                <Button variant="outline" onClick={() => setAt(next)}>
-                  Back to what's left
+      <div className="grid gap-8 lg:grid-cols-[16rem_1fr] lg:items-start">
+        <Stepper activeStep={open} orientation="vertical" label="Setup steps" onStepClick={setAt}>
+          {steps.map((s, n) => (
+            // A step skipped on the way past would otherwise draw (and announce) as completed.
+            <StepItem key={s.key} step={n} label={s.label} description={s.done ? `Done. ${s.summary}` : n < open ? `Not done yet. ${s.preview}` : s.preview} indicator={s.done || n < open ? "auto" : "number"} status={s.done ? "success" : n < open ? "warning" : undefined} />
+          ))}
+        </Stepper>
+        {step ? (
+          <section aria-label={step.title} className="flex flex-col gap-5 rounded-card border border-border bg-card p-6 sm:p-8">
+            <div className="flex flex-col gap-1">
+              <p className="text-sm text-muted-foreground">{`Step ${open + 1} of ${steps.length}${step.done ? " · Done" : ""}`}</p>
+              <h2>{step.title}</h2>
+            </div>
+            {step.allowed ? step.body : <p className="text-muted-foreground">Ask an Owner or Admin to run this step.</p>}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-5">
+              {open > 0 ? (
+                <Button variant="ghost" onClick={() => setAt(open - 1)}>
+                  Back
                 </Button>
+              ) : (
+                <span />
               )}
-              <Link to="/w/$workspaceId" params={w} className={buttonVariants()}>
-                Go to Home
-              </Link>
-            </span>
-          }
-        >
-          {next === -1 ? "What needs you shows on Home." : "Some steps are still open. Come back to them here any time."}
-        </EmptyState>
-      )}
+              <Button variant={forward === "Skip this step" ? "ghost" : undefined} onClick={() => setAt(open + 1)}>
+                {forward}
+              </Button>
+            </div>
+          </section>
+        ) : (
+          <EmptyState
+            title={next === -1 ? "You're set up" : "That's all the steps"}
+            action={
+              <span className="flex flex-wrap gap-3">
+                {next !== -1 && (
+                  <Button variant="outline" onClick={() => setAt(next)}>
+                    Back to what's left
+                  </Button>
+                )}
+                <Link to="/w/$workspaceId" params={w} className={buttonVariants()}>
+                  Go to Home
+                </Link>
+              </span>
+            }
+          >
+            {next === -1 ? "What needs you shows on Home." : "Some steps are still open. Come back to them here any time."}
+          </EmptyState>
+        )}
+      </div>
     </Page>
   );
 }

@@ -19,6 +19,7 @@ test.each([
   [`?workspace=${W}&page=models`, `/w/${W}/settings/models`],
   [`?workspace=${W}&page=credentials&connected=k1`, `/w/${W}/settings/credentials?connected=k1`],
   [`?workspace=${W}&page=social&connect_error=denied`, `/w/${W}/settings/social?connect_error=denied`],
+  [`?workspace=${W}&page=social&connect_error=network_refused&connect_code=invalid_client`, `/w/${W}/settings/social?connect_error=network_refused&connect_code=invalid_client`],
   [`?workspace=${W}&page=members`, `/w/${W}/settings/members`],
   [`?workspace=${W}&page=prospecting`, `/w/${W}/people/find`],
   [`?workspace=${W}&page=prospecting&run=r2`, `/w/${W}/people/find/r2`],

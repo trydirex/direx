@@ -102,6 +102,16 @@ test("V12: each bad callback is refused and stores nothing", async () => {
   for (const [reason, run] of cases) expect(await run(), reason).toMatchObject({ ok: false, reason });
   expect(s.fake.calls.exchange).toBe(0);
 
+  // The network refusing the app keeps its error code; a wrong secret keeps the token endpoint's.
+  expect(await s.vault.callback({ ...(await consent(s, ws, owner)), code: undefined, error: "invalid_scope", sessionUserId: owner })).toEqual({ ok: false, reason: "network_refused", detail: "invalid_scope" });
+  const fake = startFakeProvider();
+  fakes.push(fake);
+  const wrongSecret = createVault({ rootKey: masterRootKey(Buffer.alloc(32, 9)), now: () => new Date(), providers: [{ ...fake.provider(), clientSecret: "not-the-secret" }], callbackUrl: "http://direx.test/api/connections/callback", timeoutMs: 300 });
+  const started = await wrongSecret.start({ workspaceId: ws, userId: owner, connection: "google" });
+  if (!started.ok) throw new Error(started.reason);
+  const back = new URL((await fetch(started.url, { redirect: "manual" })).headers.get("location")!);
+  expect(await wrongSecret.callback({ cookie: started.cookie, state: back.searchParams.get("state")!, code: back.searchParams.get("code")!, sessionUserId: owner })).toEqual({ ok: false, reason: "exchange_failed", detail: "invalid_client" });
+
   const narrow = setup({ grant: ["openid"] });
   const r = await narrow.vault.callback({ ...(await consent(narrow, ws, owner)), sessionUserId: owner });
   expect(r).toMatchObject({ ok: false, reason: "missing_scope" });

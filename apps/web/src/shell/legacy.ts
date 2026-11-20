@@ -34,9 +34,9 @@ function route(page: string | null, q: URLSearchParams): [string, URLSearchParam
     case "models":
       return ["/settings/models", rest()];
     case "credentials":
-      return ["/settings/credentials", rest("connect_error", "connected")];
+      return ["/settings/credentials", rest("connect_error", "connect_code", "connected")];
     case "social":
-      return ["/settings/social", rest("connect_error", "connected")];
+      return ["/settings/social", rest("connect_error", "connect_code", "connected")];
     case "members":
       return ["/settings/members", rest()];
     case "prospecting":
@@ -50,7 +50,7 @@ function route(page: string | null, q: URLSearchParams): [string, URLSearchParam
     case "newsletter":
       return q.has("issue") ? [`/newsletter/${id("issue")}`, rest()] : ["/newsletter", rest()];
     case "seo":
-      return ["/seo", rest("connect_error", "connected")];
+      return ["/seo", rest("connect_error", "connect_code", "connected")];
     default:
       return ["", rest()];
   }

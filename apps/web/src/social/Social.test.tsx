@@ -44,3 +44,10 @@ test("when the networks can't be read, Social says so and Retry reads them again
   await userEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(await screen.findByRole("button", { name: "Connect Net" })).toBeTruthy();
 });
+
+test("a failed connect says what the network answered and which setup step to check", async () => {
+  serve(() => reply(200, { networks: [network] }));
+  render(withQueries(<Social workspace={workspace} me={ME} notice="network_refused" noticeCode="redirect_uri_mismatch" />));
+  const text = (await screen.findByText(/The network refused the connection/)).textContent;
+  expect(text).toBe('The network refused the connection. Nothing was saved. The network answered "redirect_uri_mismatch". The callback URL in your app must match the one in the setup steps exactly, with no extra slash.');
+});

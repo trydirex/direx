@@ -209,7 +209,7 @@ const callbackRoute = route({
   method: "get",
   path: "/api/connections/callback",
   request: {
-    query: z.object({ state: z.string().max(200).optional(), code: z.string().max(2000).optional(), error: z.string().max(200).optional() }),
+    query: z.object({ state: z.string().max(200).optional(), code: z.string().max(2000).optional(), error: z.string().max(200).optional(), error_description: z.string().max(1000).optional() }),
   },
   responses: {
     200: { description: "A connect from a link worked; a page says to finish on the device that made it" },
@@ -340,6 +340,8 @@ export type CredentialRouteDeps = {
 const LINK_HEADERS = { "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" };
 const linkPage = (body: ReturnType<typeof html>) =>
   html`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connect an account to Direx</title>${body}`;
+/** A network's words for the log: one line, capped, so they can't forge other log lines. */
+const oneLine = (s: string) => s.replace(/[\u0000-\u001f\u007f]+/g, " ").slice(0, 300);
 const DEAD_LINK = linkPage(html`<p>This link no longer works. Make a new one in Direx.</p>`);
 
 export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landingPage, linkNetwork }: CredentialRouteDeps) {
@@ -536,19 +538,21 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
         const r = await vault().linkCallback(query);
         const page = r.ok
           ? linkPage(html`<p>Connected ${r.credential.name}. Finish on the device you made the link on.</p>`)
-          : r.reason === "denied"
+          : r.reason === "denied" || r.reason === "network_refused"
             ? linkPage(html`<p>Nothing was connected. Make a new link in Direx to try again.</p>`)
             : DEAD_LINK;
         return c.html(page, r.ok ? 200 : 400, LINK_HEADERS);
       }
       const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
-      const page = landingPage?.(vault().connectionOf(cookie)) ?? "credentials";
-      const r = await vault().callback({ ...c.req.valid("query"), cookie, sessionUserId: s.user.id });
+      const connection = vault().connectionOf(cookie);
+      const page = landingPage?.(connection) ?? "credentials";
+      // The network's own words go to the log for whoever runs Direx, never into the page's address.
+      if (query.error) console.warn(`credentials: ${connection ?? "a network"} answered the connect with ${oneLine(query.error)}${query.error_description ? `: ${oneLine(query.error_description)}` : ""}`);
+      const r = await vault().callback({ state: query.state, code: query.code, error: query.error, cookie, sessionUserId: s.user.id });
       deleteCookie(c, STATE_COOKIE, { path: "/api/connections" });
-      return r.ok
-        ? c.redirect(`${baseURL()}/?workspace=${r.workspaceId}&page=${page}&connected=${r.credential.id}`, 302)
-        : c.redirect(`${baseURL()}/?page=${page}&connect_error=${r.reason}`, 302);
+      if (r.ok) return c.redirect(`${baseURL()}/?workspace=${r.workspaceId}&page=${page}&connected=${r.credential.id}`, 302);
+      return c.redirect(`${baseURL()}/?page=${page}&connect_error=${r.reason}${r.detail ? `&connect_code=${encodeURIComponent(r.detail)}` : ""}`, 302);
     })
     .openapi(listRoute, async (c) => {
       return c.json({ credentials: (await vault().list(c.get("member").workspaceId)).map(toJson) }, 200);

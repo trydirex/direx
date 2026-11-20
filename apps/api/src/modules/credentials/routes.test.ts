@@ -149,6 +149,14 @@ test("connect: start sets the state cookie and the callback stores the mailbox, 
   expect((await call(`/api/connections/callback${back.search}`)).status).toBe(401);
   const wrong = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=x&code=${back.searchParams.get("code")}`);
   expect(wrong.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=state_mismatch");
+  // A network's error code rides along to point at the setup step; its free text never does.
+  const state = back.searchParams.get("state");
+  const refused = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=${state}&error=redirect_uri_mismatch&error_description=${encodeURIComponent("The redirect_uri does not match\nforged line")}`);
+  expect(refused.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=network_refused&connect_code=redirect_uri_mismatch");
+  const prose = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=${state}&error=${encodeURIComponent("Call us on 555")}`);
+  expect(prose.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=network_refused");
+  const cancelled = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=${state}&error=access_denied`);
+  expect(cancelled.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=denied");
 
   const res = await callback(`${contributor.cookie}; ${stateCookie}`);
   expect(res.status).toBe(302);

@@ -676,7 +676,7 @@ function SettingsNav() {
     </SectionNav>
   );
 }
-const connectSearch = (s: Record<string, unknown>): { connect_error?: string; connected?: string } => ({ connect_error: str(s.connect_error), connected: str(s.connected) });
+const connectSearch = (s: Record<string, unknown>): { connect_error?: string; connect_code?: string; connected?: string } => ({ connect_error: str(s.connect_error), connect_code: str(s.connect_code), connected: str(s.connected) });
 const settingsRoute = page("settings", function SettingsRoute() {
   const w = useWorkspace();
   return (
@@ -760,7 +760,7 @@ const socialRoute = createRoute({
     return (
       <>
         <SettingsNav />
-        <Social workspace={w.workspace} me={w.me.id} notice={s.connect_error} connected={s.connected} />
+        <Social workspace={w.workspace} me={w.me.id} notice={s.connect_error} noticeCode={s.connect_code} connected={s.connected} />
       </>
     );
   },

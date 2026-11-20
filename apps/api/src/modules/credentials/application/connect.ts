@@ -7,6 +7,7 @@ import { openState, sealState, STATE_TTL_MS } from "../adapters/cookie";
 import type { RootKey } from "../adapters/crypto";
 import {
   clientIdParam,
+  errorCode,
   exchangeCode,
   exchangeLongToken,
   idTokenEmail,
@@ -44,6 +45,7 @@ export type CallbackRefusal =
   | "state_mismatch"
   | "wrong_user"
   | "denied"
+  | "network_refused"
   | "not_member"
   | "exchange_failed"
   | "missing_scope"
@@ -155,6 +157,8 @@ export function connector(d: {
     if (s.expiresAt <= now().getTime()) return { ok: false, reason: "expired" };
     if (a.state !== s.state) return { ok: false, reason: "state_mismatch" };
     if (a.sessionUserId !== s.userId) return { ok: false, reason: "wrong_user" };
+    // The person cancelling is access_denied; any other error is the network refusing the app's setup.
+    if (a.error && a.error !== "access_denied") return { ok: false, reason: "network_refused", detail: errorCode(a.error) };
     if (a.error || !a.code) return { ok: false, reason: "denied" };
     const { workspaceId, userId } = s;
     const p = await d.providerFor(workspaceId, s.connection);
@@ -162,7 +166,7 @@ export function connector(d: {
     if (!(await withWorkspace(workspaceId, (tx) => isMember(tx, workspaceId, userId)))) return { ok: false, reason: "not_member" };
 
     const r = await exchangeCode(p, { code: a.code, verifier: s.verifier, redirectUri: callbackUrl() }, d.timeoutMs);
-    if (!r.ok) return { ok: false, reason: "exchange_failed" };
+    if (!r.ok) return { ok: false, reason: "exchange_failed", detail: r.code };
     let t = r.tokens;
     const refuse = async (reason: CallbackRefusal, accountId?: string) => {
       await revokeToken(p, t.refreshToken ?? t.accessToken, d.timeoutMs, accountId);

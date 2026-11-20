@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableRow } from "@astryxdesign/core/Table"
 import { startConnect } from "../credentials/actions";
 import { dayWords } from "../seo/actions";
 import { Secret } from "../credentials/Credentials";
+import { Wizard } from "./Wizard";
 import { SignIn } from "../identity/SignIn";
 import {
   accountsQuery,
@@ -275,7 +276,7 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
                   <details>
                     <summary className={SUMMARY}>Advanced: use your own app (self-hosted)</summary>
                     <div className="mt-3 flex flex-col gap-3">
-                      {manage ? own.map((n) => <Wizard key={n.connection} network={n} wizard={n.wizard!} save={async (f) => void (await settle(await saveApp(workspace.id, n, f)))} />) : <p className="text-sm text-muted-foreground">An Owner or Admin can set this up.</p>}
+                      {manage ? own.map((n) => <Wizard key={n.connection} label={n.label} wizard={n.wizard!} save={async (f) => void (await settle(await saveApp(workspace.id, n, f)))} />) : <p className="text-sm text-muted-foreground">An Owner or Admin can set this up.</p>}
                     </div>
                   </details>
                 )}
@@ -631,57 +632,5 @@ function SignInForm({ network, send }: { network: Network; send: (f: { username:
       </div>
       {refused && <Notice tone="error">{refused}</Notice>}
     </form>
-  );
-}
-
-function Wizard({ network, wizard, save }: { network: Network; wizard: NonNullable<Network["wizard"]>; save: (f: { clientId: string; clientSecret: string }) => Promise<void> }) {
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
-  const [pending, setPending] = useState(false);
-  return (
-    <details className="w-full max-w-xl text-sm">
-      <summary className="cursor-pointer font-medium">Set up {network.label}</summary>
-      <div className="mt-3 flex flex-col gap-3">
-        <p>
-          Open the{" "}
-          <a href={wizard.consoleUrl} className="underline underline-offset-4">
-            {network.label} developer console
-          </a>
-          .
-        </p>
-        <ol className="flex list-decimal flex-col gap-1 pl-5">
-          {wizard.steps.map((s) => (
-            <li key={s}>{s}</li>
-          ))}
-        </ol>
-        <p>
-          Callback URL: <code className="break-all">{wizard.callbackUrl}</code>
-        </p>
-        <p>
-          Permissions to allow: <code>{wizard.scopes.join(" ")}</code>
-        </p>
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setPending(true);
-            await save({ clientId, clientSecret }).finally(() => setPending(false));
-            setClientSecret("");
-          }}
-        >
-          <Field label="Client ID">
-            <Input required autoComplete="off" spellCheck={false} value={clientId} onChange={(e) => setClientId(e.target.value)} />
-          </Field>
-          <Field label="Client secret">
-            <Secret value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
-          </Field>
-          <div>
-            <Button type="submit" size="sm" pending={pending}>
-              Save
-            </Button>
-          </div>
-        </form>
-      </div>
-    </details>
   );
 }

@@ -100,7 +100,7 @@ test("connect starts the Search Console OAuth connect and opens Google", async (
   expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/connections/{connection}/start", { params: { path: { workspaceId: W, connection: "google_search_console" } } });
   expect(go).toHaveBeenCalledWith("https://accounts.google.com/o/oauth2/auth?x=1");
   post.mockResolvedValueOnce({ error: { error: "unknown_connection" } } as never);
-  expect(await connect(W, go)).toContain("needs a Google OAuth client");
+  expect(await connect(W, go)).toContain("needs a Google app first");
   post.mockResolvedValueOnce({ error: { error: "step_up_required" } } as never);
   expect(await connect(W, go)).toBe("That didn't work. Try again.");
 });

@@ -395,9 +395,12 @@ type Settle = (code: string | null) => Promise<boolean>;
 
 type Can = { workspaceId: string; c: Credential; mayChange: boolean; mayRotate: boolean; settle: Settle };
 
+/** A Workspace's own OAuth app, kept as a username and password: its client id and client secret. */
+const ownApp = (c: Credential) => c.scope === "workspace" && c.kind === "basic" && c.key.startsWith("oauth_app:");
+
 function Row(p: Can & { mailbox: boolean }) {
   const { c } = p;
-  const kind = c.kind === "oauth2" ? (p.mailbox ? "Email account" : "Access you granted") : KINDS[c.kind as Kind].label;
+  const kind = c.kind === "oauth2" ? (p.mailbox ? "Email account" : "Access you granted") : ownApp(c) ? "Own app" : KINDS[c.kind as Kind].label;
   // A typed key is saved as typed: Direx keeps no test of it, so "active" only means it hasn't been revoked.
   const unchecked = c.kind !== "oauth2" && c.status === "active";
   return (
@@ -461,7 +464,7 @@ function Actions({ workspaceId, c, mayChange, mayRotate, settle }: Can) {
             });
           }}
         >
-          <Field label={`New ${KINDS[c.kind as Kind].value.label.toLowerCase()}`}>
+          <Field label={ownApp(c) ? "New client secret" : `New ${KINDS[c.kind as Kind].value.label.toLowerCase()}`}>
             <Secret value={value} onChange={(e) => setValue(e.target.value)} />
           </Field>
           <Button type="submit" size="sm" variant="outline" aria-label={`Replace ${c.name}`} pending={replace.pending}>

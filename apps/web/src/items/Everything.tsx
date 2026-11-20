@@ -1,25 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Everything: every Item in the Workspace in every state, newest first, 100 at a time. The filters
-// and the open Item live in the address, so a filtered view can be linked. Read-only: the open Item
-// keeps its own actions.
+// and the open Item live in the address, so a filtered view can be linked. Ticked rows can be approved
+// (the clean ones that need approval) or withdrawn together; the open Item keeps its own actions.
 import { useEffect, useRef, useState, type ComponentProps, type ComponentType } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import { MultiSelector } from "@astryxdesign/core/MultiSelector";
 import { Button } from "@/components/Button";
+import { toast } from "@/components/toast";
+import { inWorkspace } from "../api/query";
 import { Input, Select } from "../components/Input";
-import { EmptyState, Page } from "../components/layout";
+import { EmptyState, Notice, Page } from "../components/layout";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { campaignsQuery } from "../campaigns/actions";
 import { networksQuery } from "../social/actions";
-import { everythingQuery, ITEM_MESSAGES, listTime, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
+import { approveClean, BULK, cancelAll, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
 import type { ItemDialog } from "./ItemPanel";
-import { QueueRow } from "./QueueRow";
+import { ApproveList, approvedToast, QueueRow } from "./QueueRow";
 import { StateChip } from "./StateChip";
 
 const ALL = "";
 const STATES = (Object.entries(STATE_LABEL) as [ItemState, string][]).map(([value, label]) => ({ value, label }));
 const listOf = (s: string | undefined) => (s ? s.split(",") : []);
 const joined = (v: string[]) => (v.length ? v.join(",") : undefined);
+/** The states an Item can still be withdrawn from: an own Item's and the ledger's alike. */
+const WITHDRAWABLE: ItemState[] = ["draft", "needs_approval", "scheduled", "held"];
 
 export function Everything(p: {
   workspaceId: string;
@@ -63,6 +68,46 @@ export function Everything(p: {
   // A type's keys travel as one comma list, so the picker shows each type whose keys are all chosen.
   const chosenTypes = types.filter((t) => listOf(t.value).every((k) => listOf(f.type).includes(k))).map((t) => t.value);
 
+  const client = useQueryClient();
+  const approver = mayApprove(p.role);
+  const editor = mayEdit(p.role);
+  const items = query.data?.pages.flatMap((page) => page.items) ?? [];
+  // Ticked ids. Every count comes from the loaded rows, so a row a filter hides drops out of them.
+  const [chosen, setChosen] = useState<string[]>([]);
+  // Once a filter's rows have loaded, ticks on rows it hides are dropped, so clearing it doesn't bring them back.
+  const kept = query.isSuccess ? chosen.filter((id) => items.some((i) => i.id === id)) : chosen;
+  if (kept.length !== chosen.length) setChosen(kept);
+  const ticked = items.filter((i) => chosen.includes(i.id));
+  const approvable = approver ? ticked.filter((i) => i.state === "needs_approval" && i.clean) : [];
+  const withdrawable = editor ? ticked.filter((i) => WITHDRAWABLE.includes(i.state)) : [];
+  const firstShown = items.slice(0, BULK).map((i) => i.id);
+  const allShown = firstShown.length > 0 && firstShown.every((id) => chosen.includes(id));
+  const tick = (id: string, on: boolean) => setChosen(on ? (chosen.length < BULK ? [...chosen, id] : chosen) : chosen.filter((c) => c !== id));
+  const [confirming, setConfirming] = useState<"approve" | "withdraw">();
+  const [pending, setPending] = useState(false);
+  const [refused, setRefused] = useState<string>();
+  const refresh = () => client.invalidateQueries({ queryKey: inWorkspace(p.workspaceId) });
+  async function act() {
+    setPending(true);
+    try {
+      if (confirming === "approve") {
+        const r = await approveClean(p.workspaceId, approvable);
+        approvedToast(p.workspaceId, r.ids, editor, refresh);
+        setRefused(r.refused.length > 0 ? `${r.refused.length} didn't go through: ${message(r.refused[0]!.reason)}` : undefined);
+      } else {
+        const done = await cancelAll(p.workspaceId, withdrawable.map((i) => i.id));
+        if (done > 0) toast.add({ title: `Withdrew ${done}.` });
+        const late = withdrawable.length - done;
+        setRefused(late > 0 ? `${late} couldn't be withdrawn. They may have gone out already.` : undefined);
+      }
+      setChosen([]);
+      await refresh();
+    } finally {
+      setPending(false);
+      setConfirming(undefined);
+    }
+  }
+
   return (
     <Page title="Everything" description="Every email, post and approval in this Workspace, newest first.">
       <fieldset className="flex flex-wrap items-end gap-2">
@@ -87,9 +132,62 @@ export function Everything(p: {
           </Button>
         )}
       </fieldset>
+      <Dialog isOpen={confirming === "approve"} onOpenChange={(open) => !open && setConfirming(undefined)} purpose="form" width={448}>
+        <DialogHeader title={`Approve ${approvable.length}?`} />
+        <ApproveList items={approvable} />
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="outline" onClick={() => setConfirming(undefined)}>
+            Cancel
+          </Button>
+          <Button pending={pending} onClick={() => void act()}>{`Approve ${approvable.length}`}</Button>
+        </div>
+      </Dialog>
+      <Dialog isOpen={confirming === "withdraw"} onOpenChange={(open) => !open && setConfirming(undefined)} purpose="form" width={448}>
+        <DialogHeader title={`Withdraw ${withdrawable.length}?`} />
+        <p className="pt-2 text-sm">They won't go out, and they show as Cancelled.</p>
+        <ul aria-label="To withdraw" className="flex max-h-80 flex-col gap-1 overflow-y-auto pt-2 text-sm">
+          {withdrawable.map((i) => (
+            <li key={i.id} className="truncate">
+              {i.title}
+            </li>
+          ))}
+        </ul>
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="outline" onClick={() => setConfirming(undefined)}>
+            Keep them
+          </Button>
+          <Button pending={pending} onClick={() => void act()}>{`Withdraw ${withdrawable.length}`}</Button>
+        </div>
+      </Dialog>
+      {refused && <Notice tone="error">{refused}</Notice>}
+      {(approver || editor) && items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex min-h-8 items-center gap-2 text-sm">
+            <input type="checkbox" className="size-4 accent-primary" checked={allShown} onChange={(e) => setChosen(e.target.checked ? firstShown : [])} />
+            Select all shown
+          </label>
+          {ticked.length > 0 && (
+            <>
+              <span aria-live="polite" className="text-sm text-muted-foreground">{`${ticked.length} selected`}</span>
+              {approvable.length > 0 && (
+                <Button size="sm" onClick={() => setConfirming("approve")}>
+                  {`Approve ${approvable.length}`}
+                </Button>
+              )}
+              {withdrawable.length > 0 && (
+                <Button size="sm" variant="outline" onClick={() => setConfirming("withdraw")}>
+                  {`Withdraw ${withdrawable.length}`}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => setChosen([])}>
+                Clear selection
+              </Button>
+            </>
+          )}
+        </div>
+      )}
       <QueryBoundary query={query} messages={ITEM_MESSAGES}>
-        {(data) => {
-          const items = data.pages.flatMap((page) => page.items);
+        {() => {
           if (items.length === 0)
             return filtered ? (
               <EmptyState title="Nothing matches these filters" action={<Button variant="outline" onClick={clear}>Clear filters</Button>} />
@@ -100,8 +198,18 @@ export function Everything(p: {
             <>
               <ul aria-label="Everything" className="flex flex-col divide-y divide-border rounded-card border border-border bg-card">
                 {items.map((i) => (
-                  <li key={i.id}>
-                    <button type="button" className="flex w-full cursor-pointer flex-col items-start gap-1 border-0 bg-transparent px-4 py-3 text-left hover:bg-accent" aria-current={i.id === p.item || undefined} onClick={() => p.onItem(i.id)}>
+                  <li key={i.id} className="flex items-start">
+                    {(approver || editor) && (
+                      <input
+                        type="checkbox"
+                        className="mt-4 ml-4 size-4 shrink-0 accent-primary"
+                        aria-label={`Select ${i.title}`}
+                        checked={chosen.includes(i.id)}
+                        disabled={!chosen.includes(i.id) && chosen.length >= BULK}
+                        onChange={(e) => tick(i.id, e.target.checked)}
+                      />
+                    )}
+                    <button type="button" className="flex min-w-0 flex-1 cursor-pointer flex-col items-start gap-1 border-0 bg-transparent px-4 py-3 text-left hover:bg-accent" aria-current={i.id === p.item || undefined} onClick={() => p.onItem(i.id)}>
                       <QueueRow item={i} workspaceId={p.workspaceId} />
                       {/* QueueRow leaves Needs approval out, since its queue holds nothing else; here every state shows. */}
                       {i.state === "needs_approval" && (

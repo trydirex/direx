@@ -179,6 +179,25 @@ test("I10: elevated actions need a sign-in in the last 10 minutes, and a session
   expect((await patch(fresh)).status).toBe(200);
 });
 
+test("a session read past Better Auth's updateAge sends the renewed cookie back, so use keeps a person signed in", async () => {
+  const owner = await signIn();
+  const { workspace } = await createOrg(owner);
+  const sessionCookie = (res: Response) => res.headers.getSetCookie().find((c) => c.includes("session_token="));
+
+  expect(sessionCookie(await call(`/api/w/${workspace.id}`, owner))).toBeUndefined();
+
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);
+  const renewedRes = await call(`/api/w/${workspace.id}`, owner);
+  const renewed = sessionCookie(renewedRes);
+  expect(renewed).toContain("Max-Age=604800");
+  expect(renewedRes.headers.get("cache-control")).toBe("no-store");
+  expect((await call("/api/me", renewed!.split(";")[0])).status).toBe(200);
+
+  vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);
+  expect(sessionCookie(await call("/api/me", owner))).toContain("Max-Age=604800");
+});
+
 test("deleting a Workspace cancels its queued jobs and leaves another Workspace's (ADR 0030 rule 007)", async () => {
   const owner = await signIn();
   const [a, b] = [(await createOrg(owner)).workspace.id, (await createOrg(owner, "Other")).workspace.id];

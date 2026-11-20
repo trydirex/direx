@@ -6,7 +6,7 @@ import type { Auth } from "./adapters/auth";
 import { acceptInvite, createInvite, listInvites, previewInvite, revokeInvite, type InviteDeps } from "./application/invites";
 import { auditLog, changeRole, deleteWorkspace, listMembers, removeMember, type OnDelete, type OnMemberChange } from "./application/members";
 import { ROLES } from "./domain/roles";
-import { requirePermission, requireStepUp, type MemberEnv } from "./middleware";
+import { readSession, requirePermission, requireStepUp, type MemberEnv } from "./middleware";
 
 const ErrorBody = z.object({ error: z.string() }).openapi("Error");
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -186,14 +186,14 @@ export function memberRoutes(auth: () => Auth, deps: () => InviteDeps, onDelete?
       return refused ? c.json({ error: refused }, STATUS[refused]) : c.json({ ok: true as const }, 200);
     })
     .openapi(acceptRoute, async (c) => {
-      const s = await auth().api.getSession({ headers: c.req.raw.headers });
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const { workspaceId, token } = c.req.valid("json");
       const r = await acceptInvite(s.user, workspaceId, token);
       return r.ok ? c.json({ workspace: { id: workspaceId, role: r.role } }, 200) : c.json({ error: r.reason }, STATUS[r.reason]);
     })
     .openapi(previewRoute, async (c) => {
-      const s = await auth().api.getSession({ headers: c.req.raw.headers });
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const { workspaceId, token } = c.req.valid("json");
       const r = await previewInvite(s.user, workspaceId, token);

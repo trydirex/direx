@@ -118,6 +118,17 @@ test("--test-to reaches the check with DIREX_MAIL_FROM, and is refused without i
   expect((await run(["set", "smtp.url", "--test-to"], VALUE)).code).toBe(2);
 });
 
+test("--check-only checks and sends the test email but stores nothing", async () => {
+  const calls: Checked[] = [];
+  const env = { DIREX_MAIL_FROM: "Direx <signin@example.com>" };
+  const checked = await run(["set", "smtp.url", "--test-to", "me@example.com", "--check-only"], "smtp://user:do-not-print@new.example.com", { checkSmtp: fakeCheck(true, calls), env });
+  expect(checked).toEqual({ code: 0, text: "smtp.url works; nothing was stored." });
+  expect(calls).toEqual([{ url: "smtp://user:do-not-print@new.example.com", from: env.DIREX_MAIL_FROM, testTo: "me@example.com" }]);
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(VALUE);
+  expect((await run(["set", "smtp.url", "--check-only"], "smtp://x@new.example.com", { checkSmtp: fakeCheck(false), env })).code).toBe(1);
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(VALUE);
+});
+
 test("the command refuses an unknown name, a value as an argument and an empty value", async () => {
   expect((await run(["set", "my.secret"], "x")).code).toBe(2);
   const asArgument = await run(["set", "provider.openai", "sk-on-the-command-line"], "x");

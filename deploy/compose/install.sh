@@ -115,7 +115,13 @@ choose_provider() {
       pass=$(ask "" "SES SMTP password (not shown)" secret)
       ;;
     5)
-      host=$(ask "" "SMTP host") tls=any
+      host=$(ask "" "SMTP host")
+      # The password never crosses the network unencrypted: TLS is required, except for a relay on
+      # this machine. For a relay elsewhere without TLS, paste its URL into: secrets.ts set smtp.url
+      case "$host" in
+        localhost | 127.* | ::1 | "[::1]") tls=any ;;
+        *) tls=tls ;;
+      esac
       port=$(ask "" "Port, for example 465 or 587")
       user=$(ask "" "User name")
       pass=$(ask "" "Password (not shown)" secret)
@@ -126,6 +132,7 @@ choose_provider() {
 
 # The mail step. In CI the whole URL comes from the environment. Otherwise a person picks a service
 # and signs in, and gets three tries: a check that fails, or a test email they didn't see, asks again.
+# Nothing is stored until they say the test email arrived, so mail that worked before stays.
 mail_step() {
   say "setting up mail"
   purpose
@@ -139,7 +146,7 @@ mail_step() {
   fi
   to=$(ask "" "Your email address, for one test email")
   [ -n "$to" ] || fail "no address for the test email" "run: sh install.sh --mail"
-  stored="" tries=0
+  sent="" tries=0
   while [ "$tries" -lt 3 ]; do
     tries=$((tries + 1))
     if ! choose_provider; then
@@ -147,22 +154,29 @@ mail_step() {
       continue
     fi
     rc=0
-    printf '%s\n%s\n%s\n%s\n%s\n' "$host" "$port" "$user" "$pass" "$tls" | store_mail --parts --test-to "$to" || rc=$?
+    parts=$(printf '%s\n%s\n%s\n%s\n%s' "$host" "$port" "$user" "$pass" "$tls")
     pass=""
+    printf '%s\n' "$parts" | store_mail --parts --test-to "$to" --check-only || rc=$?
     case "$rc" in
       0) ;;
-      1) say "nothing was stored; try again"; continue ;;
-      *) fail "mail couldn't be checked" "see the line above, then run: sh install.sh --mail" ;;
+      1) parts=""; say "nothing was stored; try again"; continue ;;
+      *) parts=""; fail "mail couldn't be checked" "see the line above, then run: sh install.sh --mail" ;;
     esac
-    stored=1
+    sent=1
     case "$(ask "" "A test email went to $to from $(envget DIREX_MAIL_FROM). Did it arrive, showing that From address? [y/N]")" in
-      y | Y | yes | Yes) return ;;
+      y | Y | yes | Yes)
+        # Logs in once more, then stores.
+        printf '%s\n' "$parts" | store_mail --parts || { parts=""; fail "mail stopped working before it was stored" "run: sh install.sh --mail"; }
+        parts=""
+        return
+        ;;
     esac
-    say "Look in spam first. Some services, Gmail among them, put the account's own address in the From instead."
+    parts=""
+    say "Nothing was stored. Look in spam first. Some services, Gmail among them, put the account's own address in the From instead."
     say "To send from another address, edit DIREX_MAIL_FROM in .env and run: sh install.sh --mail"
   done
-  if [ -n "$stored" ]; then
-    fail "mail logs in and sends, but the test email didn't arrive as it should" "fix the From or the service, then run: sh install.sh --mail"
+  if [ -n "$sent" ]; then
+    fail "mail logs in and sends, but the test email didn't arrive as it should, so nothing was stored" "fix the From or the service, then run: sh install.sh --mail"
   fi
   fail "mail still isn't working after 3 tries, and nothing was stored" "check the service's SMTP settings, then run: sh install.sh --mail"
 }

@@ -3,7 +3,7 @@
 // stays out of shell history and process lists. Needs the root key and the database.
 //
 //   bun apps/api/src/secrets.ts list
-//   printf %s "$VALUE" | bun apps/api/src/secrets.ts set smtp.url [--test-to <address>]
+//   printf %s "$VALUE" | bun apps/api/src/secrets.ts set smtp.url [--test-to <address>] [--check-only]
 //   printf '%s\n' host port user password tls | bun apps/api/src/secrets.ts set smtp.url --parts
 //   bun apps/api/src/secrets.ts replace-root-key /path/to/new.key
 import { existsSync } from "node:fs";
@@ -16,14 +16,19 @@ const USAGE = `usage: secrets list | secrets set <name>, with the value on stdin
 
 const PARTS_USAGE = "--parts reads five lines on stdin: host, port, user name, password, and tls or any. Nothing changed.";
 
-type SmtpFlags = { parts: boolean; testTo?: string };
+type SmtpFlags = { parts: boolean; testTo?: string; checkOnly?: boolean };
 type Deps = { checkSmtp?: (url: string, from: string, testTo?: string) => Promise<SmtpCheck>; env?: Record<string, string | undefined> };
 
-/** `--parts` and `--test-to <address>`, which only smtp.url takes. Null on anything else. */
+/**
+ * `--parts`, `--test-to <address>` and `--check-only`, which only smtp.url takes. Null on anything
+ * else. `--check-only` checks and sends but stores nothing, so the installer can store only once a
+ * person has seen the test email arrive.
+ */
 function smtpFlags(rest: string[]): SmtpFlags | null {
   const flags: SmtpFlags = { parts: false };
   for (let i = 0; i < rest.length; i++) {
     if (rest[i] === "--parts") flags.parts = true;
+    else if (rest[i] === "--check-only") flags.checkOnly = true;
     else if (rest[i] === "--test-to" && rest[i + 1]) flags.testTo = rest[++i];
     else return null;
   }
@@ -92,6 +97,10 @@ export async function runSecretsCommand(
       out(checked.line);
       return 1;
     }
+  }
+  if (flags.checkOnly) {
+    out(`${name} works; nothing was stored.`);
+    return 0;
   }
   await setSystemSecret(vault, name, value);
   out(`${name} saved. A running server reads auth.secret, smtp.url, media.s3 and the signin secrets only when it starts.`);

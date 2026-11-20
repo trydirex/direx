@@ -34,7 +34,9 @@ export function createFakeMailchimp(o: { key?: string; lists?: FakeMailchimpList
     const path = url.pathname.replace(/^\/3\.0/, "");
     const q = url.searchParams;
 
-    if (method === "GET" && path === "/lists") return json(200, { lists: lists.map(listView), total_items: lists.length });
+    const offset = Number(q.get("offset") ?? 0);
+    const count = Math.min(1000, Number(q.get("count") ?? 10));
+    if (method === "GET" && path === "/lists") return json(200, { lists: lists.slice(offset, offset + count).map(listView), total_items: lists.length });
     const list = path.match(/^\/lists\/([a-z0-9]+)(\/members)?$/);
     if (list) {
       const l = lists.find((x) => x.id === list[1]);
@@ -42,8 +44,7 @@ export function createFakeMailchimp(o: { key?: string; lists?: FakeMailchimpList
       if (!list[2]) return json(200, listView(l));
       const since = q.get("since_last_changed");
       const rows = (l.members ?? []).filter((m) => !since || Date.parse(m.changed) > Date.parse(since));
-      const offset = Number(q.get("offset") ?? 0);
-      const page = rows.slice(offset, offset + Math.min(1000, Number(q.get("count") ?? 10)));
+      const page = rows.slice(offset, offset + count);
       return json(200, { members: page.map((m) => ({ email_address: m.email, status: m.status, timestamp_opt: m.opt ?? "", timestamp_signup: m.signup ?? "", last_changed: m.changed })), total_items: rows.length });
     }
     const report = path.match(/^\/reports\/([a-z0-9]+)$/);

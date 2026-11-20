@@ -27,6 +27,7 @@ const ID = /^[a-z0-9]{1,40}$/;
 
 const issueInput = z.strictObject({ issueId: z.string().regex(ID) });
 const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.trunc(v) : 0);
+const isTotal = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 0;
 const iso = (...v: unknown[]) => {
   for (const x of v) if (typeof x === "string" && Number.isFinite(Date.parse(x))) return new Date(x).toISOString();
   return null;
@@ -46,7 +47,19 @@ export function createMailchimpPlugin(o: MailchimpOptions = {}) {
   }
   const req = <T>(c: Credential | null, path: string, method = "GET", json?: unknown) =>
     call<T>(http(c), path, { method, ...(json !== undefined && { json }), rateLimitWaitMs: cfg.rateLimitWaitMs, now }).then((r) => r.body);
-  const allLists = async (c: Credential | null) => (await req<{ lists?: List[] }>(c, "/lists?count=1000"))?.lists ?? [];
+  async function allLists(c: Credential | null): Promise<List[]> {
+    const count = MAILCHIMP_DEFAULTS.pageSize;
+    const lists: List[] = [];
+    for (;;) {
+      const page = await req<{ lists?: List[]; total_items?: unknown }>(c, `/lists?count=${count}&offset=${lists.length}`);
+      if (!Array.isArray(page?.lists) || (page.total_items !== undefined && !isTotal(page.total_items))) {
+        throw new PluginError("provider_error", "Mailchimp returned an unreadable list page");
+      }
+      lists.push(...page.lists);
+      if (isTotal(page.total_items) ? lists.length >= page.total_items : page.lists.length < count) return lists;
+      if (page.lists.length === 0) throw new PluginError("provider_error", "Mailchimp returned an incomplete list page");
+    }
+  }
 
   /** The list a read is about: the one named, or the account's only list. */
   async function listOf(c: Credential | null, listId: string | undefined): Promise<string> {
@@ -68,7 +81,10 @@ export function createMailchimpPlugin(o: MailchimpOptions = {}) {
     const q = new URLSearchParams({ count: String(cfg.pageSize), offset: String(offset), fields: "members.email_address,members.status,members.timestamp_opt,members.timestamp_signup,members.last_changed,total_items" });
     if (p.data.changedSince) q.set("since_last_changed", p.data.changedSince);
     const page = await req<{ members?: Member[]; total_items?: unknown }>(c, `/lists/${list}/members?${q}`);
-    const members = page?.members ?? [];
+    if (!Array.isArray(page?.members) || !isTotal(page.total_items)) {
+      throw new PluginError("provider_error", "Mailchimp returned an unreadable member page");
+    }
+    const { members } = page;
     const rows = members.flatMap((m) => {
       const createdAt = iso(m.timestamp_opt, m.timestamp_signup, m.last_changed);
       const updatedAt = iso(m.last_changed);
@@ -77,7 +93,7 @@ export function createMailchimpPlugin(o: MailchimpOptions = {}) {
         : [];
     });
     const next = offset + members.length;
-    return subscribersOutput.parse({ subscribers: rows, nextCursor: members.length && next < n(page?.total_items) ? String(next) : null });
+    return subscribersOutput.parse({ subscribers: rows, nextCursor: members.length && next < page.total_items ? String(next) : null });
   }
 
   async function profile(input: unknown, c: Credential | null) {

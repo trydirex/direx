@@ -41,12 +41,12 @@ export type OnPlanCreated = (tx: PlansTx, p: { workspaceId: string; planId: stri
  * reading's plan as approved now, or its key when that version no longer has it.
  */
 export async function citedReadings(tx: PlansTx, ids: string[]) {
-  const unique = [...new Set(ids)];
+  const unique = [...new Set(ids.map((id) => id.toLowerCase()))];
   const rows = await citedReadingRows(tx, unique.filter((id) => z.uuid().safeParse(id).success));
   const byId = new Map(rows.map((r) => [r.id, r]));
   const out = [];
   for (const id of unique) {
-    const r = byId.get(id.toLowerCase());
+    const r = byId.get(id);
     if (!r) {
       out.push({ id, found: false, measureLabel: null, value: null, source: null, observedOn: null, newer: false });
       continue;
@@ -59,8 +59,10 @@ export async function citedReadings(tx: PlansTx, ids: string[]) {
 export type CitedReading = Awaited<ReturnType<typeof citedReadings>>[number];
 
 /** A note for each reading the version cites that a newer one for its Measure has replaced. */
-export const readingNotes = (ids: string[], cited: CitedReading[]) =>
-  cited.filter((c) => c.newer && ids.includes(c.id)).map((c) => ({ kind: "reading_changed" as const, readingId: c.id }));
+export const readingNotes = (ids: string[], cited: CitedReading[]) => {
+  const current = new Set(ids.map((id) => id.toLowerCase()));
+  return cited.filter((c) => c.newer && current.has(c.id)).map((c) => ({ kind: "reading_changed" as const, readingId: c.id }));
+};
 
 export function planStore({ items, facts, now, onPlanCreated }: { items: () => Items; facts: Facts; now: () => Date; onPlanCreated: OnPlanCreated }) {
   /** What has moved under a plan since it was approved. Notes only: a plan has no effect to hold. */

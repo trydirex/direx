@@ -151,6 +151,18 @@ test("a plan view shows the reading it cites; a person's correction adds a note,
   expect(await plans.plan(W, plan)).toMatchObject({ citedReadings: [shown(cited, "3", "2026-11-12", { newer: true })], notes: [{ kind: "reading_changed", readingId: cited }] });
 });
 
+test("plan citations with different UUID casing share one reading and one change note", async () => {
+  const { source, cited, plan } = await citing();
+  const p = (await plans.plan(W, plan))!;
+  const { revision } = ok(await plans.savePlanDraft(W, plan, { revision: p.draftRevision, body: twoMeasures(cite(cited.toUpperCase()), cite(cited)) }));
+  const { item } = ok(await plans.submitPlan(W, plan, { revision, actor }));
+  ok(await items.approve(W, item.id, item.revision, who));
+  await reading(W, source, "5", "2026-11-14");
+  const view = (await plans.plan(W, plan))!;
+  expect(view.citedReadings).toEqual([shown(cited, "3", "2026-11-12", { newer: true })]);
+  expect(view.notes).toEqual([{ kind: "reading_changed", readingId: cited }]);
+});
+
 test("a new count for the cited Measure adds the note too", async () => {
   const { source, cited, plan } = await citing();
   await reading(W, source, "5", "2026-11-14");
@@ -184,7 +196,7 @@ test("the Strategy view shows its cited readings and notes one a newer reading r
   await approveStrategy(W3);
   const { source, cited } = await citing(W3);
   const channel = (basis: Basis) => ({ key: "email", label: "Cold email", timing: "now" as const, reason: "Replies came from it", basis });
-  await approveStrategy(W3, strategyDraft([channel(cite(cited))]));
+  await approveStrategy(W3, strategyDraft([channel(cite(cited.toUpperCase()))]));
   expect(await plans.strategy(W3)).toMatchObject({ citedReadings: [shown(cited, "3", "2026-11-12")], notes: [] });
   const correction = await reading(W3, source, "2", "2026-11-12", { actor });
   const s = await plans.strategy(W3);
@@ -203,7 +215,7 @@ test("a thousand draft citations use one query, preserving order and deduplicati
     const spy = vi.spyOn(tx, "select");
     try {
       const result = await citedReadings(tx, [...ids, cited, "bad-id"]);
-      expect(result).toEqual([shown(ids[0]!, "3", "2026-11-12"), ...ids.slice(1, -1).map(missing), shown(cited, "3", "2026-11-12"), missing("bad-id")]);
+      expect(result).toEqual([shown(cited, "3", "2026-11-12"), ...ids.slice(1, -1).map(missing), missing("bad-id")]);
       // One outer SELECT and its NOT EXISTS subquery, independent of citation count.
       expect(spy).toHaveBeenCalledTimes(2);
     } finally {

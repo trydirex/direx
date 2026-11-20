@@ -75,6 +75,12 @@ export const message = (code: string) => ITEM_MESSAGES[code] ?? "That didn't go 
 export const mayApprove = (role: Role) => role === "owner" || role === "admin" || role === "marketer";
 export const mayEdit = (role: Role) => role !== "viewer";
 
+/** Kinds that close only with their own answer; the server refuses to dismiss them (`choice_required`). */
+const OWN_ANSWER = ["opt_out_review", "reply", "company_review", "plan_change"];
+/** Whether "Don't send" or "Dismiss" can withdraw it: still open, its outcome known, and not a kind that needs its own answer. */
+export const mayWithdraw = (i: Pick<Item, "state" | "kind" | "reasonCode">) =>
+  (i.state === "draft" || i.state === "needs_approval" || i.state === "scheduled" || i.state === "held") && i.reasonCode !== "outcome_unknown" && !OWN_ANSWER.includes(i.kind);
+
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 const one = (workspaceId: string, id: string) => ({ path: { workspaceId, id } });
 

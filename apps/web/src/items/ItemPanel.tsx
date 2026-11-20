@@ -10,7 +10,7 @@ import { Button, Key } from "@/components/Button";
 import { Drawer } from "@astryxdesign/core/Drawer";
 import { Input, Textarea } from "@/components/Input";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
-import { addDays, approve, approveLabel, cancel, type detail, itemQuery, ITEM_MESSAGES, mayApprove, mayEdit, message, move, resolveUnknown, resume, STATE_LABEL, type Item, type Reply, type Role } from "./actions";
+import { addDays, approve, approveLabel, cancel, type detail, itemQuery, ITEM_MESSAGES, mayApprove, mayEdit, mayWithdraw, message, move, resolveUnknown, resume, STATE_LABEL, type Item, type Reply, type Role } from "./actions";
 import { CompanyReview, PageLink } from "../prospecting/CompanyReview";
 import { SIGNAL_WORDS, type Review } from "../prospecting/actions";
 import { addHold, eligibility, personHolds, recordWords, releaseHold, warningWords, type EligibilityRecord } from "../outreach/actions";
@@ -467,7 +467,6 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
   const i: Item = d.item;
   const time = typed ?? localInput(i.at);
   const unknown = i.reasonCode === "outcome_unknown";
-  const editable = i.state === "draft" || i.state === "needs_approval" || i.state === "scheduled" || i.state === "held";
   const dismissOnly = i.kind !== "action";
   const touch = i.kind === "action" ? (d.content as { touch?: { personId?: unknown; touchClass?: unknown } } | null)?.touch : undefined;
   const personId = touch?.personId;
@@ -532,7 +531,7 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
     </Button>
   );
 
-  const dontSend = editable && !unknown && i.kind !== "opt_out_review" && i.kind !== "reply" && i.kind !== "company_review" && i.kind !== "plan_change" && mayEdit(p.role) && (
+  const dontSend = mayWithdraw(i) && mayEdit(p.role) && (
     <Button pending={pending} variant="outline" onClick={() => void act(async () => settle(await cancel(p.workspaceId, i.id, opened)))}>
       {dismissOnly ? "Dismiss" : "Don't send"}
     </Button>

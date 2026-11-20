@@ -309,3 +309,37 @@ test("search limits pasted text to 100 characters and explains the limit", async
   expect(input.value).toBe("x".repeat(100));
   await waitFor(() => expect(onFilters).toHaveBeenCalledWith({ q: "x".repeat(100) }));
 });
+
+test("Withdraw leaves out what needs its own answer and what may have gone out, as the open Item does", async () => {
+  serve([
+    {
+      items: [
+        item({ id: "a", state: "draft", title: "Draft one" }),
+        item({ id: "b", state: "needs_approval", kind: "reply", workArea: null, title: "A reply" }),
+        item({ id: "c", state: "needs_approval", kind: "plan_change", workArea: null, title: "A plan change" }),
+        item({ id: "d", state: "held", reasonCode: "outcome_unknown", reason: "not sure it sent", title: "Unsure one" }),
+      ],
+      nextCursor: null,
+    },
+  ]);
+  answer();
+  show();
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Select all shown" }));
+  expect(screen.getByText("4 selected")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Withdraw 1" }));
+  expect(within(openDialog("Withdraw 1?")!).getByRole("list", { name: "To withdraw" }).textContent).toBe("Draft one");
+});
+
+test("a dropped connection while withdrawing says so and reads the list again", async () => {
+  const rows = [item({ id: "a", state: "draft", title: "Draft one" }), item({ id: "b", state: "scheduled", title: "Scheduled one" })];
+  const asked = serve([{ items: rows, nextCursor: null }, { items: rows, nextCursor: null }]);
+  vi.spyOn(api, "POST").mockImplementation(((_path: string, init: { params: { path: { id: string } } }) =>
+    init.params.path.id === "b" ? Promise.reject(new TypeError("Failed to fetch")) : reply(200, { item: item({ id: "a", state: "cancelled" }) })) as never);
+  show();
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Select all shown" }));
+  await userEvent.click(screen.getByRole("button", { name: "Withdraw 2" }));
+  await userEvent.click(within(openDialog("Withdraw 2?")!).getByRole("button", { name: "Withdraw 2" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("We couldn't reach Direx to withdraw them all. Check the list for what changed, then try again.");
+  await waitFor(() => expect(asked).toHaveLength(2));
+  expect(screen.queryByText(/^Withdrew/)).toBeNull();
+});

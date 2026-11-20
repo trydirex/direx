@@ -14,7 +14,7 @@ import { EmptyState, Notice, Page } from "../components/layout";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { campaignsQuery } from "../campaigns/actions";
 import { networksQuery } from "../social/actions";
-import { approveClean, BULK, cancelAll, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
+import { approveClean, BULK, cancelAll, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, mayWithdraw, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
 import type { ItemDialog } from "./ItemPanel";
 import { ApproveList, approvedToast, QueueRow } from "./QueueRow";
 import { StateChip } from "./StateChip";
@@ -23,8 +23,6 @@ const ALL = "";
 const STATES = (Object.entries(STATE_LABEL) as [ItemState, string][]).map(([value, label]) => ({ value, label }));
 const listOf = (s: string | undefined) => (s ? s.split(",") : []);
 const joined = (v: string[]) => (v.length ? v.join(",") : undefined);
-/** The states an Item can still be withdrawn from: an own Item's and the ledger's alike. */
-const WITHDRAWABLE: ItemState[] = ["draft", "needs_approval", "scheduled", "held"];
 
 export function Everything(p: {
   workspaceId: string;
@@ -80,7 +78,8 @@ export function Everything(p: {
   if (kept.length !== chosen.length) setChosen(kept);
   const ticked = items.filter((i) => chosen.includes(i.id));
   const approvable = approver ? ticked.filter((i) => i.state === "needs_approval" && i.clean) : [];
-  const withdrawable = editor ? ticked.filter((i) => WITHDRAWABLE.includes(i.state)) : [];
+  // The same rule as the open Item's "Don't send": a reply or a plan change needs its own answer.
+  const withdrawable = editor ? ticked.filter(mayWithdraw) : [];
   const firstShown = items.slice(0, BULK).map((i) => i.id);
   const allShown = firstShown.length > 0 && firstShown.every((id) => chosen.includes(id));
   const tick = (id: string, on: boolean) => setChosen(on ? (chosen.length < BULK ? [...chosen, id] : chosen) : chosen.filter((c) => c !== id));
@@ -96,10 +95,14 @@ export function Everything(p: {
         approvedToast(p.workspaceId, r.ids, editor, refresh);
         setRefused(r.refused.length > 0 ? `${r.refused.length} didn't go through: ${message(r.refused[0]!.reason)}` : undefined);
       } else {
-        const done = await cancelAll(p.workspaceId, withdrawable.map((i) => i.id));
-        if (done > 0) toast.add({ title: `Withdrew ${done}.` });
-        const late = withdrawable.length - done;
-        setRefused(late > 0 ? `${late} couldn't be withdrawn. They may have gone out already.` : undefined);
+        // A dropped connection rejects partway, after some may have gone through; the refresh below shows which.
+        const done = await cancelAll(p.workspaceId, withdrawable.map((i) => i.id)).catch(() => null);
+        if (done === null) setRefused("We couldn't reach Direx to withdraw them all. Check the list for what changed, then try again.");
+        else {
+          if (done > 0) toast.add({ title: `Withdrew ${done}.` });
+          const late = withdrawable.length - done;
+          setRefused(late > 0 ? `${late} couldn't be withdrawn. They may have gone out already.` : undefined);
+        }
       }
       setChosen([]);
       await refresh();

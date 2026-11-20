@@ -62,7 +62,7 @@ export function authConfigFromEnv(env: Env = process.env, stored: { authSecret?:
 // Mailbox access is a separate consent through the credential vault.
 const NO_TOKENS = { accessToken: null, refreshToken: null, idToken: null };
 
-type Ctx = { path?: string; getCookie?: (name: string) => string | null | undefined } | null | undefined;
+type Ctx = { path?: string; getCookie?: (name: string) => string | null | undefined; context?: { internalAdapter: { countTotalUsers: () => Promise<number> } } } | null | undefined;
 
 /**
  * Why an account was refused, as a 400 with a code. Not 403: email sign-up turns a 403 from this
@@ -85,7 +85,9 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
    * Every new account passes here (DX-R-0024-001). A password sign-up counts as verified because
    * no session exists until the email is confirmed; under a closed policy it needs an invite token
    * (DX-R-0024-004). A Workspace invite token for this email proves the mailbox. A bootstrap token
-   * proves the person runs the server, which is enough to skip the confirmation (DX-R-0024-002).
+   * proves the person runs the server, which skips the confirmation for the server's first account
+   * only (DX-R-0024-002): the token lasts until a claim, and any later account made with it would be
+   * a verified address nobody proved, with a password a mailbox owner's first magic link wouldn't clear.
    */
   async function admitNewUser<U extends { email: string; emailVerified: boolean }>(u: U, ctx: Ctx): Promise<U> {
     const viaPassword = ctx?.path === "/sign-up/email";
@@ -94,7 +96,9 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     if (viaPassword && verdict.via === "policy" && (await admission().status()).policy === "domains") throw refusal({ ok: false, reason: "use_link" });
     // A later magic link deletes the password of an unverified user, which is the takeover
     // defence outside dev. In dev nothing can be verified, so it would only lose the password.
-    const verified = verdict.via === "invite" || verdict.via === "bootstrap" || (cfg.devMode === true && viaPassword);
+    // ponytail: two sign-ups racing on an empty server could both count as first; both need the bootstrap link.
+    const firstAccount = verdict.via === "bootstrap" && (await ctx?.context?.internalAdapter.countTotalUsers()) === 0;
+    const verified = verdict.via === "invite" || firstAccount || (cfg.devMode === true && viaPassword);
     return verified ? { ...u, emailVerified: true } : u;
   }
 

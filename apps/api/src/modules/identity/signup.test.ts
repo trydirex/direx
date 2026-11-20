@@ -179,15 +179,14 @@ test("an invited person signs up by magic link with the held cookie, and then ac
   expect(accepted.status).toBe(200);
 });
 
-test("a bootstrap token lets the first account sign up already verified, with no confirmation mail (DX-R-0024-002)", async () => {
+test("a bootstrap token on a server that already has accounts doesn't skip the confirmation", async () => {
+  await insertAuthUser(crypto.randomUUID());
   const token = randomBytes(32).toString("hex");
   await owner.query("select system.issue_bootstrap_invite($1, now() + interval '1 hour')", [createHash("sha256").update(token).digest("hex")]);
   const email = at("example.com");
-  const res = await signUp(email, token);
-  expect(res.status).toBe(200);
-  expect(((await res.json()) as { user: { emailVerified: boolean } }).user.emailVerified).toBe(true);
-  expect((await signIn(email)).status).toBe(200);
-  expect(mailTo(email)).toEqual([]);
+  expect((await signUp(email, token)).status).toBe(200);
+  expect((await signIn(email)).status).toBe(403);
+  expect(mailTo(email).some((m) => m.subject === "Confirm your email for Direx")).toBe(true);
 });
 
 test("without a token, a password sign-up still confirms its email first", async () => {

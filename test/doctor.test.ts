@@ -51,7 +51,8 @@ test("mail fails when the SMTP server refuses the login, and passes when it acce
     try {
       const mail = production(`smtp://direx:secret@127.0.0.1:${server.port}?ignoreTLS=true`)(MAIL);
       expect(await mail.run(), `accept=${accept}`).toBe(accept);
-      expect(await mail.fix()).toContain("bun apps/api/src/secrets.ts set smtp.url");
+      expect(await mail.fix()).toContain("On a Compose install, run: sh install.sh --mail");
+      expect(await mail.fix()).toContain("printf %s '<SMTP URL>' | bun apps/api/src/secrets.ts set smtp.url");
     } finally {
       server.stop(true);
     }

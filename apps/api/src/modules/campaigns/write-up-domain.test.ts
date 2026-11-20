@@ -71,7 +71,14 @@ test("creditPhrase and claimsWinner catch credit and a winner without a comparis
   expect(claimsWinner("No, email was best, really.", false)).toBe(true);
 });
 
-test.each(["No rates. Email was best.", "No rates; email was best.", "No rates, email was best.", "No rates but email was best."])(
+test.each([
+  "No rates. Email was best.",
+  "No rates; email was best.",
+  "No rates, email was best.",
+  "No rates but email was best.",
+  "No, but after all, email was best.",
+  "No, results differed — separately, email was best.",
+])(
   "writeUpProblem refuses a winner after a separate negation: %j",
   (paragraph) => {
     expect(writeUpProblem({ ...ok, paragraph }, brief)).toBe("winner_without_comparison");

@@ -215,6 +215,36 @@ test("a Workspace's own app is used over Direx's, and only in that Workspace", a
   expect(await clientOf(b)).toBe("direx-app");
 });
 
+test("adding or removing a Workspace's own app asks its connected accounts to reconnect; a new secret doesn't", async () => {
+  const s = setup();
+  const { ws, owner } = await newWorkspace();
+  const other = await newWorkspace();
+  const c = await connected(s, ws, owner);
+  const elsewhere = await connected(s, other.ws, other.owner);
+  const statusOf = async (w: string, id: string) => (await s.vault.find(w, id))?.status;
+
+  const app = await s.vault.create({ workspaceId: ws, actorUserId: owner, scope: "workspace", kind: "basic", key: "oauth_app:net", name: "Our app", meta: { username: "own-app" }, value: { password: "own-secret" } });
+  if (!app.ok) throw new Error(app.reason);
+  expect(await statusOf(ws, c.id)).toBe("needs_reauth");
+  expect(await statusOf(other.ws, elsewhere.id)).toBe("active");
+
+  await connected(s, ws, owner);
+  expect(await statusOf(ws, c.id)).toBe("active");
+  expect((await s.vault.rotate({ workspaceId: ws, id: app.credential.id, version: app.credential.version, value: { password: "new-secret" }, actorUserId: owner })).ok).toBe(true);
+  expect(await statusOf(ws, c.id)).toBe("active");
+
+  await s.vault.remove({ workspaceId: ws, id: app.credential.id, actorUserId: owner });
+  expect(await statusOf(ws, c.id)).toBe("needs_reauth");
+});
+
+test("a person's own secret named like an app leaves connected accounts alone", async () => {
+  const s = setup();
+  const { ws, owner } = await newWorkspace();
+  const c = await connected(s, ws, owner);
+  await s.vault.create({ workspaceId: ws, actorUserId: owner, scope: "user", kind: "basic", key: "oauth_app:net", name: "x", meta: { username: "mine" }, value: { password: "p" } });
+  expect((await s.vault.find(ws, c.id))?.status).toBe("active");
+});
+
 test("another person's own secret with that key is not an app", async () => {
   const s = setup({ system: false });
   const { ws, owner } = await newWorkspace();

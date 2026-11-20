@@ -156,6 +156,22 @@ export async function updateLive(
   return row ?? null;
 }
 
+/** Every live, active token for one connection in this Workspace now needs a person to reconnect it. */
+export async function markConnectionNeedsReauth(tx: WorkspaceTx, workspaceId: string, connection: string, at: Date) {
+  await tx
+    .update(credentials)
+    .set({ status: "needs_reauth", updatedAt: at, version: sql`${credentials.version} + 1` })
+    .where(
+      and(
+        eq(credentials.workspaceId, workspaceId),
+        eq(credentials.connection, connection),
+        eq(credentials.kind, "oauth2"),
+        eq(credentials.status, "active"),
+        isNull(credentials.deletedAt),
+      ),
+    );
+}
+
 export async function touchUsed(tx: WorkspaceTx, workspaceId: string, id: string, at: Date) {
   await tx
     .update(credentials)

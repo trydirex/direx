@@ -33,6 +33,7 @@ const account = (over: Partial<Account> = {}): Account => ({
   lastCheckedAt: null,
   warning: null,
   canDo: [{ feature: "publish", status: "available" }],
+  ownAppLimits: [],
   health: { budget: { posts: 3, replies: 4, links: 2 }, used: { posts: 1, links: 0 }, paused: null },
   runBy: null,
   angle: null,
@@ -224,6 +225,15 @@ test("each account's Disconnect names the account, so two rows can be told apart
   open();
   expect(await screen.findByRole("button", { name: "Disconnect Acme Page" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Disconnect Beta Page" })).toBeTruthy();
+});
+
+test("what the Workspace's own app can't do yet shows as lines under the can do line, and nothing shows when there is none", async () => {
+  serve({ accounts: [account({ ownAppLimits: ["Only testers can connect.", "Posts stay private."] }), account({ id: "a2", credentialId: "c2", name: "Beta Page" })] });
+  open();
+  const card = within((await screen.findByRole("heading", { name: "Acme Page" })).closest("li")!);
+  expect(card.getByRole("list").textContent).toBe("Only testers can connect.Posts stay private.");
+  const other = within(screen.getByRole("heading", { name: "Beta Page" }).closest("li")!);
+  expect(other.queryByRole("list")).toBeNull();
 });
 
 test("each account is one card: its network, name and one health chip, then one line of what it can do today", async () => {

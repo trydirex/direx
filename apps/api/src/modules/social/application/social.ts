@@ -118,6 +118,7 @@ export function createSocial(deps: SocialDeps) {
             lastCheckedAt: r.lastCheckedAt,
             warning: expiryWarning(endsAt, at),
             canDo: (n?.features ?? []).map((f) => ({ feature: f.key, status: canDo(f, meta.scopes ?? [], own) })),
+            ownAppLimits: own ? [...(n?.ownAppLimits ?? [])] : [],
             health,
             runBy: r.runBy,
             angle: r.angle,

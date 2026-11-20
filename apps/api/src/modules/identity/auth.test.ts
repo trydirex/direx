@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Sign-in (I1 to I3), the SMTP adapter and the startup refusal.
 import { expect, test } from "vitest";
-import { authConfigFromEnv, createIdentity, logMailer, smtpMailer } from "./index";
+import { authConfigFromEnv, createIdentity, logMailer, selfHostAdmission, smtpMailer, type Admission } from "./index";
 import { trustedProxiesFromEnv } from "./adapters/auth";
 import { TEST_SECRET, testIdentity } from "./test-auth";
 
@@ -24,9 +24,23 @@ test("I1: without a cookie, /api/me is 401", async () => {
 test("I2: the sign-in page learns which providers this server is set up for, without signing in", async () => {
   const res = await routes.request("/api/sign-in-options");
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ google: true, microsoft: true });
+  // The shared test database has accounts, so firstRun is null.
+  expect(await res.json()).toEqual({ google: true, microsoft: true, firstRun: null });
   const bare = createIdentity(() => ({ baseURL: "http://localhost:3000", secret: TEST_SECRET, devMode: true, mailer: logMailer([]) }));
-  expect(await (await bare.routes.request("/api/sign-in-options")).json()).toEqual({ google: false, microsoft: false });
+  expect(await (await bare.routes.request("/api/sign-in-options")).json()).toEqual({ google: false, microsoft: false, firstRun: null });
+});
+
+test("I2: a new server's sign-in options say so, and an Admission without firstRun says nothing", async () => {
+  const config = () => ({ baseURL: "http://localhost:3000", secret: TEST_SECRET, devMode: false, mailer: logMailer([]) });
+  const fresh = createIdentity(config, () => selfHostAdmission({ devMode: false, hasAccounts: async () => false }));
+  expect(await (await fresh.routes.request("/api/sign-in-options")).json()).toEqual({ google: false, microsoft: false, firstRun: "needs_link" });
+  const cloudLike: Admission = {
+    admit: async () => ({ ok: true, via: "open" }),
+    canCreateOrganization: async () => false,
+    status: async () => ({ claimed: false, policy: "invite_only", domains: [] }),
+  };
+  const cloud = createIdentity(config, () => cloudLike);
+  expect(await (await cloud.routes.request("/api/sign-in-options")).json()).toEqual({ google: false, microsoft: false, firstRun: null });
 });
 
 test.each([

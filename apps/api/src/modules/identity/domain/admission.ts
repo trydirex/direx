@@ -23,8 +23,16 @@ export type AdmitInput = {
   token?: string | null;
 };
 
+/**
+ * What a new server's sign-in page should offer, null once any account exists: `sign_up` where
+ * anyone may sign up (dev and test), `needs_link` where only the bootstrap link gets in.
+ */
+export type FirstRun = "sign_up" | "needs_link" | null;
+
 export type Admission = {
   admit(input: AdmitInput): Promise<AdmitResult>;
   canCreateOrganization(userId: string): Promise<boolean>;
   status(): Promise<ServerStatus>;
+  /** Optional, so an Admission that leaves it out (cloud's) keeps today's sign-in page. */
+  firstRun?(): Promise<FirstRun>;
 };

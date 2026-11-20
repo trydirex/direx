@@ -32,6 +32,7 @@ const DeletedWorkspaces = lazyRouteComponent(() => import("./settings/DeletedWor
 const Setup = lazyRouteComponent(() => import("./setup/Setup"), "Setup");
 const Members = lazyRouteComponent(() => import("./identity/Members"), "Members");
 const Calendar = lazyRouteComponent(() => import("./items/Calendar"), "Calendar");
+const Everything = lazyRouteComponent(() => import("./items/Everything"), "Everything");
 const Home = lazyRouteComponent(() => import("./items/Home"), "Home");
 const Review = lazyRouteComponent(() => import("./items/Review"), "Review");
 const Models = lazyRouteComponent(() => import("./models/Models"), "Models");
@@ -366,6 +367,37 @@ const calendarRoute = createRoute({
         filters={filters}
         // A filter change replaces the entry, so Back leaves the Calendar rather than undoing clicks.
         onFilters={(f) => void navigate({ search: (s) => ({ ...s, ...f }), replace: true })}
+      />
+    );
+  },
+});
+const everythingRoute = createRoute({
+  getParentRoute: () => workspaceRoute,
+  loader: preloading(Everything),
+  path: "everything",
+  // The filters and the open Item, so reload, Back and a shared link keep the view.
+  validateSearch: (s: Record<string, unknown>): { item?: string; state?: string; channel?: string; type?: string; campaign?: string; q?: string } => ({
+    item: str(s.item),
+    state: str(s.state),
+    channel: str(s.channel),
+    type: str(s.type),
+    campaign: str(s.campaign),
+    q: str(s.q),
+  }),
+  component: function EverythingRoute() {
+    const w = useWorkspace();
+    const navigate = everythingRoute.useNavigate();
+    const { item, ...filters } = everythingRoute.useSearch();
+    return (
+      <Everything
+        workspaceId={w.workspaceId}
+        role={w.role}
+        ItemView={ItemDialog}
+        filters={filters}
+        // A filter change replaces the entry, so Back leaves the screen rather than undoing each pick.
+        onFilters={(f) => void navigate({ search: (s) => ({ ...s, ...f }), replace: true })}
+        item={item}
+        onItem={(id) => void navigate({ search: (s) => ({ ...s, item: id }) })}
       />
     );
   },
@@ -741,6 +773,7 @@ export const routeTree = rootRoute.addChildren([
       reviewRoute,
       reviewItemRoute,
       calendarRoute,
+      everythingRoute,
       plansRoute,
       planRoute,
       campaignsRoute,

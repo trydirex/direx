@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The Item calls the pages make, and the rules for showing them. Each change returns the
 // API's error code, or null when it worked.
-import { queryOptions, useQueries } from "@tanstack/react-query";
+import { infiniteQueryOptions, queryOptions, useQueries } from "@tanstack/react-query";
 import type { components } from "../api/schema";
 import { call, inWorkspace } from "../api/query";
 import { api } from "../client";
@@ -46,6 +46,11 @@ const KIND_LABEL: Record<string, string> = {
   manual_post: "Post",
 };
 const ACTION_LABEL: Record<string, string> = { outreach: "Email", newsletter: "Newsletter", social: "Post" };
+
+/** Each name `kindLabel` gives, with the kinds and work areas behind it, as the list's `type` filter takes them. */
+export const TYPES: [label: string, keys: string[]][] = Object.entries(
+  [...Object.entries(KIND_LABEL), ...Object.entries(ACTION_LABEL)].reduce<Record<string, string[]>>((by, [key, label]) => ({ ...by, [label]: [...(by[label] ?? []), key] }), {}),
+).sort(([a], [b]) => a.localeCompare(b));
 
 /** Whether approving the Item sends or posts something (an email, post, issue or DM); everything else on Home is a decision. */
 export const toApprove = (i: Pick<Item, "kind">) => i.kind === "action";
@@ -187,6 +192,18 @@ export const rangeQuery = (workspaceId: string, start: Date, days: number) =>
       ]);
       return { ...read, launching: launches.launches };
     },
+  });
+
+/** Everything's filters as the list API takes them: comma lists for state, channel and type. */
+export type ListFilters = { state?: string | undefined; channel?: string | undefined; type?: string | undefined; campaign?: string | undefined; q?: string | undefined };
+
+/** Every Item these filters match, newest first, 100 a page; each next page starts after the last row. */
+export const everythingQuery = (workspaceId: string, f: ListFilters) =>
+  infiniteQueryOptions({
+    queryKey: inWorkspace(workspaceId, "items", "everything", f),
+    queryFn: ({ pageParam }) => call(api.GET("/api/w/{workspaceId}/items", { params: { ...at(workspaceId), query: { ...f, limit: 100, ...(pageParam && { cursor: pageParam }) } } })),
+    initialPageParam: "",
+    getNextPageParam: (page) => page.nextCursor,
   });
 
 /** Steps a running Campaign's plan dates in `days` days from `start` that nothing has been drafted for yet. */

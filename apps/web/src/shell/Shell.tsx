@@ -6,7 +6,7 @@
 import "@/astryx.css";
 import { AstryxProvider } from "@/components/astryx";
 import { useState, type ComponentProps, type ComponentType, type ReactNode } from "react";
-import { CalendarIcon, InboxIcon, MegaphoneIcon, SettingsIcon, SparklesIcon, UsersIcon } from "lucide-react";
+import { CalendarIcon, InboxIcon, ListIcon, MegaphoneIcon, SettingsIcon, SparklesIcon, UsersIcon } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { signOut } from "@/identity/auth";
@@ -27,13 +27,13 @@ import { CommandPalette } from "./CommandPalette";
 import { CommandsProvider } from "./commands";
 import { deletedWorkspacesQuery, meQuery, type MyWorkspace } from "./session";
 
-type Section = "home" | "calendar" | "campaigns" | "people" | "brand" | "settings";
+type Section = "home" | "calendar" | "everything" | "campaigns" | "people" | "brand" | "settings";
 
 /** Which nav item a path inside a Workspace belongs to. Newsletter and SEO are Campaign work, and a plan's old link leads to its Campaign. */
 export function sectionOf(pathname: string): Section {
   const first = pathname.split("/")[3] ?? "";
   if (first === "newsletter" || first === "seo" || first === "plans") return "campaigns";
-  return (["calendar", "campaigns", "people", "brand", "settings"] as const).find((s) => s === first) ?? "home";
+  return (["calendar", "everything", "campaigns", "people", "brand", "settings"] as const).find((s) => s === first) ?? "home";
 }
 
 // The count of what needs you, the same pill in the rail and in the phone menu.
@@ -44,10 +44,11 @@ const railLink = "relative flex w-16 flex-col items-center gap-0.5 rounded-contr
 
 const item = "flex min-h-9 items-center rounded-control px-3 text-muted-foreground no-underline hover:bg-accent hover:text-foreground aria-[current=page]:bg-primary-tint aria-[current=page]:text-primary";
 
-type Dest = { section: Section; to: "/w/$workspaceId" | "/w/$workspaceId/calendar" | "/w/$workspaceId/campaigns" | "/w/$workspaceId/people" | "/w/$workspaceId/brand" | "/w/$workspaceId/settings"; label: string; Icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }> };
+type Dest = { section: Section; to: "/w/$workspaceId" | "/w/$workspaceId/calendar" | "/w/$workspaceId/everything" | "/w/$workspaceId/campaigns" | "/w/$workspaceId/people" | "/w/$workspaceId/brand" | "/w/$workspaceId/settings"; label: string; Icon: ComponentType<{ className?: string; "aria-hidden"?: boolean }> };
 const MAIN: Dest[] = [
   { section: "home", to: "/w/$workspaceId", label: "Home", Icon: InboxIcon },
   { section: "calendar", to: "/w/$workspaceId/calendar", label: "Calendar", Icon: CalendarIcon },
+  { section: "everything", to: "/w/$workspaceId/everything", label: "Everything", Icon: ListIcon },
   { section: "campaigns", to: "/w/$workspaceId/campaigns", label: "Campaigns", Icon: MegaphoneIcon },
   { section: "people", to: "/w/$workspaceId/people", label: "Audience", Icon: UsersIcon },
 ];
@@ -140,6 +141,9 @@ export function Shell(p: { workspaces: MyWorkspace[]; current: MyWorkspace; Sear
         </Link>
         <Link to="/w/$workspaceId/calendar" params={params} className={item} aria-current={current("calendar")} onClick={() => setMenu(false)}>
           Calendar
+        </Link>
+        <Link to="/w/$workspaceId/everything" params={params} className={item} aria-current={current("everything")} onClick={() => setMenu(false)}>
+          Everything
         </Link>
         <Link to="/w/$workspaceId/campaigns" params={params} className={item} aria-current={current("campaigns")} onClick={() => setMenu(false)}>
           Campaigns

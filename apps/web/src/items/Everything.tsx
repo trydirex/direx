@@ -49,6 +49,7 @@ export function Everything(p: {
   // Back, a link or Clear filters can change the words from outside; the box follows.
   const [shownQ, setShownQ] = useState(f.q);
   if (f.q !== shownQ) {
+    clearTimeout(wait.current);
     setShownQ(f.q);
     if ((f.q ?? "") !== words.trim()) setWords(f.q ?? "");
   }

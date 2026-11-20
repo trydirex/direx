@@ -14,6 +14,9 @@ export const planCitations = (b: PlanBody): Citation[] => cited(b.measures.map((
 const readingsCited = (bases: Basis[]): string[] => bases.flatMap((b) => (b.kind === "reading" ? [b.readingId] : []));
 export const strategyReadings = (b: StrategyBody): string[] => readingsCited(b.channels.map((c) => c.basis));
 export const planReadings = (b: PlanBody): string[] => readingsCited(b.measures.map((m) => m.basis));
+/** The reading ids a draft's measures or channels cite. A draft can be any shape until it is submitted, so this reads leniently. */
+export const draftReadings = (rows: unknown): string[] =>
+  Array.isArray(rows) ? rows.flatMap((r: { basis?: { kind?: unknown; readingId?: unknown } } | null) => (r?.basis?.kind === "reading" && typeof r.basis.readingId === "string" ? [r.basis.readingId] : [])) : [];
 
 // A reading citation stands only while it is still the newest reading for its Measure, on another plan.
 // A Strategy is drafted for no plan, so it passes null and any plan's newest reading may stand.

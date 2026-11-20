@@ -29,8 +29,22 @@ const lineKey = z.string().regex(/^[a-z0-9_-]{1,64}$/);
 const Missing = z.array(z.object({ path: z.string(), message: z.string() }));
 const Waiting = z.object({ id: z.uuid(), revision: z.number(), version: z.number(), warnings: z.array(z.string()) }).nullable();
 const Version = z.object({ version: z.number(), baseVersion: z.number().nullable(), body: z.any(), actorUserId: z.string(), at: z.iso.datetime() }).openapi("PlanVersionRow");
+// What a cited reading says, for its label. An id this Workspace doesn't have is found: false, with nulls.
+const CitedReading = z
+  .object({ id: z.string(), found: z.boolean(), measureLabel: z.string().nullable(), value: z.string().nullable(), source: z.enum(["person", "system"]).nullable(), observedOn: z.string().nullable(), newer: z.boolean() })
+  .openapi("CitedReading");
 const Strategy = z
-  .object({ id: z.uuid().nullable(), currentVersion: z.number().nullable(), current: z.any(), draft: z.any(), draftRevision: z.number(), missing: Missing, waiting: Waiting })
+  .object({
+    id: z.uuid().nullable(),
+    currentVersion: z.number().nullable(),
+    current: z.any(),
+    draft: z.any(),
+    draftRevision: z.number(),
+    missing: Missing,
+    waiting: Waiting,
+    notes: z.array(z.object({ kind: z.literal("reading_changed"), readingId: z.string() })),
+    citedReadings: z.array(CitedReading),
+  })
   .openapi("Strategy");
 const PlanSummary = z.object({ id: z.uuid(), title: z.string(), request: z.string().nullable(), currentVersion: z.number().nullable() }).openapi("PlanSummary");
 // A plan's row in the list: dates, first measure and channels from its approved version, all empty for a draft.
@@ -49,7 +63,8 @@ const Plan = PlanSummary.extend({
   missing: Missing,
   waiting: Waiting,
   tracking: z.any(),
-  notes: z.array(z.object({ kind: z.enum(["strategy_changed", "fact_changed"]), factId: z.string().optional() })),
+  notes: z.array(z.object({ kind: z.enum(["strategy_changed", "fact_changed", "reading_changed"]), factId: z.string().optional(), readingId: z.string().optional() })),
+  citedReadings: z.array(CitedReading),
 }).openapi("Plan");
 const Saved = z.object({ revision: z.number(), missing: Missing }).openapi("PlanDraftSaved");
 const Submitted = z.object({ version: z.number(), itemId: z.uuid() }).openapi("PlanSubmitted");
@@ -157,7 +172,7 @@ export function planRoutes({ plans, startDraft }: { plans: () => Plans; startDra
     .openapi(planRoute, async (c) => {
       const p = await plans().plan(c.get("member").workspaceId, c.req.valid("param").id);
       if (!p) return c.json({ error: "not_found" }, 404);
-      return c.json({ ...asSummary(p), archived: p.archivedAt !== null, current: p.current, draft: p.draft, draftRevision: p.draftRevision, strategyVersion: p.strategyVersion, missing: p.missing, waiting: p.waiting, tracking: p.tracking, notes: p.notes }, 200);
+      return c.json({ ...asSummary(p), archived: p.archivedAt !== null, current: p.current, draft: p.draft, draftRevision: p.draftRevision, strategyVersion: p.strategyVersion, missing: p.missing, waiting: p.waiting, tracking: p.tracking, notes: p.notes, citedReadings: p.citedReadings }, 200);
     })
     .openapi(planVersionsRoute, async (c) => {
       const rows = await plans().planVersions(c.get("member").workspaceId, c.req.valid("param").id);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // One marketing plan per campaign. Each version pins the Strategy version it was built on, and a
 // plan can't be submitted until the Workspace has an approved Strategy.
+import { z } from "zod";
 import type { Facts } from "../../facts";
 import type { Items } from "../../items";
 import {
@@ -14,6 +15,7 @@ import {
   planVersionsOf,
   progressOf,
   readingsOf,
+  readingStanding,
   readPlan,
   readPlanVersion,
   readStrategy,
@@ -21,7 +23,7 @@ import {
   setPlanDraft,
   type PlansTx,
 } from "../adapters/repo";
-import { planCitations, planText, stepsOffStrategy } from "../domain/labels";
+import { draftReadings, planCitations, planReadings, planText, stepsOffStrategy } from "../domain/labels";
 import { listFields, tracking } from "../domain/tracking";
 import type { PlanBody, StrategyBody } from "../domain/types";
 import { planBody, whatsMissing } from "./body";
@@ -33,15 +35,41 @@ import { digestOf, itemForVersion, PLAN_KIND, waitingItem, type Person } from ".
  */
 export type OnPlanCreated = (tx: PlansTx, p: { workspaceId: string; planId: string; createdBy: string; at: Date }) => Promise<void>;
 
+/**
+ * What each cited reading says, so a person reads words instead of an id. An id this Workspace doesn't
+ * have, which a body typed by hand can name, comes back not found. The label is the Measure's in the
+ * reading's plan as approved now, or its key when that version no longer has it.
+ */
+export async function citedReadings(tx: PlansTx, ids: string[]) {
+  const out = [];
+  for (const id of new Set(ids)) {
+    const r = z.uuid().safeParse(id).success ? await readingStanding(tx, id) : null;
+    if (!r) {
+      out.push({ id, found: false, measureLabel: null, value: null, source: null, observedOn: null, newer: false });
+      continue;
+    }
+    const plan = await readPlan(tx, r.planId);
+    const v = plan?.currentVersion == null ? undefined : await readPlanVersion(tx, r.planId, plan.currentVersion);
+    const measureLabel = (v?.body as PlanBody | undefined)?.measures.find((m) => m.key === r.measureKey)?.label ?? r.measureKey;
+    out.push({ id, found: true, measureLabel, value: r.value, source: r.source, observedOn: r.observedOn, newer: !r.isNewest });
+  }
+  return out;
+}
+export type CitedReading = Awaited<ReturnType<typeof citedReadings>>[number];
+
+/** A note for each reading the version cites that a newer one for its Measure has replaced. */
+export const readingNotes = (ids: string[], cited: CitedReading[]) =>
+  cited.filter((c) => c.newer && ids.includes(c.id)).map((c) => ({ kind: "reading_changed" as const, readingId: c.id }));
+
 export function planStore({ items, facts, now, onPlanCreated }: { items: () => Items; facts: Facts; now: () => Date; onPlanCreated: OnPlanCreated }) {
   /** What has moved under a plan since it was approved. Notes only: a plan has no effect to hold. */
-  async function notesFor(workspaceId: string, body: PlanBody, pinned: number, strategyCurrent: number | null) {
-    const notes: { kind: "strategy_changed" | "fact_changed"; factId?: string }[] = [];
+  async function notesFor(workspaceId: string, body: PlanBody, pinned: number, strategyCurrent: number | null, cited: CitedReading[]) {
+    const notes: { kind: "strategy_changed" | "fact_changed" | "reading_changed"; factId?: string; readingId?: string }[] = [];
     if (strategyCurrent !== pinned) notes.push({ kind: "strategy_changed" });
     for (const c of planCitations(body)) {
       if ((await facts.checkCitation(workspaceId, c.factId, c.version)) !== "ok") notes.push({ kind: "fact_changed", factId: c.factId });
     }
-    return notes;
+    return [...notes, ...readingNotes(planReadings(body), cited)];
   }
 
   return {
@@ -74,7 +102,8 @@ export function planStore({ items, facts, now, onPlanCreated }: { items: () => I
         if (!row) return undefined;
         const current = row.currentVersion === null ? undefined : await readPlanVersion(tx, id, row.currentVersion);
         const strategy = await readStrategy(tx);
-        return { row, current, strategyCurrent: strategy?.currentVersion ?? null, progress: await progressOf(tx, id), readings: await readingsOf(tx, id) };
+        const cited = await citedReadings(tx, [...(current ? planReadings(current.body as PlanBody) : []), ...draftReadings((row.draft as { measures?: unknown } | null)?.measures)]);
+        return { row, current, strategyCurrent: strategy?.currentVersion ?? null, progress: await progressOf(tx, id), readings: await readingsOf(tx, id), cited };
       });
       if (!read) return undefined;
       const body = read.current?.body as PlanBody | undefined;
@@ -85,7 +114,8 @@ export function planStore({ items, facts, now, onPlanCreated }: { items: () => I
         current: body ?? null,
         strategyVersion: read.current?.strategyVersion ?? null,
         tracking: body ? tracking(body, read.progress, read.readings) : null,
-        notes: body ? await notesFor(workspaceId, body, read.current!.strategyVersion, read.strategyCurrent) : [],
+        notes: body ? await notesFor(workspaceId, body, read.current!.strategyVersion, read.strategyCurrent, read.cited) : [],
+        citedReadings: read.cited,
       };
     },
 

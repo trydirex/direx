@@ -29,6 +29,41 @@ test("reads a 10,000 member list completely across pages", async () => {
   expect(mc.calls).toHaveLength(10);
 });
 
+test.each([
+  '{"members":',
+  '{"total_items":0}',
+  '{"members":[]}',
+  '{"members":[],"total_items":null}',
+  '{"members":[],"total_items":-1}',
+  '{"members":[],"total_items":"2"}',
+  '{"members":{},"total_items":0}',
+  '{"members":[],"total_items":2}',
+])("rejects an invalid second member page: %s", async (body) => {
+  const mc = createFakeMailchimp({ lists: [{ id: "a1b2c3d4e5", name: "Founders", members: members(2) }] });
+  const fetchPage = (async (input: string, init?: RequestInit) =>
+    new URL(input).searchParams.get("offset") === "1" ? new Response(body) : mc.fetch(input, init)) as typeof fetch;
+  const plugin = createMailchimpPlugin({ fetch: fetchPage, pageSize: 1 });
+  const input = { listId: "a1b2c3d4e5" };
+  const first = await query(plugin, "newsletter.subscribers", input, mc.key) as { nextCursor: string };
+  expect(first.nextCursor).toBe("1");
+  await expect(query(plugin, "newsletter.subscribers", { ...input, cursor: first.nextCursor }, mc.key)).rejects.toMatchObject({ reason: "provider_error" });
+});
+
+test("accepts a valid empty member page", async () => {
+  const mc = createFakeMailchimp();
+  await expect(query(createMailchimpPlugin({ fetch: mc.fetch }), "newsletter.subscribers", {}, mc.key)).resolves.toEqual({
+    subscribers: [],
+    nextCursor: null,
+  });
+});
+
+test.each(["2", "3"])("accepts an empty member page at offset %s when the total is 2", async (cursor) => {
+  const mc = createFakeMailchimp({ lists: [{ id: "a1b2c3d4e5", name: "Founders", members: members(2) }] });
+  const plugin = createMailchimpPlugin({ fetch: mc.fetch });
+  await expect(query(plugin, "newsletter.subscribers", { listId: "a1b2c3d4e5", cursor }, mc.key))
+    .resolves.toEqual({ subscribers: [], nextCursor: null });
+});
+
 test("maps Mailchimp's states, lower-cases emails, and dates a member by opt-in, then signup, then last change", async () => {
   const mc = createFakeMailchimp({
     lists: [
@@ -91,6 +126,36 @@ test("lists name every list in the account with its subscriber count", async () 
     { id: "aaaa111111", name: "Founders", subscriberCount: 3 },
     { id: "bbbb222222", name: "Customers", subscriberCount: 2 },
   ]);
+});
+
+test("reads all 1,001 audiences and includes the final one in the account profile", async () => {
+  const lists = Array.from({ length: 1_001 }, (_, i) => ({ id: `list${i}`, name: `Audience ${i}`, members: members(i === 1_000 ? 2 : 1) }));
+  const mc = createFakeMailchimp({ lists });
+  const plugin = createMailchimpPlugin({ fetch: mc.fetch });
+  expect(await query(plugin, "newsletter.lists", null, mc.key)).toEqual(lists.map(({ id, name, members }) => ({ id, name, subscriberCount: members.length })));
+  expect(await query(plugin, "newsletter.profile", null, mc.key)).toEqual({ listName: "Mailchimp", subscriberCount: 1_002, canSend: true });
+  expect(mc.calls).toEqual(Array.from({ length: 2 }, () => [
+    "GET /3.0/lists?count=1000&offset=0",
+    "GET /3.0/lists?count=1000&offset=1000",
+  ]).flat());
+});
+
+test.each([
+  ['{"lists":', "unreadable"],
+  ['{"lists":[],"total_items":null}', "unreadable"],
+  ['{"lists":[],"total_items":1}', "incomplete"],
+])("rejects a broken audience page: %s", async (body, error) => {
+  const mc = createFakeMailchimp();
+  const fetchPage = Object.assign(async () => new Response(body), { preconnect: fetch.preconnect });
+  await expect(query(createMailchimpPlugin({ fetch: fetchPage }), "newsletter.lists", null, mc.key))
+    .rejects.toThrow(`Mailchimp returned an ${error} list page`);
+});
+
+test("accepts an audience page without the optional total", async () => {
+  const mc = createFakeMailchimp();
+  const fetchPage = Object.assign(async () => Response.json({ lists: [{ id: "a1b2c3d4e5", name: "Founders" }] }), { preconnect: fetch.preconnect });
+  await expect(query(createMailchimpPlugin({ fetch: fetchPage }), "newsletter.lists", null, mc.key))
+    .resolves.toEqual([{ id: "a1b2c3d4e5", name: "Founders", subscriberCount: 0 }]);
 });
 
 test("stats map Mailchimp's report, and a bad id never reaches Mailchimp", async () => {

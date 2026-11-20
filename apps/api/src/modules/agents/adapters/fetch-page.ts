@@ -76,7 +76,7 @@ export function sameSite(base: URL, target: URL): boolean {
   return t === b || t.endsWith(`.${b}`);
 }
 
-export type PageFailure = "bad_address" | "other_site" | "private_address" | "no_address" | "too_many_redirects" | "not_text" | "too_large" | "timed_out" | "bad_certificate" | "unreachable" | "http_error";
+export type PageFailure = "robots_disallowed" | "bad_address" | "other_site" | "private_address" | "no_address" | "too_many_redirects" | "not_text" | "too_large" | "timed_out" | "bad_certificate" | "unreachable" | "http_error";
 export type PageResult = { ok: true; url: string; text: string; truncated: boolean; links?: string[] } | { ok: false; url: string; reason: PageFailure };
 /** `base` is the address the person gave; `url` is the page wanted, on that site. */
 export type FetchPage = (base: string, url: string, signal?: AbortSignal) => Promise<PageResult>;
@@ -206,7 +206,8 @@ export function createFetchSitemap(deps: Deps = {}): FetchSitemap {
 
 /** `status` is set on an `http_error`, so a caller can tell a missing robots.txt from a refused one. */
 export type HtmlResult = { ok: true; url: string; status: number; html: string; truncated: boolean } | { ok: false; url: string; reason: PageFailure; status?: number };
-export type FetchHtml = (base: string, url: string, signal?: AbortSignal) => Promise<HtmlResult>;
+type MayFollow = (destination: URL) => Promise<boolean>;
+export type FetchHtml = (base: string, url: string, signal?: AbortSignal, mayFollow?: MayFollow) => Promise<HtmlResult>;
 
 /**
  * A page's HTML for code to read, such as the addresses in its mailto: links, which the text a model
@@ -216,8 +217,8 @@ export type FetchHtml = (base: string, url: string, signal?: AbortSignal) => Pro
  */
 export function createFetchHtml({ maxChars = MAX_HTML_CHARS, ...deps }: Deps & { maxChars?: number } = {}): FetchHtml {
   const fetchBody = createFetchBody(deps);
-  return async (base, url, outer) => {
-    const got = await fetchBody(base, url, outer, isText);
+  return async (base, url, outer, mayFollow) => {
+    const got = await fetchBody(base, url, outer, isText, MAX_BYTES, MAX_REDIRECTS, mayFollow);
     if (!got.ok) return got;
     return { ok: true, url: got.url, status: got.status, html: got.body.slice(0, maxChars), truncated: got.body.length > maxChars };
   };
@@ -277,8 +278,19 @@ export function createFetchJson(deps: Deps = {}): FetchJson {
   };
 }
 
+async function resolveBeforeAbort(resolve: Resolve, host: string, signal: AbortSignal) {
+  const { promise, reject } = Promise.withResolvers<never>();
+  const abort = () => reject(signal.reason);
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    return await Promise.race([promise, resolve(host).catch(() => [])]);
+  } finally {
+    signal.removeEventListener("abort", abort);
+  }
+}
+
 function createFetchBody({ resolve = systemResolve, request = pinnedRequest }: Deps) {
-  return async (base: string, url: string, outer: AbortSignal | undefined, accepts: (type: string) => boolean, maxBytes = MAX_BYTES, redirects = MAX_REDIRECTS): Promise<Fetched> => {
+  return async (base: string, url: string, outer: AbortSignal | undefined, accepts: (type: string) => boolean, maxBytes = MAX_BYTES, redirects = MAX_REDIRECTS, mayFollow?: MayFollow): Promise<Fetched> => {
     const signal = AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), ...(outer ? [outer] : [])]);
     const fail = (reason: PageFailure): Fetched => ({ ok: false, url, reason });
     let baseUrl: URL;
@@ -296,11 +308,15 @@ function createFetchBody({ resolve = systemResolve, request = pinnedRequest }: D
         if (current.username || current.password) return fail("bad_address");
         if (!sameSite(baseUrl, current)) return fail("other_site");
 
+        signal.throwIfAborted();
         const host = current.hostname.replace(/^\[|\]$/g, "");
-        const answers = isIP(host) ? [{ address: host }] : await resolve(host).catch(() => []);
+        const answers = isIP(host) ? [{ address: host }] : await resolveBeforeAbort(resolve, host, signal);
         if (answers.length === 0) return fail("no_address");
         if (!answers.every((a) => isPublicAddress(a.address))) return fail("private_address");
 
+        signal.throwIfAborted();
+        if (hop > 0 && mayFollow && !(await mayFollow(current))) return fail("robots_disallowed");
+        signal.throwIfAborted();
         const res = await request(current, answers[0]!.address, signal);
         if (res.status >= 300 && res.status < 400) {
           await res.body?.cancel();

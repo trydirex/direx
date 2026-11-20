@@ -145,7 +145,8 @@ function DraftView(p: { d: PlanBody; facts: Fact[]; cited: CitedReading[] }) {
         {d.measures.map((m) => (
           <li key={m.key}>
             {m.label}: {m.target}
-            {countedFrom(m.source) && `, counted by Direx from ${countedFrom(m.source)}`} <small className="text-sm text-muted-foreground">{basisLabel(m.basis, factValue, p.cited)}</small>
+            {countedFrom(m.source) && `, counted by Direx from ${countedFrom(m.source)}`}
+            {m.basis && <> <small className="text-sm text-muted-foreground">{basisLabel(m.basis, factValue, p.cited)}</small></>}
           </li>
         ))}
       </ul>

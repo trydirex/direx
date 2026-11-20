@@ -380,6 +380,14 @@ test("a Viewer reads a plan that isn't approved yet, with nothing to change", as
   expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
 });
 
+test("a Viewer can read an unfinished draft measure without a basis", async () => {
+  const draft = { ...body, measures: [{ key: "meetings", label: "Meetings", target: "4" }] };
+  serve(() => reply(200, plan({ current: null, currentVersion: null, tracking: null, draft })));
+  show({ role: "viewer" });
+  const view = within(await screen.findByRole("region", { name: "Draft plan" }));
+  expect(view.getByRole("list", { name: "Measures" }).textContent).toBe("Meetings: 4");
+});
+
 test("a Measure Direx counts says so beside it, in the draft and in the editor", async () => {
   const counted = { ...body, measures: [{ ...body.measures[0], source: "meetings" }] };
   serve(() => reply(200, plan({ current: null, currentVersion: null, tracking: null, draft: counted })));

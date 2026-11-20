@@ -88,6 +88,24 @@ test("--parts encodes the user name and password into the URL it checks and stor
   await run(["set", "smtp.url"], VALUE);
 });
 
+test("--parts checks and stores IPv6 hosts with exactly one pair of brackets", async () => {
+  const calls: Checked[] = [];
+  const deps = { checkSmtp: fakeCheck(true, calls), env: {} };
+  const args = ["set", "smtp.url", "--parts"];
+  const expected = "smtp://u:p@[::1]:587";
+  for (const host of ["::1", "[::1]"]) {
+    expect((await run(args, `${host}\n587\nu\np\nany`, deps)).code).toBe(0);
+    expect(calls.at(-1)?.url).toBe(expected);
+    expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(expected);
+  }
+  for (const host of ["[::1]/path", "[::1]@evil.example", "[::1]:25", "[::1", "[::g]", "fe80::1%eth0"]) {
+    expect((await run(args, `${host}\n587\nu\np\nany`, deps)).code).toBe(2);
+  }
+  expect(calls).toHaveLength(2);
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(expected);
+  await run(["set", "smtp.url"], VALUE);
+});
+
 test("--test-to reaches the check with DIREX_MAIL_FROM, and is refused without it", async () => {
   const calls: Checked[] = [];
   const env = { DIREX_MAIL_FROM: "Direx <signin@example.com>" };

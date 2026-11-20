@@ -7,6 +7,7 @@
 //   printf '%s\n' host port user password tls | bun apps/api/src/secrets.ts set smtp.url --parts
 //   bun apps/api/src/secrets.ts replace-root-key /path/to/new.key
 import { existsSync } from "node:fs";
+import { isIPv6 } from "node:net";
 import { createVault, ensureRootKey, generateKeyFile, replaceRootKey, rootKeyFromEnv, type Vault } from "./modules/credentials/index";
 import { checkSmtp, type SmtpCheck } from "./modules/identity/index";
 import { isSystemSecretName, listSystemSecrets, setSystemSecret, SYSTEM_SECRET_NAMES } from "./modules/credentials/system-secrets";
@@ -32,9 +33,16 @@ function smtpFlags(rest: string[]): SmtpFlags | null {
 /** Builds the URL from its parts, so a password holding `@`, `/` or `:` needs no encoding in shell. */
 function urlFromParts(text: string): string | null {
   const [host = "", port = "", user = "", pass = "", tls, ...extra] = text.split(/\r?\n/);
-  if (!/^[\w.-]+$/.test(host) || !/^\d+$/.test(port) || (tls !== "tls" && tls !== "any") || extra.length > 0) return null;
+  if (!/^\d+$/.test(port) || (tls !== "tls" && tls !== "any") || extra.length > 0) return null;
+  let hostname = host;
+  if (!/^[\w.-]+$/.test(host)) {
+    const address = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+    // URL host syntax doesn't accept IPv6 zone identifiers.
+    if (address.includes("%") || !isIPv6(address)) return null;
+    hostname = `[${address}]`;
+  }
   // Port 465 is TLS from the start; elsewhere `tls` makes nodemailer insist on STARTTLS.
-  return `${port === "465" ? "smtps" : "smtp"}://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}${tls === "tls" ? "?requireTLS=true" : ""}`;
+  return `${port === "465" ? "smtps" : "smtp"}://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${hostname}:${port}${tls === "tls" ? "?requireTLS=true" : ""}`;
 }
 
 /** Returns the exit code. Nothing it prints ever holds a value. smtp.url is stored only after it logs in. */

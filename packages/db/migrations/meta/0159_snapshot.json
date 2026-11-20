@@ -1,5 +1,5 @@
 {
-  "id": "6f1f7ce8-1dad-4126-b09e-85d9207798c5",
+  "id": "94ca0581-1000-4e10-a9be-5517cebb64a3",
   "prevId": "c1889aaa-811f-4476-b2a5-0245ae7f19a3",
   "version": "7",
   "dialect": "postgresql",
@@ -10349,6 +10349,163 @@
       },
       "isRLSEnabled": false
     },
+    "public.campaign_write_ups": {
+      "name": "campaign_write_ups",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "paragraph": {
+          "name": "paragraph",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cites": {
+          "name": "cites",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "suggestions": {
+          "name": "suggestions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "run_id": {
+          "name": "run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "item_id": {
+          "name": "item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "failure": {
+          "name": "failure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "written_at": {
+          "name": "written_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "campaign_write_ups_campaign_fk": {
+          "name": "campaign_write_ups_campaign_fk",
+          "tableFrom": "campaign_write_ups",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "workspace_id",
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "campaign_write_ups_item_fk": {
+          "name": "campaign_write_ups_item_fk",
+          "tableFrom": "campaign_write_ups",
+          "tableTo": "items",
+          "columnsFrom": [
+            "workspace_id",
+            "item_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "campaign_write_ups_workspace_id_id_key": {
+          "name": "campaign_write_ups_workspace_id_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "id"
+          ]
+        },
+        "campaign_write_ups_campaign_key": {
+          "name": "campaign_write_ups_campaign_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "campaign_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "campaign_write_ups_status_check": {
+          "name": "campaign_write_ups_status_check",
+          "value": "\"campaign_write_ups\".\"status\" in ('writing', 'written', 'failed')"
+        },
+        "campaign_write_ups_written_check": {
+          "name": "campaign_write_ups_written_check",
+          "value": "\"campaign_write_ups\".\"status\" <> 'written' or (\"campaign_write_ups\".\"paragraph\" is not null and \"campaign_write_ups\".\"written_at\" is not null)"
+        },
+        "campaign_write_ups_failure_check": {
+          "name": "campaign_write_ups_failure_check",
+          "value": "(\"campaign_write_ups\".\"status\" = 'failed') = (\"campaign_write_ups\".\"failure\" is not null)"
+        },
+        "campaign_write_ups_suggestions_check": {
+          "name": "campaign_write_ups_suggestions_check",
+          "value": "jsonb_typeof(\"campaign_write_ups\".\"suggestions\") = 'array' and jsonb_array_length(\"campaign_write_ups\".\"suggestions\") <= 3"
+        },
+        "campaign_write_ups_cites_check": {
+          "name": "campaign_write_ups_cites_check",
+          "value": "jsonb_typeof(\"campaign_write_ups\".\"cites\") = 'array'"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.campaigns": {
       "name": "campaigns",
       "schema": "",
@@ -16706,268 +16863,6 @@
         "competitor_changes_source_check": {
           "name": "competitor_changes_source_check",
           "value": "\"competitor_changes\".\"source\" in ('pricing', 'changelog', 'landing')"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.competitor_finds": {
-      "name": "competitor_finds",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "site": {
-          "name": "site",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "terms": {
-          "name": "terms",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed_micros": {
-          "name": "confirmed_micros",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed_by": {
-          "name": "confirmed_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "at": {
-          "name": "at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "competitor_finds_confirmed_by_user_id_fk": {
-          "name": "competitor_finds_confirmed_by_user_id_fk",
-          "tableFrom": "competitor_finds",
-          "tableTo": "user",
-          "schemaTo": "auth",
-          "columnsFrom": [
-            "confirmed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "competitor_finds_workspace_fk": {
-          "name": "competitor_finds_workspace_fk",
-          "tableFrom": "competitor_finds",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "workspace_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "competitor_finds_workspace_id_id_key": {
-          "name": "competitor_finds_workspace_id_id_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "workspace_id",
-            "id"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "competitor_finds_kind_check": {
-          "name": "competitor_finds_kind_check",
-          "value": "(\"competitor_finds\".\"kind\" = 'own_site' and \"competitor_finds\".\"site\" is not null and \"competitor_finds\".\"terms\" is null and \"competitor_finds\".\"confirmed_micros\" is null and \"competitor_finds\".\"confirmed_by\" is null)\n        or (\"competitor_finds\".\"kind\" = 'search' and \"competitor_finds\".\"site\" is null and \"competitor_finds\".\"terms\" is not null and \"competitor_finds\".\"confirmed_micros\" >= 0 and \"competitor_finds\".\"confirmed_by\" is not null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.competitor_proposals": {
-      "name": "competitor_proposals",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "find_id": {
-          "name": "find_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name_key": {
-          "name": "name_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "site": {
-          "name": "site",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "comparison_url": {
-          "name": "comparison_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "found_at": {
-          "name": "found_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "closed_at": {
-          "name": "closed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_by": {
-          "name": "closed_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "closed_as": {
-          "name": "closed_as",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "competitor_proposals_name_key": {
-          "name": "competitor_proposals_name_key",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "name_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "competitor_proposals_closed_by_user_id_fk": {
-          "name": "competitor_proposals_closed_by_user_id_fk",
-          "tableFrom": "competitor_proposals",
-          "tableTo": "user",
-          "schemaTo": "auth",
-          "columnsFrom": [
-            "closed_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "competitor_proposals_workspace_fk": {
-          "name": "competitor_proposals_workspace_fk",
-          "tableFrom": "competitor_proposals",
-          "tableTo": "workspaces",
-          "columnsFrom": [
-            "workspace_id"
-          ],
-          "columnsTo": [
-            "workspace_id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "competitor_proposals_find_fk": {
-          "name": "competitor_proposals_find_fk",
-          "tableFrom": "competitor_proposals",
-          "tableTo": "competitor_finds",
-          "columnsFrom": [
-            "workspace_id",
-            "find_id"
-          ],
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "competitor_proposals_name_check": {
-          "name": "competitor_proposals_name_check",
-          "value": "char_length(\"competitor_proposals\".\"name\") between 1 and 100 and \"competitor_proposals\".\"name_key\" ~ '^[a-z0-9]{1,100}$'"
-        },
-        "competitor_proposals_url_check": {
-          "name": "competitor_proposals_url_check",
-          "value": "char_length(coalesce(\"competitor_proposals\".\"site\", '')) <= 2000 and char_length(coalesce(\"competitor_proposals\".\"comparison_url\", '')) <= 2000"
-        },
-        "competitor_proposals_closed_check": {
-          "name": "competitor_proposals_closed_check",
-          "value": "(\"competitor_proposals\".\"closed_at\" is null and \"competitor_proposals\".\"closed_by\" is null and \"competitor_proposals\".\"closed_as\" is null) or (\"competitor_proposals\".\"closed_at\" is not null and \"competitor_proposals\".\"closed_by\" is not null and \"competitor_proposals\".\"closed_as\" in ('added', 'dismissed'))"
         }
       },
       "isRLSEnabled": false

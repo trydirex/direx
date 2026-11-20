@@ -5,8 +5,12 @@ and only then does it go out to your list. An issue nobody approves in time is s
 
 ## Choosing a tool
 
-Direx sends through Kit or beehiiv with your API key. Substack has no connection: you write and
-approve the issue in Direx, then copy it into Substack and send it there.
+Direx sends through Kit, beehiiv or Mailchimp with your API key. Substack has no connection: you
+write and approve the issue in Direx, then copy it into Substack and send it there.
+
+On Mailchimp, a list is what Mailchimp calls an audience. Each issue goes out as a regular campaign
+to the list you choose, with that list's default from name and from email as the sender and
+reply-to address. Set both in Mailchimp first, or Mailchimp won't send the campaign.
 
 Only an Owner or Admin can set this up. Everyone else sees the day, time and list, and "Only an
 Admin or Owner can change this."
@@ -76,8 +80,10 @@ Direx gets no numbers for an issue you sent by hand. Check them in the tool.
 
 ## Unsubscribes
 
-Your newsletter tool sends each issue to its list, and Direx adds no unsubscribe link of its own.
-Unsubscribes happen in the tool, and Direx shows their count after each send.
+Your newsletter tool sends each issue to its list. Unsubscribes happen in the tool, and Direx
+shows their count after each send. Direx adds no unsubscribe link of its own, with one exception:
+Mailchimp refuses a campaign without one, so on Mailchimp an issue that has none gets a short footer
+with Mailchimp's unsubscribe link and your list's postal address.
 
 Direx also reads the addresses on a connected list and keeps them. Anyone who was ever on the list
 stays recorded, even after they unsubscribe. A cold email to one of them waits, and Direx asks

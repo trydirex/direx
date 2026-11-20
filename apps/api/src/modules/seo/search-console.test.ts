@@ -18,7 +18,13 @@ const analyticsCalls = () => w.sc.calls.filter((c) => c.path.endsWith("/searchAn
 
 test("without Search Console connected, every read says so", async () => {
   const { W } = await w.workspace();
-  expect(await w.seo.state(W)).toEqual({ connected: false, siteUrl: null, properties: null, refusal: { reason: "not_connected" } });
+  expect(await w.seo.state(W)).toEqual({
+    connected: false,
+    siteUrl: null,
+    properties: null,
+    refusal: { reason: "not_connected" },
+    app: { source: "system", callbackUrl: "http://direx.test/api/connections/callback" },
+  });
   expect(await w.seo.analytics(W, range, ["query"])).toEqual({ ok: false, reason: "not_connected" });
   expect(await w.seo.summary(W)).toEqual({ ok: false, reason: "not_connected" });
   expect(await w.seo.choose(W, "sc-domain:example.com")).toEqual({ ok: false, reason: "not_connected" });

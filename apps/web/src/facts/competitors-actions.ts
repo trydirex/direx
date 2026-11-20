@@ -101,8 +101,12 @@ export type FoundPages = S["CompetitorFindPages"];
 
 /** The pricing and changelog pages Direx found from a homepage, or why it found none; `busy` while one already runs. */
 export async function findPages(workspaceId: string, landingUrl: string): Promise<FoundPages | { ok: false; reason: string }> {
-  const r = await api.POST("/api/w/{workspaceId}/competitors/find-pages", { params: at(workspaceId), body: { landingUrl } });
-  return r.data ?? { ok: false, reason: r.error?.error ?? "failed" };
+  try {
+    const r = await api.POST("/api/w/{workspaceId}/competitors/find-pages", { params: at(workspaceId), body: { landingUrl } });
+    return r.data ?? { ok: false, reason: r.error?.error ?? "failed" };
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
 }
 
 /** Where a found page came from, so the person can judge it before adding. */

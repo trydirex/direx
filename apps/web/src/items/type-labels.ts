@@ -9,6 +9,7 @@ export const KIND_LABEL: Record<string, string> = {
   lesson_fact: "Lesson",
   plan_version: "Plan",
   strategy_version: "Strategy",
+  strategy_assumptions: "Strategy assumptions",
   plan_change: "Plan change",
   next_step: "Next step",
   campaign_conflict: "Campaign conflict",

@@ -50,6 +50,7 @@ const Account = z
     lastCheckedAt: z.iso.datetime().nullable(),
     warning: z.object({ level: z.enum(["soon", "urgent"]), endsAt: z.iso.datetime() }).nullable(),
     canDo: z.array(z.object({ feature: z.string(), status: z.enum(["available", "coming", "needs_own_app", "reconnect"]) })),
+    ownAppLimits: z.array(z.string()),
     runBy: z.string().nullable(),
     angle: z.string().nullable(),
     siblings: z.number().int(),

@@ -15,9 +15,26 @@ changes anything there, and it never changes or publishes your pages. The SEO pa
 
 To switch sites later, press Change next to the property.
 
-On a self-hosted Direx, Search Console uses your own Google OAuth client. Set
-`DIREX_GOOGLE_CLIENT_ID`, store the client secret with `bun apps/api/src/secrets.ts set signin.google`, and turn on
-the Search Console API for that client. Direx links to the API's page in Google Cloud when it's off.
+### The Google app
+
+Connecting needs a Google app (an OAuth client). Direx uses the first of these it finds:
+
+1. The Workspace's own app. An Owner or Admin sets it up on the SEO page, under "Set up a Google
+   app for Search Console": turn on the Search Console API in a Google Cloud project, publish its
+   OAuth consent screen to Production (or choose Internal), create an OAuth client ID of type Web
+   application with the callback URL the page shows, and paste its client ID and secret. An app
+   left in Testing stops connecting after 7 days.
+2. On a self-hosted Direx, a server app just for Search Console:
+   `bun apps/api/src/secrets.ts set social_app.google_search_console`, with
+   `client_id:client_secret` on stdin.
+3. On a self-hosted Direx, the Google sign-in app: `DIREX_GOOGLE_CLIENT_ID` and the
+   `signin.google` secret, with the Search Console API turned on for that client.
+
+With none of these, a member is told to ask an Owner or Admin. When a server app is set, an Owner
+or Admin can still use the Workspace's own app instead. Adding or removing a Workspace's own app
+asks everyone who connected Search Console in that Workspace to reconnect, because Google ties a
+connection to the app it was made with. Direx links to the API's page in Google Cloud when the API
+is off.
 
 If Google stops accepting the connection, the page says "Search Console needs reconnecting" with a
 Reconnect button.

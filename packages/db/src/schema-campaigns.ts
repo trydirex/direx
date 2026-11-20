@@ -374,3 +374,38 @@ export const campaignOutcomes = pgTable(
     check("campaign_outcomes_voids_self_check", sql`${t.voids} is distinct from ${t.id}`),
   ],
 );
+
+// What Direx wrote once a Campaign ended (spec 2026-11-20 campaign-write-up): one row per Campaign,
+// written by the campaign_writer agent and kept while its Workspace exists. `writing` holds the place
+// while a run is out, so two sweeps start one run. Write it again updates the row; nothing deletes it.
+export const campaignWriteUps = pgTable(
+  "campaign_write_ups",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    campaignId: uuid("campaign_id").notNull(),
+    status: text("status").notNull(),
+    paragraph: text("paragraph"),
+    // Reading ids the paragraph uses.
+    cites: jsonb("cites").notNull().default([]),
+    // Up to three { assumption, because, readingIds, outcome? }, outcome once its Item is decided.
+    suggestions: jsonb("suggestions").notNull().default([]),
+    runId: uuid("run_id"),
+    itemId: uuid("item_id"),
+    failure: text("failure"),
+    createdAt: tz("created_at").notNull(),
+    writtenAt: tz("written_at"),
+  },
+  (t) => [
+    unique("campaign_write_ups_workspace_id_id_key").on(t.workspaceId, t.id),
+    unique("campaign_write_ups_campaign_key").on(t.workspaceId, t.campaignId),
+    foreignKey({ name: "campaign_write_ups_campaign_fk", columns: [t.workspaceId, t.campaignId], foreignColumns: [campaigns.workspaceId, campaigns.id] }),
+    foreignKey({ name: "campaign_write_ups_item_fk", columns: [t.workspaceId, t.itemId], foreignColumns: [items.workspaceId, items.id] }),
+    check("campaign_write_ups_status_check", sql`${t.status} in ('writing', 'written', 'failed')`),
+    // Writing again keeps the old paragraph until the new run passes, so only `written` needs one.
+    check("campaign_write_ups_written_check", sql`${t.status} <> 'written' or (${t.paragraph} is not null and ${t.writtenAt} is not null)`),
+    check("campaign_write_ups_failure_check", sql`(${t.status} = 'failed') = (${t.failure} is not null)`),
+    check("campaign_write_ups_suggestions_check", sql`jsonb_typeof(${t.suggestions}) = 'array' and jsonb_array_length(${t.suggestions}) <= 3`),
+    check("campaign_write_ups_cites_check", sql`jsonb_typeof(${t.cites}) = 'array'`),
+  ],
+);

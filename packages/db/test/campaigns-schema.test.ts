@@ -270,3 +270,36 @@ test("the schema declares campaign_outcomes' keys and checks as migration 0154 m
     }
   }
 });
+
+test("a write-up is one row per Campaign, keeps its shape, can't be deleted by the app, and is hidden from other Workspaces", async () => {
+  const campaignIn = async (workspace: string) => {
+    const plan = await newPlan(workspace);
+    await c.query("select set_config('app.workspace_id', $1, false)", [workspace]);
+    return (await c.query(`insert into campaigns (workspace_id, plan_id, owner_user_id, created_at, updated_at) values ($1, $2, $3, now(), now()) returning id`, [workspace, plan, U])).rows[0].id as string;
+  };
+  const writeUp = (workspace: string, campaign: string, status: string, extra: { paragraph?: string | null; failure?: string | null; suggestions?: string } = {}) =>
+    c.query(
+      `insert into campaign_write_ups (workspace_id, campaign_id, status, paragraph, failure, suggestions, created_at, written_at)
+       values ($1, $2, $3, $4, $5, coalesce($6::jsonb, '[]'::jsonb), now(), case when $4::text is null then null else now() end) returning id`,
+      [workspace, campaign, status, extra.paragraph ?? null, extra.failure ?? null, extra.suggestions ?? null],
+    );
+
+  const theirCampaign = await campaignIn(OTHER);
+  const theirs = (await writeUp(OTHER, theirCampaign, "writing")).rows[0].id as string;
+
+  const campaign = await campaignIn(W);
+  expect((await c.query("select id from campaign_write_ups where id = $1", [theirs])).rows).toEqual([]);
+  await expect(writeUp(W, campaign, "done")).rejects.toThrow(/campaign_write_ups_status_check/);
+  await expect(writeUp(W, campaign, "written")).rejects.toThrow(/campaign_write_ups_written_check/);
+  await expect(writeUp(W, campaign, "failed")).rejects.toThrow(/campaign_write_ups_failure_check/);
+  await expect(writeUp(W, campaign, "writing", { suggestions: "[1, 2, 3, 4]" })).rejects.toThrow(/campaign_write_ups_suggestions_check/);
+  await expect(writeUp(W, crypto.randomUUID(), "writing")).rejects.toThrow(/campaign_write_ups_campaign_fk/);
+
+  const id = (await writeUp(W, campaign, "writing")).rows[0].id as string;
+  await expect(writeUp(W, campaign, "writing")).rejects.toThrow(/campaign_write_ups_campaign_key/);
+  // Written, then written again: the old paragraph stays while the new run is out.
+  await c.query("update campaign_write_ups set status = 'written', paragraph = 'p', written_at = now() where id = $1", [id]);
+  await c.query("update campaign_write_ups set status = 'writing' where id = $1", [id]);
+  expect((await c.query("select paragraph from campaign_write_ups where id = $1", [id])).rows).toEqual([{ paragraph: "p" }]);
+  await expect(c.query("delete from campaign_write_ups where id = $1", [id])).rejects.toThrow(/permission denied/);
+});

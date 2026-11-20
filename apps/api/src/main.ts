@@ -119,7 +119,8 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
   const getVault = (): Vault =>
     (vault ??= vaultFromEnv(identity.config(), async (ws, id) => worker()?.resumeHeld(ws, id), {
       appProviders: [...socialProviders(), NOTION_OAUTH_PROVIDER],
-      googleApps: [GOOGLE_PROVIDER, GOOGLE_SEARCH_CONSOLE_PROVIDER],
+      googleApps: [GOOGLE_PROVIDER],
+      googleAppProviders: [GOOGLE_SEARCH_CONSOLE_PROVIDER],
       identify: (ws, connection, token) => social.identify(ws, connection, token),
     }));
   const social = createSocial({
@@ -289,6 +290,8 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
     credentials: (workspaceId) => getVault().list(workspaceId),
     setMeta,
     markNeedsReauth: (workspaceId, credentialId) => getVault().markNeedsReauth(workspaceId, credentialId),
+    appSource: (workspaceId) => getVault().appSource(workspaceId, GOOGLE_SEARCH_CONSOLE_PROVIDER.connection),
+    callbackUrl: () => `${baseUrl()}/api/connections/callback`,
     provider: () => searchProvider,
     query: queryPlugins,
     selfHost: () => deploymentFromEnv() === "self_host",

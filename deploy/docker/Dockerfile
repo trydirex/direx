@@ -25,10 +25,10 @@ COPY --from=whisper /build/bin/whisper-cli /usr/local/bin/whisper-cli
 # Its MIT license asks for the notice to travel with the binary (THIRD_PARTY_NOTICES.md).
 COPY --from=whisper /src/LICENSE /usr/share/licenses/whisper.cpp/LICENSE
 
-# Direx ships no CLI. Uncomment the one you use; it is installed when you build, for the bun user.
+# Codex comes with Direx as a dependency of apps/api (ADR 0036). Claude Code does not: uncomment the
+# line below to install it when you build, for the bun user.
 USER bun
 # RUN curl -fsSL https://claude.ai/install.sh | bash
-# RUN bun add -g @openai/codex
 ENV PATH="/home/bun/.local/bin:/home/bun/.bun/bin:${PATH}"
 # Bun's own time zone data lags the world's; this points it at the newer copy in deploy/icu-tz.
 ENV ICU_TIMEZONE_FILES_DIR=/app/deploy/icu-tz

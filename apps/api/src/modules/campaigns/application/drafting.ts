@@ -45,7 +45,8 @@ export type StepDraftInput = DraftInput & { target: DraftInput["target"] & { ste
 type PostRedraftInput = StepDraftInput & { target: StepDraftInput["target"] & { redraft?: string; userId?: string } };
 /** Where a post may still be rewritten, as for an email: before it goes. */
 const REWRITABLE: ReadonlySet<string> = new Set(["draft", "needs_approval", "scheduled"]);
-export type StartDraft = (workspaceId: string, a: { agent: string; input: DraftInput; startedBy: string; trigger?: "advance"; tainted?: boolean }) => Promise<{ ok: true; run: { id: string } } | { ok: false; reason: string }>;
+/** A run with no person behind it, such as a write-up, is `schedule`d. */
+export type StartDraft = (workspaceId: string, a: { agent: string; input: DraftInput; tainted?: boolean } & ({ startedBy: string; trigger?: "advance" } | { schedule: true })) => Promise<{ ok: true; run: { id: string } } | { ok: false; reason: string }>;
 export type FactReads = Pick<Facts, "usableFacts" | "checkCitation" | "bannedClaimsIn">;
 
 /** Checks written text, whoever wrote it, so a person's edit is held to the same words as a run's. */

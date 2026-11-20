@@ -239,7 +239,9 @@ export function decisions({
         if (own?.state !== "draft" && own?.state !== "needs_approval" && own?.state !== "scheduled") return refuse("wrong_state");
         if (kinds[own.kind]?.dismiss === false) return refuse("choice_required");
         const next = await moveOwnState(tx, own, "cancelled", actor, now());
-        return next === "stale" ? refuse("stale") : { ok: true, item: toView({ item: next, action: null }) };
+        if (next === "stale") return refuse("stale");
+        await kinds[own.kind]?.onDismiss?.(tx, own);
+        return { ok: true, item: toView({ item: next, action: null }) };
       });
     },
 

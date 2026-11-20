@@ -2,7 +2,7 @@
 // Brand's Competitors section (Beta): the competitors the watch reads, the pages given for each one,
 // and what Direx could read on each page when it was last checked. Anyone in the Workspace reads it;
 // adding, editing, checking and removing need an Owner or Admin.
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { inWorkspace } from "../api/query";
@@ -94,6 +94,13 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
   const known = useQuery(factsQuery(p.workspaceId)).data?.filter((f) => f.field === "competitor") ?? [];
   const action = useAction(WORDS);
   const [form, setForm] = useState<CompetitorFields>(BLANK);
+  // A discovery response needs the latest draft, including edits made before React renders.
+  const draft = useRef(form);
+  const formContext = useRef(0);
+  const updateForm = (next: CompetitorFields) => {
+    draft.current = next;
+    setForm(next);
+  };
   const [editing, setEditing] = useState<string | null>(null);
   // The latest check of each competitor, by id: shown, never stored.
   const [checks, setChecks] = useState<Record<string, Check[]>>({});
@@ -126,24 +133,28 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
     setFindNote(null);
   };
   const reset = () => {
-    setForm(BLANK);
+    formContext.current++;
+    updateForm(BLANK);
     setEditing(null);
     forget();
   };
   /** A page the person types is theirs: the note saying where Direx found it no longer applies. */
   const typed = (key: keyof CompetitorFields, value: string) => {
-    setForm((f) => ({ ...f, [key]: value }));
+    if (key === "landingUrl" && value !== draft.current.landingUrl) formContext.current++;
+    updateForm({ ...draft.current, [key]: value });
     if (key === "pricingUrl" || key === "changelogUrl") setNotes(({ [key]: _, ...rest }) => rest);
   };
   /** Fills only empty fields; a typed one keeps its value and gets the found page as an offer. Nothing is saved. */
   const look = async () => {
     // Pages an earlier Find pages filled, and nobody edited since, belong to that address: they go.
-    const start = { ...form };
+    const context = formContext.current;
+    const start = { ...draft.current };
     for (const key of Object.keys(notes) as Found[]) start[key] = "";
-    setForm(start);
+    updateForm(start);
     forget();
     setLooking(true);
-    const r = await findPages(p.workspaceId, form.landingUrl ?? "").finally(() => setLooking(false));
+    const r = await findPages(p.workspaceId, start.landingUrl ?? "").finally(() => setLooking(false));
+    if (context !== formContext.current) return;
     if (!r.ok) return setFindNote(findWords(r.reason));
     const pages: [Found, (typeof r)["pricing"]][] = [
       ["pricingUrl", r.pricing],
@@ -151,16 +162,17 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
     ];
     for (const [key, page] of pages) {
       if (!page) continue;
-      if (!start[key]?.trim()) {
-        setForm((f) => ({ ...f, [key]: page.url }));
+      const current = draft.current[key]?.trim();
+      if (!current) {
+        updateForm({ ...draft.current, [key]: page.url });
         setNotes((n) => ({ ...n, [key]: foundWords(page) }));
-      } else if (start[key]!.trim() !== page.url) setOffers((o) => ({ ...o, [key]: page.url }));
+      } else if (current !== page.url) setOffers((o) => ({ ...o, [key]: page.url }));
     }
     setAlso(r.alsoPricing);
     if (!r.pricing && !r.changelog) setFindNote("No pricing page or changelog found. Add them by hand if they exist.");
   };
   const use = (key: Found) => {
-    setForm((f) => ({ ...f, [key]: offers[key] ?? "" }));
+    updateForm({ ...draft.current, [key]: offers[key] ?? "" });
     setOffers(({ [key]: _, ...rest }) => rest);
   };
   const submit = (e: FormEvent) => {
@@ -170,9 +182,10 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
   };
   const remove = (c: Competitor) => change(async () => ({ code: await removeCompetitor(p.workspaceId, c.id), id: null, checks: [] }), "Removed.");
   const edit = (c: Competitor) => {
+    formContext.current++;
     setEditing(c.id);
     forget();
-    setForm({ name: c.name, pricingUrl: c.pricingUrl ?? "", changelogUrl: c.changelogUrl ?? "", landingUrl: c.landingUrl ?? "", comparisonUrl: c.comparisonUrl ?? "" });
+    updateForm({ name: c.name, pricingUrl: c.pricingUrl ?? "", changelogUrl: c.changelogUrl ?? "", landingUrl: c.landingUrl ?? "", comparisonUrl: c.comparisonUrl ?? "" });
   };
 
   return (

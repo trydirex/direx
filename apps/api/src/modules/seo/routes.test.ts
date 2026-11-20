@@ -9,7 +9,13 @@ const base = `/api/w/${W}/seo/search-console`;
 const choose = (siteUrl: unknown) => w.call(`${base}/property`, cookie, { method: "POST", body: { siteUrl } });
 
 test("before connecting, the state says so and the summary is refused", async () => {
-  expect(await (await w.call(base, cookie)).json()).toEqual({ connected: false, siteUrl: null, properties: null, refusal: { reason: "not_connected" } });
+  expect(await (await w.call(base, cookie)).json()).toEqual({
+    connected: false,
+    siteUrl: null,
+    properties: null,
+    refusal: { reason: "not_connected" },
+    app: { source: "system", callbackUrl: "http://direx.test/api/connections/callback" },
+  });
   const r = await w.call(`${base}/summary`, cookie);
   expect(r.status).toBe(409);
   expect(await r.json()).toEqual({ error: "not_connected" });

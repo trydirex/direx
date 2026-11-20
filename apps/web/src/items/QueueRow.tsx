@@ -39,25 +39,49 @@ const iconFor = (i: Item) => {
   return CircleDotIcon;
 };
 
-export function QueueRow({ item: i, workspaceId }: { item: Item; workspaceId: string }) {
+/**
+ * `wide` is for a full-width list such as Everything: what it is and its title on the left, and on the
+ * right every state (Needs approval too, since that list holds every state) above when it goes out or
+ * was made. Below 640px the right column drops under the title.
+ */
+export function QueueRow({ item: i, workspaceId, wide }: { item: Item; workspaceId: string; wide?: boolean }) {
   const Icon = iconFor(i);
   // A post's channel is its network's key ("linkedin_page"); people read the network's name.
   const channel = useQuery(networksQuery(workspaceId)).data?.find((n) => n.connection === i.channel)?.label ?? i.channel;
+  const what = (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Icon className="size-3.5 shrink-0" aria-hidden />
+      <span className="flex min-w-0 flex-1 gap-1 truncate">
+        <span>{kindLabel(i)}</span>
+        {[i.groupLabel, channel?.toLowerCase() === kindLabel(i).toLowerCase() ? null : channel].filter(Boolean).map((w) => (
+          <span key={w}>{`· ${w}`}</span>
+        ))}
+      </span>
+      {!wide && i.at && <span className="tabular-nums">{listTime(new Date(i.at))}</span>}
+    </span>
+  );
+  // One warning says itself; more say how many, and the open Item lists them.
+  const warning = i.warnings.length === 1 ? <span className="text-xs font-medium text-warning">{i.warnings[0]!.text}</span> : <WarningCount count={i.warnings.length} />;
+  if (wide)
+    return (
+      <span className="grid w-full min-w-0 grid-cols-1 items-start gap-x-6 gap-y-2 text-left sm:grid-cols-[minmax(0,1fr)_auto]">
+        <span className="flex min-w-0 flex-col gap-1">
+          {what}
+          {/* The open Item shows the whole title; two lines keep the list scannable. */}
+          <span className="line-clamp-2 font-medium text-pretty wrap-break-word text-foreground">{i.title}</span>
+          {warning}
+        </span>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:w-56 sm:flex-col sm:items-end sm:text-right">
+          <StateChip state={i.state} reason={i.reason} />
+          <span className="text-xs text-muted-foreground tabular-nums">{i.at ? listTime(new Date(i.at)) : `Made ${listTime(new Date(i.createdAt))}`}</span>
+        </span>
+      </span>
+    );
   return (
     <span className="flex w-full min-w-0 flex-col gap-0.5 text-left">
-      <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className="size-3.5 shrink-0" aria-hidden />
-        <span className="flex min-w-0 flex-1 gap-1 truncate">
-          <span>{kindLabel(i)}</span>
-          {[i.groupLabel, channel?.toLowerCase() === kindLabel(i).toLowerCase() ? null : channel].filter(Boolean).map((w) => (
-            <span key={w}>{`· ${w}`}</span>
-          ))}
-        </span>
-        {i.at && <span className="tabular-nums">{listTime(new Date(i.at))}</span>}
-      </span>
+      {what}
       <span className="font-medium wrap-break-word text-foreground">{i.title}</span>
-      {/* One warning says itself; more say how many, and the open Item lists them. */}
-      {i.warnings.length === 1 ? <span className="text-xs font-medium text-warning">{i.warnings[0]!.text}</span> : <WarningCount count={i.warnings.length} />}
+      {warning}
       {i.state !== "needs_approval" && (
         <span>
           <StateChip state={i.state} reason={i.reason} />

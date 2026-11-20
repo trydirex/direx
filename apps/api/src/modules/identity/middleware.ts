@@ -1,10 +1,46 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The request context for /api/w/:workspaceId/*: who is asking, in which Workspace, with
 // which role. A Workspace the caller is not a member of is 404, so its existence does not leak.
+import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import type { Auth } from "./adapters/auth";
+import { SESSION_CAP_MS, type Auth } from "./adapters/auth";
 import { memberRole } from "./adapters/repo";
 import { can, type Permission, type Role } from "./domain/roles";
+
+/**
+ * The browser session behind this request, or null. Every Direx read of a session goes through here
+ * (ADR 0037 rule 002). Once a session is a day old, Better Auth renews it and sends a new cookie;
+ * that cookie goes onto this response. Dropped, the browser keeps the first cookie's Max-Age and
+ * signs the person out 7 days after sign-in however much they use Direx. Its `no-store` comes along
+ * too, so no shared cache keeps a response that carries a session cookie.
+ */
+export async function readSession(auth: () => Auth, c: Context) {
+  return (await readSessionWithCookies(auth, c)).response;
+}
+
+async function readSessionWithCookies(auth: () => Auth, c: Context) {
+  const { headers, response } = await auth().api.getSession({ headers: c.req.raw.headers, returnHeaders: true });
+  const cookies = headers.getSetCookie();
+  for (const cookie of cookies) c.header("Set-Cookie", cookie, { append: true });
+  const setsCookies = cookies.length > 0;
+  const cacheControl = setsCookies ? "no-store" : headers.get("cache-control");
+  if (cacheControl) c.header("Cache-Control", cacheControl);
+  return { response: await withinCap(auth, response), setsCookies };
+}
+
+type Session = Awaited<ReturnType<Auth["api"]["getSession"]>>;
+
+/** A session past SESSION_CAP_MS since sign-in is deleted and counts as none, however recently it was used (ADR 0037 rule 003). */
+async function withinCap(auth: () => Auth, s: Session): Promise<Session> {
+  if (!s || Date.now() - new Date(s.session.createdAt).getTime() <= SESSION_CAP_MS) return s;
+  await (await auth().$context).internalAdapter.deleteSession(s.session.token);
+  return null;
+}
+
+/** Ends a session past the cap before one of Better Auth's own routes sees it. Copies no cookie onto that route's answer. */
+export async function endSessionPastCap(auth: () => Auth, headers: Headers): Promise<void> {
+  await withinCap(auth, await auth().api.getSession({ headers }));
+}
 
 export type Member = {
   userId: string;
@@ -38,7 +74,7 @@ export function requireMember(auth: () => Auth, o: { deleted?: boolean } = {}) {
     // A Workspace route takes a session only. Sessions are cookies, so any Authorization header is a
     // credential meant for somewhere else, an External token included (ADR 0032 rule 002).
     if (c.req.header("authorization") !== undefined) return c.json({ error: "token_not_accepted" }, 401);
-    const s = await auth().api.getSession({ headers: c.req.raw.headers });
+    const { response: s, setsCookies } = await readSessionWithCookies(auth, c);
     if (!s) return c.json({ error: "not_signed_in" }, 401);
     const workspaceId = c.req.param("workspaceId");
     const found = workspaceId && UUID.test(workspaceId) ? await memberRole(workspaceId, s.user.id, o.deleted) : null;
@@ -52,6 +88,8 @@ export function requireMember(auth: () => Auth, o: { deleted?: boolean } = {}) {
       signedInAt: new Date(s.session.createdAt),
     });
     await next();
+    // Handlers may supply their own cache policy. It must not override no-store on a cookie response.
+    if (setsCookies) c.header("Cache-Control", "no-store");
   });
 }
 

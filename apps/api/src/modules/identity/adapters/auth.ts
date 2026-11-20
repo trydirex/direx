@@ -19,11 +19,30 @@ export type AuthConfig = {
   mailer: Mailer;
   /** Reverse proxies whose X-Forwarded-For is believed, as addresses or CIDRs. None: only the socket's address is. */
   trustedProxies?: string[];
+  /** Days without use before a sign-in ends (DIREX_SESSION_DAYS). Unset, 30. */
+  sessionDays?: number;
   google?: { clientId: string; clientSecret: string };
   microsoft?: { clientId: string; clientSecret: string };
 };
 
 const DEV_SECRET = "dev-only-auth-secret-never-used-outside-dev-and-test";
+const DAY_S = 86_400;
+/** A sign-in ends this long after it was made, however much it is used (ADR 0037 rule 003). */
+export const SESSION_CAP_MS = 90 * DAY_S * 1000;
+
+/**
+ * DIREX_SESSION_DAYS, read once at start (ADR 0037 rule 001). Cloud runs the default, so the
+ * variable there is a mistake. From 2 days, as with 1 a day-old renewal would come only once the
+ * session had already ended.
+ */
+export function sessionDaysFromEnv(env: Env = process.env): number {
+  const raw = env.DIREX_SESSION_DAYS;
+  if (!raw) return 30;
+  if (env.DIREX_DEPLOYMENT === "cloud") throw new Error("DIREX_SESSION_DAYS is for a self-hosted Direx only; unset it on cloud");
+  const days = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  if (!(days >= 2 && days <= 90)) throw new Error(`DIREX_SESSION_DAYS must be a whole number of days from 2 to 90, not ${raw}`);
+  return days;
+}
 
 /**
  * DIREX_TRUSTED_PROXIES as a list. A bad entry stops the start: Better Auth would drop it in
@@ -53,6 +72,7 @@ export function authConfigFromEnv(env: Env = process.env, stored: { authSecret?:
     devMode: isDevOrTest(env),
     mailer: mailerFromEnv(env, stored.smtpUrl),
     trustedProxies: trustedProxiesFromEnv(env),
+    sessionDays: sessionDaysFromEnv(env),
     google: pair(env.DIREX_GOOGLE_CLIENT_ID, stored.googleSecret ?? (dev ? env.DIREX_GOOGLE_CLIENT_SECRET : undefined)),
     microsoft: pair(env.DIREX_MICROSOFT_CLIENT_ID, stored.microsoftSecret ?? (dev ? env.DIREX_MICROSOFT_CLIENT_SECRET : undefined)),
   };
@@ -117,6 +137,9 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     // limit never keys on an address the client chose.
     advanced: { database: { generateId: "uuid" }, ipAddress: { trustedProxies: cfg.trustedProxies ?? [] } },
     rateLimit: { enabled: !cfg.devMode },
+    // Each day of use pushes the end out (ADR 0037 rule 001). No cookie cache: it would let a
+    // revoked session, or one past SESSION_CAP_MS, keep working until the cache expired.
+    session: { expiresIn: (cfg.sessionDays ?? 30) * DAY_S, updateAge: DAY_S, cookieCache: { enabled: false } },
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 12,

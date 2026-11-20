@@ -2,7 +2,7 @@
 // Brand's Competitors section: the list with each page, the no-changelog note, what a check found,
 // the sixth add refused, and a viewer who reads but can't change.
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { withQueries } from "../testing";
@@ -263,4 +263,61 @@ test("a second Find pages clears the pages the first one filled, but not a page 
   expect(await form.findByText("This address goes to another company's site, so Direx has nothing to suggest.")).toBeTruthy();
   expect(pricing.value).toBe("");
   expect((form.getByRole("textbox", { name: "Changelog" }) as HTMLInputElement).value).toBe("https://mine.example/changes");
+});
+
+test("a rejected discovery request shows a retry message", async () => {
+  serve([finlens]);
+  vi.spyOn(api, "POST").mockRejectedValueOnce(new TypeError("Network error"));
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
+  const find = screen.getByRole("button", { name: "Find pages" }) as HTMLButtonElement;
+  await userEvent.click(find);
+  expect(await screen.findByText("Direx couldn't look just now. Try again.")).toBeTruthy();
+  expect(find.disabled).toBe(false);
+});
+
+const pendingFind = () => {
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof reply>>>();
+  const post = vi.spyOn(api, "POST").mockImplementation((() => pending.promise) as never);
+  const finish = () => act(async () => pending.resolve(await reply(200, {
+    ok: true,
+    pricing: { url: "https://www.finlens.app/pricing", via: "sitemap", text: "" },
+    changelog: { url: "https://www.finlens.app/changelog", via: "sitemap", text: "" },
+    alsoPricing: ["https://www.finlens.app/plans"],
+  })));
+  return { post, finish };
+};
+
+test.each(["switch competitor", "cancel", "change landing page"])("ignores a pending discovery after %s", async (change) => {
+  const other = competitor(3, { landingUrl: finlens.landingUrl });
+  serve([finlens, other]);
+  const { post, finish } = pendingFind();
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
+  await userEvent.click(screen.getByRole("button", { name: "Find pages" }));
+  expect(post).toHaveBeenCalledTimes(1);
+
+  if (change === "switch competitor") await userEvent.click(screen.getByRole("button", { name: "Edit C3" }));
+  else if (change === "cancel") await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  else fireEvent.change(screen.getByRole("textbox", { name: "Landing page" }), { target: { value: "https://other.example" } });
+  await finish();
+
+  expect((screen.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement).value).toBe("");
+  expect((screen.getByRole("textbox", { name: /^Changelog/ }) as HTMLInputElement).value).toBe("");
+  expect(screen.queryByText(/^Other pricing pages:/)).toBeNull();
+});
+
+test("discovery preserves a page entered while waiting and fills the other empty field", async () => {
+  serve([finlens]);
+  const { finish } = pendingFind();
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
+  await userEvent.click(screen.getByRole("button", { name: "Find pages" }));
+  const pricing = screen.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement;
+  fireEvent.change(pricing, { target: { value: "https://www.finlens.app/custom" } });
+  await finish();
+
+  expect(pricing.value).toBe("https://www.finlens.app/custom");
+  expect(screen.getByText("Direx found https://www.finlens.app/pricing")).toBeTruthy();
+  expect((screen.getByRole("textbox", { name: /^Changelog/ }) as HTMLInputElement).value).toBe("https://www.finlens.app/changelog");
 });

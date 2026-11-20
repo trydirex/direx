@@ -18,6 +18,7 @@ import { CHECK_CANDIDATES, deploymentFromEnv, modelRoutes, signInNeeds } from ".
 import { connectedMailboxes, createHeaderCheck, createHoldHooks, createHolds, createMailboxPauses, createOutreach, createOutsideTouches, isPublicHttps, outreachRoutes, PROBE_WORDING_VERSION } from "./modules/outreach/index";
 import { createExports, exportRoutes } from "./modules/retention/index";
 import { createReviewFeeds, reviewFeedRoutes } from "./modules/review-feed/index";
+import { createTrackingDomains, systemDns, trackingAskApp, trackingRoutes } from "./modules/tracking/index";
 import { createPlans, draftRuns, planAskStarts, planRoutes } from "./modules/plans/index";
 import { createPluginWebhooks, docsProviders, HOST_VERSION, keyConnections, newsletterLists, pluginRoutes, searchProviders, type Plugins } from "./modules/plugins/index";
 import { createNewsletter, issueDesk, newsletterRoutes } from "./modules/newsletter/index";
@@ -260,6 +261,10 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
     baseUrl,
   });
   app.route("/", reviewFeedRoutes({ feeds: () => reviewFeeds, reachable: () => isPublicHttps(baseUrl()) }));
+  // Tracked links' domains (ADR 0035). The edge's ask is its own app, served on an internal port below.
+  const trackingDomains = createTrackingDomains({ dns: systemDns, target: () => process.env.DIREX_TRACKING_TARGET || null });
+  app.route("/", trackingRoutes({ domains: () => trackingDomains }));
+  const trackingAsk = trackingAskApp({ domains: () => trackingDomains });
   const setMeta: Vault["setMeta"] = (workspaceId, credentialId, name, value) => getVault().setMeta(workspaceId, credentialId, name, value);
   const newsletter = createNewsletter({
     credentials: (workspaceId) => getVault().list(workspaceId),
@@ -505,7 +510,7 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
       media: (workspaceId: string) => files.sources(workspaceId),
     },
   };
-  return { app, identity, vault: getVault, ports };
+  return { app, identity, vault: getVault, ports, trackingAsk };
 }
 
 // Built at import with no worker, for the OpenAPI script and tests; a route that needs the worker
@@ -529,7 +534,7 @@ export async function runServer({ admission: supplied, ...extensions }: { discov
   worker = await startWorker({ vault: built.vault(), mailer: deployment.mailer, ...built.ports, ...extensions });
   // ADR 0024: an unclaimed self-hosted server says how to claim it, once.
   if (deploymentFromEnv() === "self_host" && !isDevOrTest(process.env) && !(await admission.status()).claimed) console.warn("No Server admin yet. Run: bun run server-admin --invite");
-  return { ...worker, app: built.app, identity: built.identity };
+  return { ...worker, app: built.app, identity: built.identity, trackingAsk: built.trackingAsk };
 }
 
 /**
@@ -538,16 +543,21 @@ export async function runServer({ admission: supplied, ...extensions }: { discov
  * package that adds extensions calls this with them.
  */
 export async function startServer(extensions: Parameters<typeof runServer>[0] = {}) {
-  const { app, identity, ...worker } = await runServer(extensions);
+  const { app, identity, trackingAsk, ...worker } = await runServer(extensions);
   // A model call or a CLI sign-in can stay silent far longer than Bun's 10-second default, which would
   // drop the response after the work is done. 255 seconds is the most Bun allows.
   // Bun refuses bodies over 128 MB by default; a video upload may be 2 GB, and the media module
   // enforces that cap itself while it streams.
   // A worker serves only /health (ADR 0027 rule 002); api and all serve the whole app.
   const fetch = roleFromEnv() === "worker" ? healthOnly : withClientIp(app.fetch, identity.config().trustedProxies ?? []);
-  const server = Bun.serve({ port: Number(process.env.PORT ?? 3000), hostname: listenHost(), idleTimeout: 255, maxRequestBodySize: MEDIA_MAX_BYTES, fetch });
+  const main = Bun.serve({ port: Number(process.env.PORT ?? 3000), hostname: listenHost(), idleTimeout: 255, maxRequestBodySize: MEDIA_MAX_BYTES, fetch });
+  // The tracking edge's ask (ADR 0035 rule 006), only where an edge is set up, on a port that is never
+  // published or proxied: loopback by default, or the Compose network's own interface.
+  const askPort = process.env.DIREX_TRACKING_ASK_PORT;
+  const ask = askPort && roleFromEnv() !== "worker" ? Bun.serve({ port: Number(askPort), hostname: process.env.DIREX_TRACKING_ASK_HOST || "127.0.0.1", fetch: trackingAsk.fetch }) : null;
+  const server = { stop: async (force?: boolean) => void (await Promise.all([main.stop(force), ask?.stop(force)])) };
   onStopSignal({ server, worker });
-  return { server, worker };
+  return { server: main, worker };
 }
 
 /**

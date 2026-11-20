@@ -6,6 +6,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CliProvider } from "../../domain/routes-check";
+import { codexBinary } from "./codex";
 import { parseSignInLink, parseSignInRejected, parseSignInToken, plain } from "./setup-token-parse";
 
 const LINK_TIMEOUT_MS = 30_000;
@@ -121,8 +122,7 @@ async function codexLogin(binary: string): Promise<LoginStart> {
 }
 
 export function startLogin(provider: CliProvider): Promise<LoginStart> {
-  const name = provider === "claude_code" ? "claude" : "codex";
-  const binary = Bun.which(name, { PATH: process.env.PATH ?? "" });
+  const binary = provider === "claude_code" ? Bun.which("claude", { PATH: process.env.PATH ?? "" }) : codexBinary();
   if (!binary) return Promise.resolve({ ok: false, reason: "not_installed" });
   return provider === "claude_code" ? claudeLogin(binary) : codexLogin(binary);
 }

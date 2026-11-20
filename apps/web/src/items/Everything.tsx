@@ -14,7 +14,7 @@ import { EmptyState, Notice, Page } from "../components/layout";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { campaignsQuery } from "../campaigns/actions";
 import { networksQuery } from "../social/actions";
-import { approveClean, BULK, cancelAll, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, mayWithdraw, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
+import { approveClean, BULK, cancel, everythingQuery, ITEM_MESSAGES, listTime, mayApprove, mayEdit, mayWithdraw, message, STATE_LABEL, TYPES, type ItemState, type ListFilters, type Role } from "./actions";
 import type { ItemDialog } from "./ItemPanel";
 import { ApproveList, approvedToast, QueueRow } from "./QueueRow";
 import { StateChip } from "./StateChip";
@@ -96,14 +96,16 @@ export function Everything(p: {
         approvedToast(p.workspaceId, r.ids, editor, refresh);
         setRefused(r.refused.length > 0 ? `${r.refused.length} didn't go through: ${message(r.refused[0]!.reason)}` : undefined);
       } else {
-        // A dropped connection rejects partway, after some may have gone through; the refresh below shows which.
-        const done = await cancelAll(p.workspaceId, withdrawable.map((i) => i.id)).catch(() => null);
-        if (done === null) setRefused("We couldn't reach Direx to withdraw them all. Check the list for what changed, then try again.");
-        else {
-          if (done > 0) toast.add({ title: `Withdrew ${done}.` });
-          const late = withdrawable.length - done;
-          setRefused(late > 0 ? `${late} couldn't be withdrawn. They may have gone out already.` : undefined);
-        }
+        // Wait for every request, even if one loses its connection, before reading the list again.
+        const results = await Promise.allSettled(withdrawable.map((i) => cancel(p.workspaceId, i.id)));
+        const done = results.filter((r) => r.status === "fulfilled" && r.value === null).length;
+        const failed = results.filter((r) => r.status === "rejected").length;
+        const late = results.length - done - failed;
+        if (done > 0) toast.add({ title: `Withdrew ${done}.` });
+        setRefused([
+          late > 0 ? `${late} couldn't be withdrawn. They may have gone out already.` : "",
+          failed > 0 ? `Couldn't confirm ${failed} withdrawal${failed === 1 ? "" : "s"}. Check the refreshed list before trying again.` : "",
+        ].filter(Boolean).join(" ") || undefined);
       }
       setChosen([]);
       await refresh();

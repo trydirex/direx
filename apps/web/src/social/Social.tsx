@@ -67,8 +67,8 @@ const AVAILABILITY: Record<Network["availability"], string> = {
   not_built: "Coming later",
   not_available: "Not available",
 };
-/** A network connected by a form or through the Workspace's own app needs no platform to approve Direx's app, so it reads as open. One with a wizard waits on the person's own app, not the network. */
-const availabilityWords = (n: Network) => (n.wizard ? "Set up your own app to connect" : n.canConnect && n.availability === "awaiting_approval" && (n.connect === "form" || n.app === "own") ? (n.app === "own" ? "Through your own app" : "Available") : AVAILABILITY[n.availability]);
+/** A network connected by a form or through the Workspace's own app needs no platform to approve Direx's app, so it reads as open. */
+const availabilityWords = (n: Network) => (n.canConnect && n.availability === "awaiting_approval" && (n.connect === "form" || n.app === "own") ? (n.app === "own" ? "Through your own app" : "Available") : AVAILABILITY[n.availability]);
 const STATUS: Record<string, string> = { active: "Working", needs_reauth: "Reconnect needed", revoked: "Revoked" };
 const SUMMARY = "cursor-pointer font-medium";
 const FEATURE: Record<string, string> = { publish: "posts", links: "links", follow_ups: "follow-up comments", video: "video", image: "images", analytics: "stats", comments: "comments" };
@@ -247,8 +247,9 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
         <QueryBoundary query={networks} skeleton={<Skeleton className="h-48 w-full" />} messages={MESSAGES}>
           {(list) => {
             const ready = list.filter((n) => n.canConnect);
-            const later = list.filter((n) => !n.canConnect);
+            // A network this server connects through the person's own app is set up below, not waited for.
             const own = list.filter((n) => n.wizard);
+            const later = list.filter((n) => !n.canConnect && !n.wizard);
             const rows = (shown: Network[]) => (
               <Table>
                 <TableBody>
@@ -266,18 +267,19 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
               <>
                 <h3 className="font-medium">Ready to connect</h3>
                 {ready.length ? rows(ready) : <p className="text-muted-foreground">No network can be connected yet.</p>}
+                {own.length > 0 && (
+                  <>
+                    <h3 className="font-medium">Set up with your own app</h3>
+                    <p className="text-sm text-muted-foreground">This server connects these networks through an app you register with each one.</p>
+                    <div className="flex flex-col gap-3">
+                      {manage ? own.map((n) => <Wizard key={n.connection} label={n.label} wizard={n.wizard!} callbackProblem={n.callbackProblem} save={async (f) => void (await settle(await saveApp(workspace.id, n, f)))} />) : <p className="text-sm text-muted-foreground">An Owner or Admin can set these up: {own.map((n) => n.label).join(", ")}.</p>}
+                    </div>
+                  </>
+                )}
                 {later.length > 0 && (
                   <details>
                     <summary className={SUMMARY}>{`Coming later (${later.length})`}</summary>
                     <div className="mt-3">{rows(later)}</div>
-                  </details>
-                )}
-                {own.length > 0 && (
-                  <details>
-                    <summary className={SUMMARY}>Advanced: use your own app (self-hosted)</summary>
-                    <div className="mt-3 flex flex-col gap-3">
-                      {manage ? own.map((n) => <Wizard key={n.connection} label={n.label} wizard={n.wizard!} callbackProblem={n.callbackProblem} save={async (f) => void (await settle(await saveApp(workspace.id, n, f)))} />) : <p className="text-sm text-muted-foreground">An Owner or Admin can set this up.</p>}
-                    </div>
                   </details>
                 )}
               </>

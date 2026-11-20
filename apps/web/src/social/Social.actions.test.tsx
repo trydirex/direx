@@ -149,8 +149,7 @@ test("an Owner saves the Workspace's own app for a network; a second app is refu
   serve({ networks: [wizard] });
   const post = vi.spyOn(api, "POST").mockImplementationOnce((() => refused("duplicate_key")) as never);
   open();
-  await userEvent.click(await screen.findByText("Advanced: use your own app (self-hosted)"));
-  await userEvent.click(screen.getByText("Set up Tube"));
+  await userEvent.click(await screen.findByText("Set up Tube"));
   await userEvent.type(screen.getByLabelText("Client ID"), "client-1");
   await userEvent.type(screen.getByLabelText("Client secret"), "secret-1");
   await userEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -329,18 +328,18 @@ test("an account beside others on its network says who runs it, and an older acc
   expect(screen.queryByRole("button", { name: "Acme Clips is an established account" })).toBeNull();
 });
 
-test("networks split into Ready to connect and a closed Coming later; your own app waits under a closed Advanced", async () => {
+test("networks split into Ready to connect, Set up with your own app, and a closed Coming later", async () => {
   serve({ networks: [net(), net({ connection: "soon", label: "Soon", availability: "awaiting_approval", canConnect: false, app: null }), net({ connection: "todo", label: "Todo", availability: "not_built", canConnect: false, app: null }), wizard] });
   open();
   const networks = within(await screen.findByRole("region", { name: "Networks" }));
   await networks.findByRole("button", { name: "Connect Net" });
-  const later = networks.getByText("Coming later (3)").closest("details")!;
+  const later = networks.getByText("Coming later (2)").closest("details")!;
   expect(later.open).toBe(false);
-  expect(within(later).getAllByRole("row").map((r) => r.firstElementChild!.textContent)).toEqual(["Soon", "Todo", "Tube"]);
+  expect(within(later).getAllByRole("row").map((r) => r.firstElementChild!.textContent)).toEqual(["Soon", "Todo"]);
   expect(within(later).queryByRole("button")).toBeNull();
-  const advanced = networks.getByText("Advanced: use your own app (self-hosted)").closest("details")!;
-  expect(advanced.open).toBe(false);
-  expect(within(advanced).getByText("Set up Tube")).toBeTruthy();
+  // A network set up through the person's own app is shown openly, each one's steps behind its own Set up.
+  expect(networks.getByText("Set up with your own app")).toBeTruthy();
+  expect(networks.getByText("Set up Tube").closest("details")!.open).toBe(false);
   expect(networks.getByText("Ready to connect").nextElementSibling!.textContent).toContain("Net");
   expect(networks.getByText("Ready to connect").nextElementSibling!.textContent).not.toContain("Soon");
 });

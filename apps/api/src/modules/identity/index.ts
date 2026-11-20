@@ -12,7 +12,7 @@ import { identityRoutes } from "./routes";
 import { serverRoutes } from "./server-routes";
 
 export { authConfigFromEnv, type Auth, type AuthConfig } from "./adapters/auth";
-export { isDevOrTest, logMailer, smtpMailer, type Mail, type Mailer } from "./adapters/mail";
+export { checkSmtp, isDevOrTest, logMailer, smtpMailer, type Mail, type Mailer, type SmtpCheck } from "./adapters/mail";
 export { pickAdmission, selfHostAdmission } from "./application/admission";
 export { approverFromMember, approverMayApprove, mayGrantRules, workspaceLive } from "./application/approver-check";
 export type { Admission, AdmitInput, AdmitResult, FirstRun, ServerStatus, SignupPolicy } from "./domain/admission";

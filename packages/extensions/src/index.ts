@@ -39,6 +39,7 @@ import { createInstagramPlugin } from "./social/instagram/plugin";
 import { createLinkedInPagePlugin, createLinkedInPlugin } from "./social/linkedin/plugin";
 import { createThreadsPlugin } from "./social/threads/plugin";
 import { createXPlugin } from "./social/x/plugin";
+import { createYouTubePlugin } from "./social/youtube/plugin";
 
 /** Every first-party plugin the worker loads. A new provider joins here and core stays as it is. */
-export const firstPartyPlugins = () => [createGmailPlugin(), createImapSmtpPlugin(), createLinkedInPlugin(), createLinkedInPagePlugin(), createXPlugin(), createBlueskyPlugin(), createFacebookPlugin(), createInstagramPlugin(), createThreadsPlugin(), createReoonPlugin(), createKitPlugin(), createBeehiivPlugin(), createMailchimpPlugin(), createSearchConsolePlugin(), createNotionPlugin()];
+export const firstPartyPlugins = () => [createGmailPlugin(), createImapSmtpPlugin(), createLinkedInPlugin(), createLinkedInPagePlugin(), createXPlugin(), createBlueskyPlugin(), createFacebookPlugin(), createInstagramPlugin(), createThreadsPlugin(), createYouTubePlugin(), createReoonPlugin(), createKitPlugin(), createBeehiivPlugin(), createMailchimpPlugin(), createSearchConsolePlugin(), createNotionPlugin()];

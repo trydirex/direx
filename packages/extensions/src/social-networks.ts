@@ -6,6 +6,7 @@ import { INSTAGRAM_SCOPES } from "./social/instagram/provider";
 import { LINKEDIN_SCOPES } from "./social/linkedin/provider";
 import { THREADS_SCOPES } from "./social/threads/provider";
 import { X_SCOPES } from "./social/x/provider";
+import { YOUTUBE_SCOPES } from "./social/youtube/provider";
 
 export type SocialAvailability = "available" | "awaiting_approval" | "not_built" | "not_available";
 
@@ -167,7 +168,23 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
       steps: ["Create a Business type app and add Threads.", "Add the callback URL below. Meta may add a trailing slash, which must match exactly.", "Invite your Threads account as a tester, then accept in Threads settings.", "Copy the Threads app ID and secret into the fields below."],
     },
   },
-  unbuilt("youtube", "YouTube", "channel"),
+  {
+    ...unbuilt("youtube", "YouTube", "channel"),
+    availability: awaiting,
+    ownAppLimits: ["In Personal mode, only the Google account that made the app can connect.", "In production without Google's review, people see a warning screen first, and at most 100 can ever connect."],
+    features: [feature("video", ["https://www.googleapis.com/auth/youtube.upload"]), feature("analytics", ["https://www.googleapis.com/auth/yt-analytics.readonly"]), feature("comments", ["https://www.googleapis.com/auth/youtube.force-ssl"])],
+    wizard: {
+      consoleUrl: "https://console.cloud.google.com/apis/credentials",
+      scopes: YOUTUBE_SCOPES,
+      steps: [
+        "Create a Google Cloud project, or reuse the one you made for Search Console.",
+        "Enable the YouTube Data API v3.",
+        "On the OAuth consent screen, choose Personal if only you will connect. Otherwise choose External and set it In production. Don't leave it in Testing: Google ends its tokens after 7 days.",
+        "Create an OAuth client of type Web application, and add the callback URL below as an authorized redirect URI.",
+        "Copy the client ID and client secret into the fields below.",
+      ],
+    },
+  },
   unbuilt("gmb", "Google Business Profile", "location"),
   unbuilt("tiktok", "TikTok", "creator", "business"),
   unbuilt("pinterest", "Pinterest", "user"),

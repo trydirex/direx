@@ -128,14 +128,14 @@ const webhookListRoute = createRoute({
 const webhookCreateRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/plugin-webhooks",
-  middleware: [requirePermission("workspace.settings"), requireStepUp()],
+  middleware: [requirePermission("workspace.settings"), requireStepUp("short")],
   request: { params: ws, body: { content: { "application/json": { schema: z.object({ pluginId: PLUGIN_ID, trigger: z.string().min(1).max(200) }) } } } },
   responses: { 200: json(WebhookMade, "Made; the secret is shown this once"), ...errors },
 });
 const webhookRotateRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/plugin-webhooks/{hookId}/rotate",
-  middleware: [requirePermission("workspace.settings"), requireStepUp()],
+  middleware: [requirePermission("workspace.settings"), requireStepUp("short")],
   request: { params: ws.extend({ hookId: z.uuid() }) },
   responses: { 200: json(WebhookMade, "A new secret, shown this once; the old one stops working"), ...errors },
 });

@@ -91,7 +91,7 @@ const addRoute = createRoute({
   },
   responses: { 200: json(z.object({ ok: z.literal(true) }), "Added"), ...errors },
 });
-const disconnectRoute = createRoute({ method: "delete", path: "/api/w/{workspaceId}/social/credentials/{credentialId}", middleware: [requirePermission("credential.connect"), requireStepUp()], request: { params: one }, responses: { 200: json(z.object({ ok: z.literal(true) }), "Disconnected; its history stays"), ...errors } });
+const disconnectRoute = createRoute({ method: "delete", path: "/api/w/{workspaceId}/social/credentials/{credentialId}", middleware: [requirePermission("credential.connect"), requireStepUp("short")], request: { params: one }, responses: { 200: json(z.object({ ok: z.literal(true) }), "Disconnected; its history stays"), ...errors } });
 
 const formRoute = createRoute({
   method: "post",
@@ -299,7 +299,7 @@ export function socialRoutes({ social, posts }: { social: () => Social; posts?: 
       const { credentialId } = c.req.valid("param");
       const refused = await allowed(c, credentialId);
       if (refused) return c.json({ error: refused }, refused === "missing" ? 404 : 403);
-      const r = await social().disconnect(m.workspaceId, credentialId, m.userId, steppedUp(m));
+      const r = await social().disconnect(m.workspaceId, credentialId, m.userId, steppedUp(m, "short"));
       return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, r.reason === "not_a_network_login" ? 400 : 404);
     });
 }

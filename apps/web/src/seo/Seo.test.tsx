@@ -84,6 +84,7 @@ test("with no Google app yet, an Owner saves the Workspace's own, then can conne
   serve(() => state);
   const post = vi.spyOn(api, "POST").mockImplementation((() => reply(409, { error: "duplicate_key" })) as never);
   render(withQueries(<Seo workspaceId={W} role="owner" />));
+  expect(await screen.findByText("Search Console needs a Google app first. Set one up below.")).toBeTruthy();
   await userEvent.click(await screen.findByText("Set up a Google app for Search Console"));
   expect(screen.getByText(callbackUrl)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Connect Search Console" })).toBeNull();

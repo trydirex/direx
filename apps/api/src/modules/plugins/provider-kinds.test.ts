@@ -154,6 +154,19 @@ test("every first-party manifest gives the providers it gave before", () => {
       },
       {
         "docs": [],
+        "id": "com.trydirex.tiktok",
+        "mailbox": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "newsletter": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "search": [],
+      },
+      {
+        "docs": [],
         "id": "com.trydirex.reoon",
         "mailbox": {
           "incomplete": [],

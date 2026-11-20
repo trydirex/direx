@@ -105,9 +105,9 @@ test("Threads: states when its data access ends", async () => {
 test("every OAuth network has a plugin, a provider and a descriptor, and only the built networks can publish", () => {
   const plugins = firstPartyPlugins().filter((p) => p.manifest.capabilities.some((c) => c.name === "social.identity"));
   const connections = plugins.map((p) => p.manifest.connections[0]!.key).sort();
-  expect(connections).toEqual(["bluesky", "facebook", "instagram", "linkedin", "linkedin_page", "threads", "x", "youtube"]);
+  expect(connections).toEqual(["bluesky", "facebook", "instagram", "linkedin", "linkedin_page", "threads", "tiktok", "x", "youtube"]);
   const reads = ["social.identity", "social.health"];
-  for (const p of plugins) expect(p.manifest.capabilities.map((c) => c.name)).toEqual(["instagram", "linkedin_page", "youtube"].includes(p.manifest.connections[0]!.key) ? reads : [...reads, "social.publish"]);
+  for (const p of plugins) expect(p.manifest.capabilities.map((c) => c.name)).toEqual(["instagram", "linkedin_page", "tiktok", "youtube"].includes(p.manifest.connections[0]!.key) ? reads : [...reads, "social.publish"]);
   expect(socialProviders().map((p) => p.connection).sort()).toEqual(connections.filter((c) => c !== "bluesky"));
   for (const c of connections) expect(socialNetworks().map((n) => n.connection)).toContain(c);
 });

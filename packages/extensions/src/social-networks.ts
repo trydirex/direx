@@ -5,6 +5,7 @@ import { FACEBOOK_SCOPES } from "./social/facebook/provider";
 import { INSTAGRAM_SCOPES } from "./social/instagram/provider";
 import { LINKEDIN_SCOPES } from "./social/linkedin/provider";
 import { THREADS_SCOPES } from "./social/threads/provider";
+import { TIKTOK_SCOPES } from "./social/tiktok/provider";
 import { X_SCOPES } from "./social/x/provider";
 import { YOUTUBE_SCOPES } from "./social/youtube/provider";
 
@@ -186,7 +187,22 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
     },
   },
   unbuilt("gmb", "Google Business Profile", "location"),
-  unbuilt("tiktok", "TikTok", "creator", "business"),
+  {
+    ...unbuilt("tiktok", "TikTok", "creator"),
+    availability: awaiting,
+    ownAppLimits: ["Until TikTok approves your app, only the accounts added to its sandbox can connect.", "Posts from an app TikTok hasn't audited are private, need a private account, and at most 5 accounts can post a day."],
+    features: [feature("video", ["video.publish"]), feature("analytics", ["user.info.stats", "video.list"])],
+    wizard: {
+      consoleUrl: "https://developers.tiktok.com/apps",
+      scopes: TIKTOK_SCOPES,
+      steps: [
+        "Create an app, add Login Kit, and choose Web as its platform.",
+        "Add the callback URL below as a redirect URI. TikTok accepts only https, so a local install needs a public https address.",
+        "Turn on Sandbox, then under Target users add the TikTok account you will connect. It can take an hour to show.",
+        "Copy the sandbox's client key and client secret into the fields below.",
+      ],
+    },
+  },
   unbuilt("pinterest", "Pinterest", "user"),
   unbuilt("dribbble", "Dribbble", "user"),
   unbuilt("mastodon", "Mastodon", "user"),

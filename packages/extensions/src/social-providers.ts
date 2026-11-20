@@ -4,7 +4,8 @@ import { FACEBOOK_PROVIDER } from "./social/facebook/provider";
 import { INSTAGRAM_PROVIDER } from "./social/instagram/provider";
 import { LINKEDIN_PAGE_PROVIDER, LINKEDIN_PROVIDER } from "./social/linkedin/provider";
 import { THREADS_PROVIDER } from "./social/threads/provider";
+import { TIKTOK_PROVIDER } from "./social/tiktok/provider";
 import { X_PROVIDER } from "./social/x/provider";
 import { YOUTUBE_PROVIDER } from "./social/youtube/provider";
 
-export const socialProviders = () => [LINKEDIN_PROVIDER, LINKEDIN_PAGE_PROVIDER, X_PROVIDER, FACEBOOK_PROVIDER, INSTAGRAM_PROVIDER, THREADS_PROVIDER, YOUTUBE_PROVIDER] as const;
+export const socialProviders = () => [LINKEDIN_PROVIDER, LINKEDIN_PAGE_PROVIDER, X_PROVIDER, FACEBOOK_PROVIDER, INSTAGRAM_PROVIDER, THREADS_PROVIDER, YOUTUBE_PROVIDER, TIKTOK_PROVIDER] as const;

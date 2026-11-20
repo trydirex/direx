@@ -652,6 +652,10 @@
     "0158_tracked_links.sql": {
       "sha256": "80b4e0fbe748409be4deaec7dc07a765083936fced0f841362e00faad4527876",
       "description": "Add tracking domains, tracked links and their uses, the Campaign tracking switches, and the host and link lookups for the redirect (ADR 0035)"
+    },
+    "0159_campaign_write_ups.sql": {
+      "sha256": "e325b86627d84fd2f110e022aa887e2d455479f24f979ceee687b3c620cdfcfe",
+      "description": "Adds campaign_write_ups: one write-up per Campaign (writing, written or failed) with its paragraph, cited readings and up to three suggestions, under forced Workspace RLS, with DELETE revoked from the app"
     }
   }
 }

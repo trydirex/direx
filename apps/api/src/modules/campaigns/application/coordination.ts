@@ -13,12 +13,13 @@ export const CONFLICT_KIND = "campaign_conflict";
 export const WAITING_KIND = "campaign_waiting";
 /** The notice that a Campaign's launch moved and what it did to Items already approved. Approving it only says "seen". */
 import { LAUNCH_MOVED_KIND } from "../domain/activity";
+import { ENDED_STATES } from "../domain/write-up";
 export { LAUNCH_MOVED_KIND };
 /** A step others wait on has no output days after its date. Approving it keeps waiting; the Campaign offers going ahead or cancelling. */
 export const STALL_KIND = "campaign_stall";
 export type StallPayload = { campaignId: string; stepKey: string; choices: string[] };
 export const PAUSED = "campaign_paused";
-const ENDED: ReadonlySet<string> = new Set(["sent", "blocked", "cancelled", "applied"]);
+const ENDED = ENDED_STATES;
 const SYSTEM = { system: "campaigns" } as const;
 
 /** Runs with the ledger's checks, so a paused campaign, a step the plan changed or a Person who has left can't send, however it got here. */

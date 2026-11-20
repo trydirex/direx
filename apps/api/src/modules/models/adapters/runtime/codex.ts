@@ -48,10 +48,22 @@ export function useCodexBinaryForTests(binary: string | null | undefined): void 
   testBinary = binary;
 }
 
+/** Resolve the shipped binary relative to a module, or return null when it isn't installed. */
+export function resolveShippedCodex(from = import.meta.url): string | null {
+  let manifest: string;
+  try {
+    manifest = createRequire(from).resolve("@openai/codex/package.json");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "MODULE_NOT_FOUND") return null;
+    throw error;
+  }
+  return packagedCodex(dirname(manifest), `${process.platform}-${process.arch}`);
+}
+
 /** The Codex binary to run, or null when it isn't installed. */
 export function codexBinary(): string | null {
   if (testBinary !== undefined) return testBinary;
-  shipped ??= packagedCodex(dirname(createRequire(import.meta.url).resolve("@openai/codex/package.json")), `${process.platform}-${process.arch}`);
+  shipped ??= resolveShippedCodex();
   return shipped;
 }
 

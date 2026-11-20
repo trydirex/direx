@@ -16,6 +16,7 @@ const FAILED: [prefix: string, why: string][] = [
   ["credit", "its draft gave the Campaign credit for a result, which the numbers can't show"],
   ["winner_without_comparison", "its draft called one channel better without enough to compare"],
   ["unknown_reading", "its draft cited a number Direx doesn't have"],
+  ["reading_id_in_text", "its draft showed reference codes instead of words"],
   ["suggestion_without_reading", "its draft suggested an assumption without a number behind it"],
   ["repeats_assumption", "its draft suggested an assumption your Strategy already has"],
   ["too_long", "its draft was too long"],

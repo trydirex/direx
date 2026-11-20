@@ -61,6 +61,11 @@ test("creditPhrase and claimsWinner catch credit and a winner without a comparis
   expect(claimsWinner("LinkedIn DM worked better than email.", false)).toBe(true);
   expect(claimsWinner("LinkedIn DM worked better than email.", true)).toBe(false);
   expect(claimsWinner("Both channels reached 40 People.", false)).toBe(false);
+  // A negated winner word is no claim, but a later, plain one still is.
+  expect(claimsWinner("These groups are too few to compare, so no channel is judged better than another.", false)).toBe(false);
+  expect(claimsWinner("We can't say email did better.", false)).toBe(false);
+  expect(claimsWinner("No rates are given. Email still did better.", false)).toBe(true);
+  expect(claimsWinner("Not much changed, and LinkedIn DM worked best.", false)).toBe(true);
 });
 
 const brief: Brief = {
@@ -82,6 +87,7 @@ test("writeUpProblem passes a write-up that keeps to its brief and names the fir
   expect(writeUpProblem({ ...ok, paragraph: "Replies came because of the subject line." }, brief)).toBe("credit:because of");
   expect(writeUpProblem({ ...ok, paragraph: "Email was the best channel." }, brief)).toBe("winner_without_comparison");
   expect(writeUpProblem({ ...ok, cites: ["r9"] }, brief)).toBe("unknown_reading:r9");
+  expect(writeUpProblem({ ...ok, paragraph: "There were 12 replies (r1) by 2026-11-20." }, brief)).toBe("reading_id_in_text");
   expect(writeUpProblem({ ...ok, suggestions: [{ ...ok.suggestions[0]!, readingIds: [] }] }, brief)).toBe("suggestion_without_reading");
   expect(writeUpProblem({ ...ok, suggestions: [{ ...ok.suggestions[0]!, assumption: " founders answer cold email  within a week " }] }, brief)).toBe("repeats_assumption");
   expect(writeUpProblem({ ...ok, suggestions: [ok.suggestions[0]!, ok.suggestions[0]!, ok.suggestions[0]!, ok.suggestions[0]!] }, brief)).toBe("too_many_suggestions:4");

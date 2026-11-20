@@ -104,6 +104,23 @@ test("an invite link's token is handed to the server before anyone signs in", as
   await vi.waitFor(() => expect(sent()).toEqual({ path: "/api/admission/token", body: { token } }));
 });
 
+test.each([
+  { mode: "sign_in", button: "Sign in", endpoint: "/api/auth/sign-in/email" },
+  { mode: "sign_up", button: "Sign up", endpoint: "/api/auth/sign-up/email" },
+] as const)("password $mode waits for the setup token before returning to /claim", async ({ mode, button, endpoint }) => {
+  const hold = Promise.withResolvers<Response>();
+  answer(200, {}, { google: false, microsoft: false });
+  fetchSpy.mockImplementation((path: RequestInfo | URL) => path === "/api/admission/token" ? hold.promise : Promise.resolve(Response.json({ token: "session" })));
+  render(withQueries(<SignIn callbackURL="/claim" initialMode={mode} inviteToken={"a".repeat(64)} />));
+  await fill("sam@example.com", "twelve chars ok");
+  await userEvent.click(screen.getByRole("button", { name: button }));
+  expect(fetchSpy).toHaveBeenCalledExactlyOnceWith("/api/admission/token", expect.anything());
+  expect(assign).not.toHaveBeenCalled();
+  hold.resolve(Response.json({ ok: true }));
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/claim"));
+  expect(sent()).toMatchObject({ path: endpoint, body: { callbackURL: "/claim" } });
+});
+
 test("a refused password sign-up shows the server's reason", async () => {
   const message = "This server takes invited people only. Ask whoever runs it for an invite.";
   answer(400, { code: "SIGNUP_REFUSED", message });

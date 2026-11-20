@@ -330,8 +330,8 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
                   <Input aria-label="Measure" className="flex-1" value={m.label} onChange={(e) => setLine("measures", i, { label: e.target.value })} />
                   <Input aria-label="Target" className="w-48 max-w-full" value={m.target} onChange={(e) => setLine("measures", i, { target: e.target.value })} />
                   <BasisField value={m.basis} facts={facts} onChange={(basis) => setLine("measures", i, { basis })} />
-                  {/* A hand-written Measure can be counted too, not only one the drafter wrote. */}
-                  <Select aria-label={`Where measure ${i + 1}'s number comes from`} value={m.source ?? "external"} onChange={(e) => setLine("measures", i, { source: e.target.value as MeasureSource })}>
+                  {/* A different source starts a new reading history; old readings stay with the old key. */}
+                  <Select aria-label={`Where measure ${i + 1}'s number comes from`} value={m.source ?? "external"} onChange={(e) => setLine("measures", i, { source: e.target.value as MeasureSource, key: newKey() })}>
                     {MEASURE_SOURCES.map((s) => (
                       <option key={s} value={s}>
                         {sourceWords(s)}

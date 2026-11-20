@@ -105,6 +105,36 @@ test("a marketer edits every line, saves the draft and submits it, and a refusal
   expect(await screen.findByText(/Still needed: dates up to 45 days apart/)).toBeTruthy();
 });
 
+test.each([
+  ["replies", "Counted by Direx from meetings marked on People", "meetings"],
+  ["meetings", "Entered by a person", "external"],
+  [undefined, "Counted by Direx from email replies", "replies"],
+])("changing a Measure source from %s starts a separate reading history", async (source, choice, expected) => {
+  const measure = { ...body.measures[0]!, source };
+  let draft = { ...body, measures: [measure] };
+  serve(() => reply(200, plan({ draft })));
+  const put = vi.spyOn(api, "PUT").mockImplementation(((_: string, o: { body: { body: typeof draft } }) => {
+    draft = o.body.body;
+    return reply(200, { revision: 6, missing: [] });
+  }) as never);
+  show();
+  const label = await screen.findByLabelText("Measure");
+  await userEvent.type(label, " updated");
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  const savedMeasure = () => (put.mock.calls.at(-1)![1] as { body: { body: { measures: typeof measure[] } } }).body.body.measures[0]!;
+  expect(savedMeasure()).toEqual({ ...measure, label: "Meetings updated" });
+  await pick(screen.getByRole("combobox", { name: "Where measure 1's number comes from" }), choice!);
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  const changed = savedMeasure();
+  expect(changed).toEqual({ ...measure, label: "Meetings updated", source: expected, key: expect.any(String) });
+  expect(changed.key).not.toBe(measure.key);
+  expect(changed.key).not.toBe("");
+  // Further edits to this source keep its new history, just as edits to the old source did.
+  await userEvent.type(screen.getByLabelText("Target"), "0");
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(savedMeasure()).toEqual({ ...changed, target: "40" });
+});
+
 test("a refused save is shown and nothing is submitted", async () => {
   serve();
   const post = answer({});

@@ -47,6 +47,8 @@ export function seoWorld() {
     credentials: (ws) => vault.list(ws),
     setMeta: (ws, id, name, value) => vault.setMeta(ws, id, name, value),
     markNeedsReauth: (ws, id) => vault.markNeedsReauth(ws, id),
+    appSource: async () => "system",
+    callbackUrl: () => "http://direx.test/api/connections/callback",
     provider: () => provider,
     query: (ws, capability, input, credentialId) => plugins.query(ws, capability, input, credentialId),
     selfHost: () => deployment.selfHost,

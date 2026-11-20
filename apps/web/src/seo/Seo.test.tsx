@@ -55,7 +55,7 @@ function serve(state: () => unknown, sum: unknown = summary, week: unknown = { n
   }) as never);
 }
 
-test("Connect Search Console sends the person to Google, and a missing client says what to set", async () => {
+test("Connect Search Console sends the person to Google, and a missing app says who can set one up", async () => {
   serve(() => off);
   const assign = vi.spyOn(window.location, "assign").mockImplementation(() => {});
   const post = vi.spyOn(api, "POST").mockImplementation((() => reply(500, { error: "unexpected" })) as never).mockImplementationOnce((() => reply(200, { url: "https://accounts.google.com/o/oauth2" })) as never);
@@ -65,7 +65,50 @@ test("Connect Search Console sends the person to Google, and a missing client sa
   expect(assign).toHaveBeenCalledWith("https://accounts.google.com/o/oauth2");
   post.mockImplementationOnce((() => reply(404, { error: "unknown_connection" })) as never);
   await userEvent.click(screen.getByRole("button", { name: "Connect Search Console" }));
-  expect((await screen.findByRole("alert")).textContent).toContain("Set DIREX_GOOGLE_CLIENT_ID");
+  expect((await screen.findByRole("alert")).textContent).toContain("An Owner or Admin can set one up on this page.");
+});
+
+const callbackUrl = "https://direx.example/api/connections/callback";
+const noApp = { ...off, app: { source: null, callbackUrl } };
+
+test("with no Google app yet, a member is told to ask an Owner or Admin and can't connect", async () => {
+  serve(() => noApp);
+  render(withQueries(<Seo workspaceId={W} role="marketer" />));
+  expect(await screen.findByText("Search Console needs a Google app first. Ask an Owner or Admin to set one up here.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Connect Search Console" })).toBeNull();
+  expect(screen.queryByText("Set up a Google app for Search Console")).toBeNull();
+});
+
+test("with no Google app yet, an Owner saves the Workspace's own, then can connect", async () => {
+  let state: unknown = noApp;
+  serve(() => state);
+  const post = vi.spyOn(api, "POST").mockImplementation((() => reply(409, { error: "duplicate_key" })) as never);
+  render(withQueries(<Seo workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByText("Set up a Google app for Search Console"));
+  expect(screen.getByText(callbackUrl)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Connect Search Console" })).toBeNull();
+  await userEvent.type(screen.getByLabelText("Client ID"), "own-id.apps.googleusercontent.com");
+  await userEvent.type(screen.getByLabelText("Client secret"), "own-secret");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("This Workspace already has a Google app for Search Console.");
+
+  post.mockImplementation((() => reply(201, { credential: {} })) as never);
+  state = { ...off, app: { source: "own", callbackUrl } };
+  await userEvent.type(screen.getByLabelText("Client secret"), "own-secret");
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect(post).toHaveBeenLastCalledWith("/api/w/{workspaceId}/credentials", {
+    ...at,
+    body: { scope: "workspace", kind: "basic", key: "oauth_app:google_search_console", name: "Search Console app", meta: { username: "own-id.apps.googleusercontent.com" }, value: { password: "own-secret" } },
+  });
+  expect(await screen.findByRole("button", { name: "Connect Search Console" })).toBeTruthy();
+  expect(screen.queryByText(/Google app for Search Console|own Google app/)).toBeNull();
+});
+
+test("on the server's Google app, an Owner can connect or use the Workspace's own app instead", async () => {
+  serve(() => ({ ...off, app: { source: "system", callbackUrl } }));
+  render(withQueries(<Seo workspaceId={W} role="admin" />));
+  expect(await screen.findByRole("button", { name: "Connect Search Console" })).toBeTruthy();
+  expect(screen.getByText("Use this Workspace's own Google app (optional)")).toBeTruthy();
 });
 
 test("a connection that needs reconnecting offers Reconnect", async () => {

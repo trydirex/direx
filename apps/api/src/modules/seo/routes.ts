@@ -27,6 +27,8 @@ const stateRoute = createRoute({
         /** The properties a person may choose; null when they could not be read. */
         properties: z.array(Property).nullable(),
         refusal: Refusal.nullable(),
+        /** Before it's connected: whose Google app connecting would use, and the redirect a Workspace's own app must allow. */
+        app: z.object({ source: z.enum(["own", "system"]).nullable(), callbackUrl: z.string() }).optional(),
       }),
       "Whether Search Console is connected, the chosen property and the ones to choose from",
     ),

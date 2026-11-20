@@ -23,6 +23,10 @@ export type SeoDeps = {
   setMeta: (workspaceId: string, credentialId: string, name: string, value: string) => Promise<{ ok: boolean }>;
   /** Google refused the token, so the connection shows that it needs reconnecting. */
   markNeedsReauth: (workspaceId: string, credentialId: string) => Promise<void>;
+  /** Whose Google app connecting would use here: the Workspace's own, the server's, or none yet. */
+  appSource: (workspaceId: string) => Promise<"own" | "system" | null>;
+  /** The redirect a Workspace's own Google app must allow. */
+  callbackUrl: () => string;
   /** The search data provider's connection and query ids, or none when no plugin provides it. */
   provider: () => SearchProvider | undefined;
   /** A plugin query through one credential, its answer checked by the host. */
@@ -149,7 +153,7 @@ export function createSeo(deps: SeoDeps) {
     /** What the SEO page shows first: whether Search Console is connected, the choice, and what to choose from. */
     async state(workspaceId: string) {
       const c = await connection(workspaceId);
-      if (!c.ok) return { connected: false, siteUrl: null, properties: null, refusal: { reason: c.reason } };
+      if (!c.ok) return { connected: false, siteUrl: null, properties: null, refusal: { reason: c.reason }, app: { source: await deps.appSource(workspaceId), callbackUrl: deps.callbackUrl() } };
       const p = await propertiesOf(workspaceId, c);
       return { connected: true, siteUrl: c.siteUrl, properties: p.ok ? p.properties : null, refusal: p.ok ? null : { reason: p.reason, ...(p.selfHost !== undefined && { selfHost: p.selfHost }) } };
     },

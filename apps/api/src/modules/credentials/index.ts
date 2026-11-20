@@ -22,23 +22,27 @@ export { migrationsPending, type MigrationState } from "./adapters/repo";
 /**
  * The vault the API and the worker run with: the root key from env, and the `googleApps` the
  * composition root passes when Google's sign-in pair is set, since one OAuth app signs people in,
- * connects Mailboxes and connects Search Console, each as its own connection with its own scopes.
+ * connects Mailboxes, each as its own connection with its own scopes. `googleAppProviders` are
+ * Google connections a Workspace may bring its own app for, such as Search Console; without one
+ * they use the server's app for that connection, then the sign-in pair.
  */
 export function vaultFromEnv(
   cfg: { baseURL: string; google?: { clientId: string; clientSecret: string } },
   onReady?: VaultDeps["onReady"],
-  social?: Pick<VaultDeps, "appProviders" | "identify"> & { googleApps?: readonly AppProvider[] },
+  social?: Pick<VaultDeps, "appProviders" | "identify"> & { googleApps?: readonly AppProvider[]; googleAppProviders?: readonly AppProvider[] },
 ) {
-  const { googleApps = [], ...rest } = social ?? {};
+  const { googleApps = [], googleAppProviders = [], appProviders = [], ...rest } = social ?? {};
   const google = cfg.google;
+  const signInFallback = (connection: string) => (google && googleAppProviders.some((p) => p.connection === connection) ? google : null);
   const vault = createVault({
     rootKey: rootKeyFromEnv(),
     now: () => new Date(),
     providers: google ? googleApps.map((p) => ({ ...p, ...google })) : [],
+    appProviders: [...appProviders, ...googleAppProviders],
     callbackUrl: `${cfg.baseURL}/api/connections/callback`,
     onReady,
     ...rest,
-    systemApp: (connection) => readSystemApp(vault, connection),
+    systemApp: async (connection) => (await readSystemApp(vault, connection)) ?? signInFallback(connection),
   });
   return vault;
 }

@@ -5,6 +5,7 @@ import { afterAll, afterEach, expect, test, vi } from "vitest";
 import { createVault, credentialRoutes, rootKeyFromEnv } from "../credentials/index";
 import { setSystemSecret, SYSTEM_WORKSPACE_ID } from "../credentials/system-secrets";
 import { createIdentity, logMailer, type Mail } from "../identity/index";
+import { codexBinary, useCodexBinaryForTests } from "./adapters/runtime/codex";
 import { createModels, modelRoutes, type Deployment } from "./index";
 import { routesFor } from "./purposes";
 import { anthropicText, fakeProvider } from "./test-provider";
@@ -248,6 +249,8 @@ test("no member of any Workspace reaches the system Workspace", async () => {
 
 test("every test finds a stub that always fails before any real CLI", () => {
   for (const name of ["claude", "codex"]) expect(Bun.which(name, { PATH: process.env.PATH ?? "" })).toContain("direx-no-real-cli-");
+  // Codex isn't looked up on PATH, so its stub is handed in too (DX-R-0036-003).
+  expect(codexBinary()).toContain("direx-no-real-cli-");
 });
 
 test("the picker over HTTP: who may do what, a choice saved, a missing CLI named, and cloud refused", async () => {
@@ -271,7 +274,9 @@ test("the picker over HTTP: who may do what, a choice saved, a missing CLI named
   expect((await selfHost.call(`${base}/models/adapter`, cookie, { method: "PUT", body: { adapter: "codex", model: "made-up" } })).status).toBe(409);
 
   const path = process.env.PATH;
+  const shippedCodex = codexBinary();
   process.env.PATH = "/nonexistent";
+  useCodexBinaryForTests(null);
   try {
     const list = (await (await selfHost.call(`${base}/models/adapters`, marketer.cookie)).json()) as { choice: unknown; agents: unknown[]; adapters: { id: string; blocked: string | null; shared: boolean }[] };
     expect(list.choice).toEqual({ adapter: "codex", model: "gpt-6-sol", evaluated: false });
@@ -285,6 +290,7 @@ test("the picker over HTTP: who may do what, a choice saved, a missing CLI named
     expect(await tested.json()).toEqual({ ok: false, reason: "not_installed" });
   } finally {
     process.env.PATH = path;
+    useCodexBinaryForTests(shippedCodex);
   }
   const finish = await selfHost.call(`${base}/models/sign-ins/${crypto.randomUUID()}/finish`, marketer.cookie, { method: "POST", body: { code: "x" } });
   expect(await finish.json()).toEqual({ error: "not_found" });

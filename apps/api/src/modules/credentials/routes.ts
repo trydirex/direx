@@ -5,7 +5,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { html } from "hono/html";
-import { can, requirePermission, requireStepUp, steppedUp, type Auth, type Member, type MemberEnv } from "../identity/index";
+import { can, readSession, requirePermission, requireStepUp, steppedUp, type Auth, type Member, type MemberEnv } from "../identity/index";
 import { STATE_COOKIE, STATE_TTL_MS } from "./adapters/cookie";
 import { linkWorkspace } from "./domain/connect-link";
 import { KINDS } from "./application/kinds";
@@ -541,7 +541,7 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
             : DEAD_LINK;
         return c.html(page, r.ok ? 200 : 400, LINK_HEADERS);
       }
-      const s = await auth().api.getSession({ headers: c.req.raw.headers });
+      const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
       const page = landingPage?.(vault().connectionOf(cookie)) ?? "credentials";
       const r = await vault().callback({ ...c.req.valid("query"), cookie, sessionUserId: s.user.id });

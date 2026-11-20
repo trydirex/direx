@@ -28,6 +28,7 @@ export { createFakeNotion, type FakeNotionSource } from "./notion/fake-notion";
 import { createBeehiivPlugin } from "./beehiiv/plugin";
 import { createGmailPlugin } from "./gmail/plugin";
 import { createKitPlugin } from "./kit/plugin";
+import { createMailchimpPlugin } from "./mailchimp/plugin";
 import { createImapSmtpPlugin } from "./imap-smtp/plugin";
 import { createReoonPlugin } from "./reoon/plugin";
 import { createSearchConsolePlugin } from "./search-console/plugin";
@@ -40,4 +41,4 @@ import { createThreadsPlugin } from "./social/threads/plugin";
 import { createXPlugin } from "./social/x/plugin";
 
 /** Every first-party plugin the worker loads. A new provider joins here and core stays as it is. */
-export const firstPartyPlugins = () => [createGmailPlugin(), createImapSmtpPlugin(), createLinkedInPlugin(), createLinkedInPagePlugin(), createXPlugin(), createBlueskyPlugin(), createFacebookPlugin(), createInstagramPlugin(), createThreadsPlugin(), createReoonPlugin(), createKitPlugin(), createBeehiivPlugin(), createSearchConsolePlugin(), createNotionPlugin()];
+export const firstPartyPlugins = () => [createGmailPlugin(), createImapSmtpPlugin(), createLinkedInPlugin(), createLinkedInPagePlugin(), createXPlugin(), createBlueskyPlugin(), createFacebookPlugin(), createInstagramPlugin(), createThreadsPlugin(), createReoonPlugin(), createKitPlugin(), createBeehiivPlugin(), createMailchimpPlugin(), createSearchConsolePlugin(), createNotionPlugin()];

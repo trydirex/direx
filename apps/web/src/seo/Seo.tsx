@@ -13,8 +13,13 @@ import { useAction } from "../components/useAction";
 import { mayEdit, type Role } from "../items/actions";
 import { StateChip } from "../items/StateChip";
 import { Select } from "@/components/Input";
+import { messageForCode } from "../api/messages";
+import { saveApp } from "../social/actions";
+import { Wizard } from "../social/Wizard";
 import {
   API_LIBRARY,
+  CONNECTION,
+  googleAppSteps,
   briefsQuery,
   candidatesQuery,
   changeWords,
@@ -75,6 +80,14 @@ export function Seo(p: { workspaceId: string; role: Role; notice?: string; initi
       setError((await connect(workspaceId)) ?? undefined);
       return null;
     });
+
+  const saveOwnApp = async (f: { clientId: string; clientSecret: string }) => {
+    const code = await saveApp(workspaceId, { connection: CONNECTION, label: "Search Console" }, f);
+    setError(code ? messageForCode(code, { duplicate_key: "This Workspace already has a Google app for Search Console." }) : undefined);
+    if (code) return;
+    toast.add({ title: "Saved. Connect Search Console now." });
+    await client.invalidateQueries({ queryKey: searchConsoleQuery(workspaceId).queryKey });
+  };
 
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -164,12 +177,22 @@ export function Seo(p: { workspaceId: string; role: Role; notice?: string; initi
           !s.connected ? (
             <div className="flex max-w-2xl flex-col items-start gap-4">
               <p>Connect Search Console so Direx can read search data for one site you pick. Direx only reads it, and never changes anything there.</p>
-              {mayConnect ? (
+              {!mayConnect ? (
+                <p className="text-muted-foreground">A Viewer can't connect it.</p>
+              ) : s.app?.source === null ? (
+                !manage && <p className="text-muted-foreground">Search Console needs a Google app first. Ask an Owner or Admin to set one up here.</p>
+              ) : (
                 <Button pending={connecting.pending} onClick={() => void start()}>
                   Connect Search Console
                 </Button>
-              ) : (
-                <p className="text-muted-foreground">A Viewer can't connect it.</p>
+              )}
+              {manage && s.app && s.app.source !== "own" && (
+                <Wizard
+                  label="Google Cloud"
+                  title={s.app.source === null ? "Set up a Google app for Search Console" : "Use this Workspace's own Google app (optional)"}
+                  wizard={googleAppSteps(s.app.callbackUrl)}
+                  save={saveOwnApp}
+                />
               )}
             </div>
           ) : s.refusal ? (

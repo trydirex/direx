@@ -17,24 +17,29 @@ export function ownNames(site: string): string[] {
 }
 
 /** The competitor a page's address names, or null. `x-vs-y` counts only when one side is us. */
-function slugOf(url: string, own: readonly string[]): string | null {
+function slugOf(url: string, ownKeys: ReadonlySet<string>): string | null {
   const parts = new URL(url).pathname.toLowerCase().split("/").filter(Boolean);
   const last = parts.at(-1);
   if (!last) return null;
-  if (parts.length >= 2 && (parts.at(-2) === "compare" || parts.at(-2) === "vs")) return last;
-  const m = /^(.+)-alternatives?$/.exec(last) ?? /^alternatives?-to-(.+)$/.exec(last) ?? /^(.+)-comparison$/.exec(last) ?? /^vs-(.+)$/.exec(last);
-  if (m) return m[1]!;
-  const [x, y, ...more] = last.split("-vs-");
-  if (more.length || !y) return null;
-  return own.includes(x!) ? y : own.includes(y) ? x! : null;
+  const directory = parts.at(-2);
+  const named = directory === "compare" || directory === "vs" ? last
+    : (/^(.+)-alternatives?$/.exec(last) ?? /^alternatives?-to-(.+)$/.exec(last) ?? /^(.+)-comparison$/.exec(last) ?? /^vs-(.+)$/.exec(last))?.[1];
+  const versus = (named ?? last).split("-vs-");
+  if (versus.length === 1) return named ?? null;
+  const [x, y] = versus;
+  if (versus.length !== 2 || !x || !y) return null;
+  return ownKeys.has(nameKey(x)) ? y : ownKeys.has(nameKey(y)) ? x : null;
 }
 
 /** One page per competitor named in the sitemap, the shortest address first, never ourselves. */
 export function namesFromSitemap(locs: readonly string[], own: readonly string[]): NamedPage[] {
+  const ownKeys = new Set(own.map(nameKey));
   const out = new Map<string, NamedPage>();
   for (const url of [...locs].sort((a, b) => a.length - b.length)) {
-    const slug = slugOf(url, own);
-    if (isSlug(slug) && !own.includes(slug) && !out.has(slug)) out.set(slug, { slug, url });
+    const slug = slugOf(url, ownKeys);
+    if (!isSlug(slug)) continue;
+    const key = nameKey(slug);
+    if (!ownKeys.has(key) && !out.has(key)) out.set(key, { slug, url });
   }
   return [...out.values()];
 }

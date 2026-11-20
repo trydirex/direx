@@ -9,7 +9,7 @@ CREATE TABLE "competitor_finds" (
 	"at" timestamp with time zone NOT NULL,
 	CONSTRAINT "competitor_finds_workspace_id_id_key" UNIQUE("workspace_id","id"),
 	CONSTRAINT "competitor_finds_kind_check" CHECK (("competitor_finds"."kind" = 'own_site' and "competitor_finds"."site" is not null and "competitor_finds"."terms" is null and "competitor_finds"."confirmed_micros" is null and "competitor_finds"."confirmed_by" is null)
-        or ("competitor_finds"."kind" = 'search' and "competitor_finds"."site" is null and "competitor_finds"."terms" is not null and "competitor_finds"."confirmed_micros" >= 0 and "competitor_finds"."confirmed_by" is not null))
+        or ("competitor_finds"."kind" = 'search' and "competitor_finds"."site" is null and "competitor_finds"."terms" is not null and "competitor_finds"."confirmed_micros" is not null and "competitor_finds"."confirmed_micros" >= 0 and "competitor_finds"."confirmed_by" is not null))
 );
 --> statement-breakpoint
 CREATE TABLE "competitor_proposals" (
@@ -26,7 +26,7 @@ CREATE TABLE "competitor_proposals" (
 	"closed_as" text,
 	CONSTRAINT "competitor_proposals_name_check" CHECK (char_length("competitor_proposals"."name") between 1 and 100 and "competitor_proposals"."name_key" ~ '^[a-z0-9]{1,100}$'),
 	CONSTRAINT "competitor_proposals_url_check" CHECK (char_length(coalesce("competitor_proposals"."site", '')) <= 2000 and char_length(coalesce("competitor_proposals"."comparison_url", '')) <= 2000),
-	CONSTRAINT "competitor_proposals_closed_check" CHECK (("competitor_proposals"."closed_at" is null and "competitor_proposals"."closed_by" is null and "competitor_proposals"."closed_as" is null) or ("competitor_proposals"."closed_at" is not null and "competitor_proposals"."closed_by" is not null and "competitor_proposals"."closed_as" in ('added', 'dismissed')))
+	CONSTRAINT "competitor_proposals_closed_check" CHECK (("competitor_proposals"."closed_at" is null and "competitor_proposals"."closed_by" is null and "competitor_proposals"."closed_as" is null) or ("competitor_proposals"."closed_at" is not null and "competitor_proposals"."closed_by" is not null and "competitor_proposals"."closed_as" is not null and "competitor_proposals"."closed_as" in ('added', 'dismissed')))
 );
 --> statement-breakpoint
 ALTER TABLE "competitor_finds" ADD CONSTRAINT "competitor_finds_confirmed_by_user_id_fk" FOREIGN KEY ("confirmed_by") REFERENCES "auth"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -58,3 +58,20 @@ REVOKE UPDATE, DELETE ON competitor_finds FROM direx_app;
 REVOKE UPDATE, DELETE ON competitor_proposals FROM direx_app;
 --> statement-breakpoint
 GRANT UPDATE (closed_at, closed_by, closed_as) ON competitor_proposals TO direx_app;
+--> statement-breakpoint
+CREATE FUNCTION public.competitor_proposals_keep_closure()
+RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog
+AS $$
+BEGIN
+  RAISE EXCEPTION 'competitor_proposals: closure is final' USING ERRCODE = 'check_violation';
+END
+$$;
+--> statement-breakpoint
+CREATE TRIGGER competitor_proposals_keep_closure
+  BEFORE UPDATE ON public.competitor_proposals
+  FOR EACH ROW WHEN (
+    OLD.closed_at IS NOT NULL AND
+    (OLD.closed_at, OLD.closed_by, OLD.closed_as) IS DISTINCT FROM (NEW.closed_at, NEW.closed_by, NEW.closed_as)
+  )
+  EXECUTE FUNCTION public.competitor_proposals_keep_closure();

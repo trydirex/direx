@@ -212,6 +212,12 @@ export async function addSearch(tx: WorkspaceTx, workspaceId: string, s: { terms
   if (found.length) await tx.insert(competitorProposals).values(found.map((f) => ({ ...f, workspaceId, findId: find!.id, foundAt: at }))).onConflictDoNothing();
 }
 
+/** How many paid searches the Workspace ran since `since`. */
+export async function searchesSince(tx: WorkspaceTx, since: Date): Promise<number> {
+  const f = competitorFinds;
+  return (await tx.select({ n: count() }).from(f).where(and(eq(f.kind, "search"), gte(f.at, since))))[0]!.n;
+}
+
 /** Closes the open proposals among `ids`; returns the ids it closed. */
 export async function closeProposals(tx: WorkspaceTx, ids: string[], by: string, as: "added" | "dismissed", at: Date): Promise<string[]> {
   if (!ids.length) return [];

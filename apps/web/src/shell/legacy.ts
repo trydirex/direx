@@ -34,9 +34,9 @@ function route(page: string | null, q: URLSearchParams): [string, URLSearchParam
     case "models":
       return ["/settings/models", rest()];
     case "credentials":
-      return ["/settings/credentials", rest("connect_error", "connected")];
+      return ["/settings/credentials", rest("connect_error", "connect_code", "connected")];
     case "social":
-      return ["/settings/social", rest("connect_error", "connected")];
+      return ["/settings/social", rest("connect_error", "connect_code", "connected")];
     case "members":
       return ["/settings/members", rest()];
     case "prospecting":
@@ -50,15 +50,29 @@ function route(page: string | null, q: URLSearchParams): [string, URLSearchParam
     case "newsletter":
       return q.has("issue") ? [`/newsletter/${id("issue")}`, rest()] : ["/newsletter", rest()];
     case "seo":
-      return ["/seo", rest("connect_error", "connected")];
+      return ["/seo", rest("connect_error", "connect_code", "connected")];
     default:
       return ["", rest()];
   }
 }
 
+// The router reads each search value as JSON when it parses, so connect_code=190 would arrive as a
+// number. A value that parses is quoted, the router's own form for a string, and arrives as written.
+const parses = (v: string) => {
+  try {
+    JSON.parse(v);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 function pick(q: URLSearchParams, ...keys: string[]) {
   const out = new URLSearchParams();
-  for (const k of keys) if (q.has(k)) out.set(k, q.get(k)!);
+  for (const key of keys) {
+    const value = q.get(key);
+    if (value !== null) out.set(key, key === "connect_code" && parses(value) ? JSON.stringify(value) : value);
+  }
   return out;
 }
 const withQuery = (path: string, q: URLSearchParams) => (q.size ? `${path}?${q}` : path);

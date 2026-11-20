@@ -84,10 +84,17 @@ test("a self-renewing token sends only itself", async () => {
   expect((await renewToken(provider(), "old", 1000)).ok).toBe(false);
 });
 
+test("a failure keeps the provider's error code, never its free text", async () => {
+  reply = () => Response.json({ error: "invalid_client", error_description: "Client authentication failed" }, { status: 401 });
+  expect(await exchangeCode(provider(), code, 1000)).toEqual({ ok: false, error: "failed", code: "invalid_client" });
+  reply = () => Response.json({ error: "Call us on 555 to fix this" }, { status: 400 });
+  expect(await exchangeCode(provider(), code, 1000)).toEqual({ ok: false, error: "failed", code: undefined });
+});
+
 test("a provider's own dead-token error counts as invalid_grant, and only that one", async () => {
   reply = () => Response.json({ error: "invalid_request" }, { status: 400 });
-  expect(await refreshTokens(provider(), "r", 1000)).toEqual({ ok: false, error: "failed" });
-  expect(await refreshTokens(provider({ deadTokenErrors: ["invalid_request"] }), "r", 1000)).toEqual({ ok: false, error: "invalid_grant" });
+  expect(await refreshTokens(provider(), "r", 1000)).toEqual({ ok: false, error: "failed", code: "invalid_request" });
+  expect(await refreshTokens(provider({ deadTokenErrors: ["invalid_request"] }), "r", 1000)).toEqual({ ok: false, error: "invalid_grant", code: "invalid_request" });
 });
 
 test("scopes may be a custom field, an array, and tokens may be wrapped in data", async () => {

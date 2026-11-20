@@ -17,7 +17,8 @@ const vault = createVault({
   callbackUrl: "http://direx.test/api/connections/callback",
   timeoutMs: 500,
 });
-const { call, signIn, workspace } = testApp(vault);
+// Connect links are on for the fake provider, so the link callback is checked here too.
+const { call, signIn, workspace } = testApp(vault, "http://direx.test", undefined, undefined, (c) => (c === "google" ? "Google" : undefined));
 const MIN = 60_000;
 afterEach(() => vi.useRealTimers());
 afterAll(() => {
@@ -149,6 +150,14 @@ test("connect: start sets the state cookie and the callback stores the mailbox, 
   expect((await call(`/api/connections/callback${back.search}`)).status).toBe(401);
   const wrong = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=x&code=${back.searchParams.get("code")}`);
   expect(wrong.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=state_mismatch");
+  // A network's error code rides along to point at the setup step; its free text never does.
+  const state = back.searchParams.get("state");
+  const refused = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=${state}&error=redirect_uri_mismatch&error_description=${encodeURIComponent("The redirect_uri does not match\nforged line")}`);
+  expect(refused.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=network_refused&connect_code=redirect_uri_mismatch");
+  const prose = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=${state}&error=${encodeURIComponent("Call us on 555")}`);
+  expect(prose.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=network_refused");
+  const cancelled = await callback(`${contributor.cookie}; ${stateCookie}`, `?state=${state}&error=access_denied`);
+  expect(cancelled.headers.get("location")).toBe("http://direx.test/?page=credentials&connect_error=denied");
 
   const res = await callback(`${contributor.cookie}; ${stateCookie}`);
   expect(res.status).toBe(302);
@@ -156,4 +165,19 @@ test("connect: start sets the state cookie and the callback stores the mailbox, 
   expect(res.headers.get("set-cookie")).toMatch(/^direx_oauth=;.*Max-Age=0/);
   const list = (await (await call(`${base}/${ws}/credentials`, contributor.cookie)).json()) as { credentials: { kind: string; ownerUserId: string }[] };
   expect(list.credentials).toMatchObject([{ kind: "oauth2", ownerUserId: contributor.userId }]);
+});
+
+test("a network refusing a link's connect logs its words on one line, and the page carries none", async () => {
+  const { ws, owner } = await workspace();
+  const { url } = (await (await call(`${base}/${ws}/connections/google/links`, owner.cookie, { method: "POST" })).json()) as { url: string };
+  const consent = (await call(new URL(url).pathname, undefined, { method: "POST" })).headers.get("location")!;
+  const state = new URL((await fetch(consent, { redirect: "manual" })).headers.get("location")!).searchParams.get("state")!;
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const res = await call(`/api/connections/callback?state=${encodeURIComponent(state)}&error=invalid_client&error_description=${encodeURIComponent("Bad secret\nforged line")}`);
+  expect(res.status).toBe(400);
+  const text = await res.text();
+  expect(text).toContain("Nothing was connected");
+  expect(text).not.toContain("Bad secret");
+  expect(warn).toHaveBeenCalledWith("credentials: a network on a connect link answered the connect with invalid_client: Bad secret forged line");
+  warn.mockRestore();
 });

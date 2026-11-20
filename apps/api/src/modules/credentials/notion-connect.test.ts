@@ -154,7 +154,7 @@ test("a refused exchange, a missing workspace or a denial stores nothing", async
   const s = setup();
   const { ws, owner } = await newWorkspace();
   refusal = { status: 400, body: { error: "invalid_grant" } };
-  expect((await connect(s, ws, owner)).r).toEqual({ ok: false, reason: "exchange_failed" });
+  expect((await connect(s, ws, owner)).r).toEqual({ ok: false, reason: "exchange_failed", detail: "invalid_grant" });
   refusal = { status: 200, body: { access_token: "nat-x", refresh_token: "nrt-x", token_type: "bearer" } };
   calls.length = 0;
   expect((await connect(s, ws, owner)).r).toEqual({ ok: false, reason: "identity_failed" });

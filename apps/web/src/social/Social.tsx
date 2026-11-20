@@ -44,6 +44,7 @@ type S = components["schemas"];
 const MESSAGES: Record<string, string> = {
   unknown_connection: "Direx isn't set up to connect that network yet.",
   denied: "The connection was cancelled. Nothing was saved.",
+  network_refused: "The network refused the connection. Nothing was saved.",
   missing_scope: "The network didn't grant everything Direx asked for. Connect again and allow it all.",
   no_refresh_token: "The network didn't let Direx stay connected. Connect again.",
   identity_failed: "The network didn't say which account this is. Nothing was saved. Try again.",
@@ -60,6 +61,15 @@ const MESSAGES: Record<string, string> = {
   not_at_floor: "Only an account still at its starting limit, and not paused, can start higher.",
 };
 const message = (code: string) => messageForCode(code, MESSAGES);
+
+/** What to check in the setup steps, from the error code the network answered with. Codes are standard OAuth, so no network is named. */
+function codeHint(code: string) {
+  const said = `The network answered "${code}".`;
+  if (/redirect/i.test(code)) return `${said} The callback URL in your app must match the one in the setup steps exactly, with no extra slash.`;
+  if (/client|key/i.test(code)) return `${said} Copy the client ID and secret again from its developer console.`;
+  if (/scope|permission/i.test(code)) return `${said} Your app is missing a permission or product named in the setup steps.`;
+  return `${said} Check each setup step against its developer console.`;
+}
 
 const AVAILABILITY: Record<Network["availability"], string> = {
   available: "Available",
@@ -84,7 +94,7 @@ const canDoWords = (canDo: Account["canDo"]) =>
 const healthChip = (a: Account) => (a.status === "active" && a.health.paused ? <StatusChip tone="attention">Posting paused</StatusChip> : <StatusChip tone={statusTone(a.status)}>{STATUS[a.status] ?? a.status}</StatusChip>);
 
 /** What is connected, whether it still works, what it can do, and every network Direx knows of. */
-export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: string; connected?: string; networks?: Network[]; accounts?: Account[]; offered?: Target[]; links?: ConnectLink[] }) {
+export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: string; noticeCode?: string; connected?: string; networks?: Network[]; accounts?: Account[]; offered?: Target[]; links?: ConnectLink[] }) {
   const { workspace } = p;
   const manage = workspace.role === "owner" || workspace.role === "admin";
   const mayConnect = workspace.role !== "viewer";
@@ -98,7 +108,16 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
   const [offered, setOffered] = useState(p.offered ?? []);
   const [login, setLogin] = useState(p.connected);
   const [open, setOpen] = useState<string | null>(null);
-  const [error, setError] = useState(p.notice && message(p.notice));
+  // Direct navigation can bypass the API, so apply its code format before showing the value.
+  const code = p.noticeCode && /^[A-Za-z0-9_.-]{1,60}$/.test(p.noticeCode) ? p.noticeCode : undefined;
+  const notice = p.notice && (code ? `${message(p.notice)} ${codeHint(code)}` : message(p.notice));
+  const [error, setError] = useState(notice);
+  // A new refusal in the address on the same page replaces the notice shown.
+  const [noticed, setNoticed] = useState(notice);
+  if (notice !== noticed) {
+    setNoticed(notice);
+    setError(notice);
+  }
   const [stepUp, setStepUp] = useState(false);
   const [starting, setStarting] = useState<string>();
   const [confirming, setConfirming] = useState<string | null>(null);

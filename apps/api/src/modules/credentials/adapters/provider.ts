@@ -65,10 +65,15 @@ export type AppProvider = Omit<Provider, "clientId" | "clientSecret">;
 export type ClientPair = { clientId: string; clientSecret: string };
 
 export type Tokens = { accessToken: string; refreshToken?: string; expiresIn: number; scope?: string; idToken?: string; account?: { id: string; label: string } };
-export type TokenResult = { ok: true; tokens: Tokens } | { ok: false; error: "invalid_grant" | "failed" };
+/** A failure keeps the provider's own error code when it gave one, to point a person at what to fix. */
+type TokenFailure = { ok: false; error: "invalid_grant" | "failed"; code?: string };
+export type TokenResult = { ok: true; tokens: Tokens } | TokenFailure;
 /** A code exchange may omit the expiry when a long-token exchange follows and supplies it. */
 export type CodeTokens = Omit<Tokens, "expiresIn"> & { expiresIn?: number };
-export type CodeResult = { ok: true; tokens: CodeTokens } | { ok: false; error: "invalid_grant" | "failed" };
+export type CodeResult = { ok: true; tokens: CodeTokens } | TokenFailure;
+
+/** An OAuth error code as a provider sends it, or nothing: never free text that could carry other words. */
+export const errorCode = (said: unknown): string | undefined => (typeof said === "string" && /^[A-Za-z0-9_.-]{1,60}$/.test(said) ? said : undefined);
 
 export const randomToken = () => randomBytes(32).toString("base64url");
 export const pkceChallenge = (verifier: string) => createHash("sha256").update(verifier).digest("base64url");
@@ -99,7 +104,7 @@ async function tokenCall(p: Provider, method: "POST" | "GET", url: string, param
     const dead = p.deadTokenErrors ?? ["invalid_grant"];
     // RFC 6749 names the error `error`; some providers' error bodies name it `code`.
     const said = typeof raw.error === "string" ? raw.error : raw.code;
-    return { ok: false, error: typeof said === "string" && dead.includes(said) ? "invalid_grant" : "failed" };
+    return { ok: false, error: typeof said === "string" && dead.includes(said) ? "invalid_grant" : "failed", code: errorCode(said) };
   }
   // One provider's docs show the token fields wrapped in a one-item data array.
   const body = typeof raw.access_token !== "string" && Array.isArray(raw.data) ? ((raw.data[0] ?? {}) as Record<string, unknown>) : raw;

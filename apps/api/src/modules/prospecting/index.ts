@@ -9,6 +9,8 @@ export { prospectingAskStarts } from "./application/ask-starts";
 export { createTerms, termsSink, type ReadStrategy, type StartTerms, type Terms } from "./application/terms";
 export { TERMS_OUTPUT_KEY, termsDrafter } from "./definitions/terms-drafter";
 export { holdsPersonData, keptTerms, termsText } from "./domain/terms";
+// The names a search term must not hold, for any module that sends terms to a search vendor.
+export { knownNames } from "./adapters/terms-repo";
 export { keptPeople, namesText, type NamedPerson } from "./domain/people";
 export { createRuns, ESTIMATE_DEFAULTS, MAX_COMPANIES, type Estimate, type PastedLine, type Runs, type SearchLine } from "./application/runs";
 export { prospectingRoutes } from "./routes";

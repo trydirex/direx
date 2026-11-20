@@ -203,6 +203,15 @@ export async function addScan(tx: WorkspaceTx, workspaceId: string, site: string
   if (found.length) await tx.insert(competitorProposals).values(found.map((f) => ({ ...f, workspaceId, findId: find!.id, foundAt: at }))).onConflictDoNothing();
 }
 
+/** Records a paid search, whatever it found, with the amount a person confirmed, and its new proposals. */
+export async function addSearch(tx: WorkspaceTx, workspaceId: string, s: { terms: string[]; confirmedMicros: number; by: string }, found: NewProposal[], at: Date) {
+  const [find] = await tx
+    .insert(competitorFinds)
+    .values({ workspaceId, kind: "search", terms: s.terms, confirmedMicros: s.confirmedMicros, confirmedBy: s.by, at })
+    .returning({ id: competitorFinds.id });
+  if (found.length) await tx.insert(competitorProposals).values(found.map((f) => ({ ...f, workspaceId, findId: find!.id, foundAt: at }))).onConflictDoNothing();
+}
+
 /** Closes the open proposals among `ids`; returns the ids it closed. */
 export async function closeProposals(tx: WorkspaceTx, ids: string[], by: string, as: "added" | "dismissed", at: Date): Promise<string[]> {
   if (!ids.length) return [];

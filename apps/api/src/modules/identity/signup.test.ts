@@ -143,6 +143,7 @@ test("a Workspace invite token lets only its own address sign up by password, al
   expect((await signUp(at("client.io"), token)).status).toBe(400);
   expect((await signUp(email, token)).status).toBe(200);
   expect((await signIn(email)).status).toBe(200);
+  expect(mailTo(email).filter((m) => m.subject === "Confirm your email for Direx")).toEqual([]);
 });
 
 test("the invite page's token is held in an httpOnly Lax cookie for 30 minutes, and never echoed", async () => {
@@ -178,11 +179,21 @@ test("an invited person signs up by magic link with the held cookie, and then ac
   expect(accepted.status).toBe(200);
 });
 
-test("a bootstrap token lets the first account sign up, which still confirms its email", async () => {
+test("a bootstrap token lets the first account sign up already verified, with no confirmation mail (DX-R-0024-002)", async () => {
   const token = randomBytes(32).toString("hex");
   await owner.query("select system.issue_bootstrap_invite($1, now() + interval '1 hour')", [createHash("sha256").update(token).digest("hex")]);
   const email = at("example.com");
-  expect((await signUp(email, token)).status).toBe(200);
+  const res = await signUp(email, token);
+  expect(res.status).toBe(200);
+  expect(((await res.json()) as { user: { emailVerified: boolean } }).user.emailVerified).toBe(true);
+  expect((await signIn(email)).status).toBe(200);
+  expect(mailTo(email)).toEqual([]);
+});
+
+test("without a token, a password sign-up still confirms its email first", async () => {
+  await setPolicy("anyone");
+  const email = at("example.com");
+  expect((await signUp(email)).status).toBe(200);
   expect((await signIn(email)).status).toBe(403);
   expect(mailTo(email).some((m) => m.subject === "Confirm your email for Direx")).toBe(true);
 });

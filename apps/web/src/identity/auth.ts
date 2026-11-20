@@ -47,8 +47,11 @@ export async function signInWithPassword(email: string, password: string, callba
   if (!res.ok) throw new Error("That email and password don't match.");
 }
 
-/** "signed_in" when the session is ready; "confirm" when an email link has to be followed first. */
-export async function signUpWithPassword(email: string, password: string, callbackURL: string): Promise<"signed_in" | "confirm"> {
+/**
+ * "signed_in" when the session is ready; "verified" when the account needs no confirmation but sign-up
+ * made no session (an invite or bootstrap link); "confirm" when an email link has to be followed first.
+ */
+export async function signUpWithPassword(email: string, password: string, callbackURL: string): Promise<"signed_in" | "verified" | "confirm"> {
   const res = await post("/api/auth/sign-up/email", { email, password, name: "", callbackURL });
   if (res.status === 429) throw new Error(TRY_LATER);
   if (res.status === 422) throw new Error("That email address already has a sign-in. Sign in, or reset your password.");
@@ -57,7 +60,8 @@ export async function signUpWithPassword(email: string, password: string, callba
     if (code?.startsWith("SIGNUP_") && message) throw new Error(message);
   }
   if (!res.ok) throw new Error("We couldn't sign you up. Check your email address, and use a password of at least 12 characters.");
-  return ((await res.json()) as { token?: string | null }).token ? "signed_in" : "confirm";
+  const { token, user } = (await res.json()) as { token?: string | null; user?: { emailVerified?: boolean } };
+  return token ? "signed_in" : user?.emailVerified ? "verified" : "confirm";
 }
 
 export async function sendPasswordReset(email: string): Promise<void> {
@@ -73,10 +77,10 @@ export async function resetPassword(token: string, newPassword: string): Promise
 }
 
 /** Leaves the page only once the server has ended the session; otherwise says so. */
-export async function signOut(): Promise<string | null> {
+export async function signOut(next = "/"): Promise<string | null> {
   const res = await post("/api/auth/sign-out", {}).catch(() => null);
   if (!res?.ok) return "We couldn't sign you out. Try again.";
-  location.assign("/");
+  location.assign(next);
   return null;
 }
 

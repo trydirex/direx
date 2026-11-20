@@ -84,7 +84,8 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
   /**
    * Every new account passes here (DX-R-0024-001). A password sign-up counts as verified because
    * no session exists until the email is confirmed; under a closed policy it needs an invite token
-   * (DX-R-0024-004). A Workspace invite token for this email proves the mailbox.
+   * (DX-R-0024-004). A Workspace invite token for this email proves the mailbox. A bootstrap token
+   * proves the person runs the server, which is enough to skip the confirmation (DX-R-0024-002).
    */
   async function admitNewUser<U extends { email: string; emailVerified: boolean }>(u: U, ctx: Ctx): Promise<U> {
     const viaPassword = ctx?.path === "/sign-up/email";
@@ -93,7 +94,7 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     if (viaPassword && verdict.via === "policy" && (await admission().status()).policy === "domains") throw refusal({ ok: false, reason: "use_link" });
     // A later magic link deletes the password of an unverified user, which is the takeover
     // defence outside dev. In dev nothing can be verified, so it would only lose the password.
-    const verified = verdict.via === "invite" || (cfg.devMode === true && viaPassword);
+    const verified = verdict.via === "invite" || verdict.via === "bootstrap" || (cfg.devMode === true && viaPassword);
     return verified ? { ...u, emailVerified: true } : u;
   }
 
@@ -122,8 +123,11 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     },
     emailVerification: {
       sendOnSignIn: true,
-      sendVerificationEmail: async ({ user, url }) =>
-        cfg.mailer({ to: user.email, subject: "Confirm your email for Direx", text: `Confirm your email address:\n${url}` }),
+      // Sign-up mails a confirmation even to an account admission already verified; that one needs none.
+      sendVerificationEmail: async ({ user, url }) => {
+        if (user.emailVerified) return;
+        await cfg.mailer({ to: user.email, subject: "Confirm your email for Direx", text: `Confirm your email address:\n${url}` });
+      },
     },
     socialProviders: {
       ...(cfg.google && { google: cfg.google }),

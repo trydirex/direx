@@ -9,12 +9,16 @@ import { QueryBoundary } from "../components/QueryBoundary";
 import { Button } from "@/components/Button";
 import { Input, Textarea } from "@/components/Input";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
+import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { toast } from "@/components/toast";
 import { mayEdit, type Role } from "../items/actions";
 import { DocsPicker } from "./DocsPicker";
 import { cancelRun, costWords, docsQuery, isLive, noNewRun, pageReason, readSettings, runDetail, runsQuery, saveRunSettings, sayChange, startRead, statusLabel, untested, type Run, type RunDetail, type RunSettings } from "./actions";
 
-const POLL_MS = 3000;
+export const POLL_MS = 3000;
+
+/** A caution of its own under the read, not a footnote to its status line. */
+const Untested = () => <p className="rounded-card bg-warning-tint px-4 py-3 text-sm text-warning">Direx hasn't tested this model on this job yet, so check what it proposes closely.</p>;
 
 function WhatItRead({ workspaceId, id }: { workspaceId: string; id: string }) {
   const [d, setD] = useState<RunDetail>();
@@ -108,9 +112,27 @@ export function Runs(p: { workspaceId: string; role: Role; onSettled?: () => voi
     }
   }
 
-  // Brand passes compact: once a read has finished, a status line stands in for the whole form.
+  // Brand passes compact: once a read has finished, a status line stands in for the whole form. Setup's
+  // step does the same once its read succeeded, and shows only the read in progress while one runs.
   const latest = runs.data?.find((r) => r.agent === "brand_reader");
-  if (p.compact && !open && runs.data && !anyLive)
+  if (p.embedded && latest && isLive(latest))
+    return (
+      <div className="flex flex-col gap-4">
+        {error && <Notice tone="error">{error}</Notice>}
+        <div className="flex flex-col gap-3 rounded-card bg-muted p-4">
+          <p role="status" className="font-medium wrap-break-word">{`${statusLabel(latest)} ${latest.address ?? "the text you pasted"}`}</p>
+          <ProgressBar label="Read in progress" isLabelHidden isIndeterminate />
+          <p className="text-sm text-muted-foreground">You don't need to wait here. What Direx proposes shows in the next step when the read finishes.</p>
+          {mayEdit(role) && (
+            <Button size="sm" variant="outline" className="self-start" pending={busy === latest.id} aria-label={`Cancel the read of ${latest.address ?? "pasted text"}`} onClick={() => void cancel(latest.id)}>
+              Cancel
+            </Button>
+          )}
+        </div>
+        {untested(latest) && <Untested />}
+      </div>
+    );
+  if ((p.compact || (p.embedded && latest?.status === "succeeded")) && !open && runs.data && !anyLive)
     return (
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
         {latest ? `Last read ${latest.address ?? "pasted text"}: ${statusLabel(latest)}, ${latest.proposalCount} proposed.` : "Direx can read your website and propose facts for you to accept."}
@@ -155,7 +177,7 @@ export function Runs(p: { workspaceId: string; role: Role; onSettled?: () => voi
           <Button type="submit" pending={busy === "read"}>
             {!pasting && host ? `Read ${host}` : "Read"}
           </Button>
-          <Button type="button" variant="outline" onClick={() => setPasting(!pasting)}>
+          <Button type="button" variant="ghost" onClick={() => setPasting(!pasting)}>
             {pasting ? "Use an address instead" : "Paste text instead"}
           </Button>
           {docs?.connected && (
@@ -167,9 +189,10 @@ export function Runs(p: { workspaceId: string; role: Role; onSettled?: () => voi
       )}
       <QueryBoundary query={runs} skeleton={<Skeleton className="h-16 w-full" />}>
         {(list) => {
-          const reads = list.filter((r) => r.agent === "brand_reader").slice(0, 5);
+          // Setup's step shows the last read only (a failed one, since a live or finished one returned above).
+          const reads = list.filter((r) => r.agent === "brand_reader").slice(0, p.embedded ? 1 : 5);
           return reads.length === 0 ? (
-            <EmptyState title="No reads yet">Each read of your website or pasted text shows here, with what it proposed.</EmptyState>
+            !p.embedded && <EmptyState title="No reads yet">Each read of your website or pasted text shows here, with what it proposed.</EmptyState>
           ) : (
             <ul aria-label="Latest reads" className="flex flex-col gap-3">
               {reads.map((r) => (
@@ -177,8 +200,8 @@ export function Runs(p: { workspaceId: string; role: Role; onSettled?: () => voi
                   <p className="wrap-break-word">
                     {r.address ?? "Pasted text"}: {statusLabel(r)}. {r.proposalCount} proposed{p.embedded ? "" : r.subscription ? `, ${costWords(r)}` : `, cost ${costWords(r)}`}.
                     {r.incomplete && r.proposalCount > 0 && " What it proposed is marked as coming from a read that didn't finish."}
-                    {untested(r) && <small className="text-sm text-muted-foreground"> Direx hasn't tested this model on this job yet, so check what it proposes closely.</small>}
                   </p>
+                  {untested(r) && <Untested />}
                   {mayEdit(role) && isLive(r) && (
                     <div>
                       <Button size="sm" variant="outline" pending={busy === r.id} aria-label={`Cancel the read of ${r.address ?? "pasted text"}`} onClick={() => void cancel(r.id)}>

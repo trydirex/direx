@@ -11,7 +11,7 @@ import { Placeholder, QueryBoundary } from "@/components/QueryBoundary";
 import { buttonVariants } from "@/components/native";
 import { EmptyState } from "@/components/layout";
 import { signInOptionsQuery } from "@/identity/auth";
-import { AddPassword, ResetPassword, SignIn } from "@/identity/SignIn";
+import { AddPassword, NotSetUp, ResetPassword, SignIn } from "@/identity/SignIn";
 import { legacyPath } from "@/shell/legacy";
 import { deletedWorkspacesQuery, meQuery, workspacesQuery, type Me, type MyWorkspace } from "@/shell/session";
 import { SectionNav, sectionLink } from "@/shell/SectionNav";
@@ -112,15 +112,22 @@ const signedInRoute = createRoute({
         </div>
       );
     }
-    return me.data ? (
-      <MeContext.Provider value={me.data}>
-        <Suspense fallback={<Loading />}>
-          <Outlet />
-        </Suspense>
-      </MeContext.Provider>
-    ) : (
-      <SignIn title={invite ? "Sign in to accept your invite" : claim ? "Sign in to claim this server" : undefined} callbackURL={here()} inviteToken={inviteToken} offerSignUp />
-    );
+    if (me.data)
+      return (
+        <MeContext.Provider value={me.data}>
+          <Suspense fallback={<Loading />}>
+            <Outlet />
+          </Suspense>
+        </MeContext.Provider>
+      );
+    // A server with no accounts yet opens on sign-up, or explains the bootstrap link (ADR 0024). A slow
+    // or failed answer leaves firstRun unset, so a server with people on it always shows sign-in.
+    const firstRun = options.data?.firstRun;
+    if (firstRun === "sign_up") return <SignIn callbackURL={here()} initialMode="sign_up" offerSignUp />;
+    if (firstRun === "needs_link" && claim)
+      return <SignIn signUpTitle="Set up Direx" note="Sign up to become this server's first Server admin." callbackURL={here()} inviteToken={inviteToken} initialMode="sign_up" offerSignUp />;
+    if (firstRun === "needs_link" && !invite) return <NotSetUp />;
+    return <SignIn title={invite ? "Sign in to accept your invite" : claim ? "Sign in to claim this server" : undefined} callbackURL={here()} inviteToken={inviteToken} offerSignUp />;
   },
 });
 

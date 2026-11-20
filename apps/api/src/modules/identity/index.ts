@@ -15,7 +15,7 @@ export { authConfigFromEnv, type Auth, type AuthConfig } from "./adapters/auth";
 export { isDevOrTest, logMailer, smtpMailer, type Mail, type Mailer } from "./adapters/mail";
 export { pickAdmission, selfHostAdmission } from "./application/admission";
 export { approverFromMember, approverMayApprove, mayGrantRules, workspaceLive } from "./application/approver-check";
-export type { Admission, AdmitInput, AdmitResult, ServerStatus, SignupPolicy } from "./domain/admission";
+export type { Admission, AdmitInput, AdmitResult, FirstRun, ServerStatus, SignupPolicy } from "./domain/admission";
 export { can, ROLES, type Permission, type Role } from "./domain/roles";
 export { refuseExternalTokens, requireMember, requirePermission, requireStepUp, steppedUp, type Member, type MemberEnv } from "./middleware";
 export { adminSteppedUp, requireServerAdmin, type ServerAdminEnv } from "./server-routes";

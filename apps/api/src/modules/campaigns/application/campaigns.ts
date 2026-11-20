@@ -4,12 +4,14 @@
 import { credentialLabel } from "../../credentials";
 import type { PlanBody, Plans } from "../../plans";
 import type { TemplateBody } from "../definitions/drafter";
-import { stepHasEmailWork, activityRows, allPeople, campaignMailboxes, deleteDraftRows, interestedPeople, postCounts, repliedCount, repliedPeople, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
+import { stepHasEmailWork, activityRows, allPeople, campaignMailboxes, deleteDraftRows, interestedPeople, liveOutcomes, postCounts, repliedCount, repliedPeople, resultCounts, stepCounts, waitingCount, ensureStep, fillTemplate, inWorkspace, isConnectedMailbox, latestOutput, listCampaigns, lockStep, movableItems, planChangesOf, readCampaign, requireApproved, saveStep, saveStepMailboxes, stepMailboxes, setCampaignNotes, setStepMode, stepsOf, type CampaignRow, type OutputRow, type StepRow, type StepSetup } from "../adapters/repo";
 import { dmsOf } from "../adapters/dms-repo";
+import { firstInterested, sentDms, sentEmails } from "../adapters/overlaps-repo";
+import { OVERLAP_KINDS, overlapKind, type Channel, type OverlapKind } from "../domain/overlaps";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
 import { stepFunnel, sumBy, tally } from "../domain/counts";
-import { timeZoneOf } from "../../schedule";
+import { mailboxDay, timeZoneOf } from "../../schedule";
 import type { HoldKind } from "../domain/plan-diff";
 import { defaultModes, type StepMode } from "../domain/timing";
 import { reviewTemplate, type FactReads, type OnSetupChanged, type PostPort, type PostTarget } from "./drafting";
@@ -205,6 +207,42 @@ export function campaignStore({ plans, facts, items, outreach, posts, now, onSet
         email: read.emails ? { replied: read.replied, bounced: read.bounced, optedOut: read.optedOut } : null,
         measures: (plan?.tracking?.measures ?? []).map((m) => ({ key: m.key, label: m.label, target: m.target, value: m.latest?.value ?? null, observedOn: m.latest?.observedOn ?? null })),
         steps: stepFunnel(steps, { emails: sumBy(read.sent, "stepKey"), dms: sumBy(read.dms, "stepKey"), posts: sumBy(read.stepPosts, "stepKey"), replied: read.people.replied.byStep, interested: read.people.interested.byStep }),
+      };
+    },
+
+    /**
+     * Per outcome kind, which of the Campaign's Touches each Person got on or before their first one, summed by
+     * channel mix. Posts reach no named Person, so they are in no row; `hasPosts` says when the Campaign has some.
+     */
+    async overlaps(workspaceId: string, id: string) {
+      const read = await inWorkspace(workspaceId, async (tx) => {
+        const row = await readCampaign(tx, id);
+        if (!row) return row;
+        const [emails, dms] = [await sentEmails(tx, id), await sentDms(tx, id)];
+        // Marks of People never touched would be left out anyway, so only the touched are read.
+        const touched = [...new Set([...emails, ...dms].map((t) => t.personId))];
+        return { row, steps: await stepsOf(tx, id), emails, dms, interested: await firstInterested(tx, id), marks: await liveOutcomes(tx, id, touched), people: await allPeople(tx, id) };
+      });
+      if (!read) return undefined;
+      const plan = await plans.plan(workspaceId, read.row.planId);
+      const pastTitles = await pastTitlesOf(workspaceId, read.row.planId, read.steps, plan?.current);
+      const titles = new Map(stepsView(plan?.current?.steps ?? [], read.steps, new Map(), pastTitles).map((s) => [s.key, s.title]));
+      // Days in the Workspace's time zone, the one marks are dated in, so a Touch and a mark on one day compare as one day.
+      const tz = await timeZoneOf(workspaceId);
+      const touches = [...read.emails.map((e) => ({ ...e, channel: "email" as Channel })), ...read.dms.map((d) => ({ ...d, at: d.at!, channel: `${d.channel}_dm` as Channel }))]
+        .sort((a, b) => a.at.getTime() - b.at.getTime())
+        .map((t) => ({ personId: t.personId, on: mailboxDay(t.at, tz), stepKey: t.stepKey, title: titles.get(t.stepKey) ?? null, channel: t.channel }));
+      const firsts: Record<OverlapKind, Map<string, string>> = { interested: new Map(read.interested.map((r) => [r.personId, mailboxDay(r.at, tz)])), meeting: new Map(), deal: new Map() };
+      // Marks come oldest first, so the first seen of a kind is the Person's first.
+      for (const [personId, marks] of read.marks) for (const m of marks) if (!firsts[m.kind].has(personId)) firsts[m.kind].set(personId, m.on);
+      const who = new Map<string, { name: string | null; email: string | null }>();
+      for (const p of read.people) if (!who.has(p.personId)) who.set(p.personId, { name: p.firstName, email: p.email });
+      return {
+        kinds: OVERLAP_KINDS.map((kind) => {
+          const k = overlapKind(touches, firsts[kind]);
+          return { kind, rows: k.rows, people: k.people.map((p) => ({ personId: p.personId, ...who.get(p.personId)!, on: p.on, touches: p.touches })), more: k.more };
+        }),
+        hasPosts: read.steps.some((s) => s.type === "post"),
       };
     },
 

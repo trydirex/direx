@@ -20,6 +20,7 @@ const basis = z.discriminatedUnion("kind", [
   // httpUrl, because this is shown as a link.
   z.strictObject({ kind: z.literal("source"), label: words, url: z.httpUrl().optional() }),
   z.strictObject({ kind: z.literal("assumption") }),
+  z.strictObject({ kind: z.literal("reading"), readingId: z.uuid() }),
 ]);
 
 const template = z.strictObject({

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test } from "vitest";
 import { planBody, strategyBody, whatsMissing } from "./application/body";
-import { applyVersion, planCitations, stepsOffStrategy, strategyCitations } from "./domain/labels";
+import { applyVersion, planCitations, planReadings, readingStands, stepsOffStrategy, strategyCitations, strategyReadings } from "./domain/labels";
 import { tracking, type Reading } from "./domain/tracking";
 import { scoreStrategyRun, STRATEGY_CASES, strategyFactId } from "./evals";
 import { MERGE_FIELDS } from "../campaigns";
@@ -43,6 +43,26 @@ test("a channel reason or measure target needs a basis, and any of the three kin
   for (const basis of [{ kind: "assumption" }, { kind: "source", label: "/about" }, { kind: "fact", factId, version: 1 }] as const) {
     expect(ok(planBody, plan({ measures: [{ ...measure("m"), basis }] }))).toBe(true);
   }
+});
+
+test("a reading basis parses on a measure and a channel, and only with a reading id and nothing else", () => {
+  const reading = { kind: "reading", readingId: factId } as const;
+  expect(ok(planBody, plan({ measures: [{ ...measure("m"), basis: reading }] }))).toBe(true);
+  expect(ok(strategyBody, strategy({ channels: [{ ...channel("email"), basis: reading }] }))).toBe(true);
+  for (const bad of [{ kind: "reading" }, { kind: "reading", readingId: "r1" }, { ...reading, value: "3" }]) {
+    expect(ok(planBody, plan({ measures: [{ ...measure("m"), basis: bad as never }] }))).toBe(false);
+    expect(ok(strategyBody, strategy({ channels: [{ ...channel("email"), basis: bad as never }] }))).toBe(false);
+  }
+});
+
+test("a reading stands only when it exists, is still the newest, and is on another plan", () => {
+  expect(readingStands({ planId: "p1", isNewest: true }, "p2")).toBe(true);
+  expect(readingStands({ planId: "p1", isNewest: true }, null)).toBe(true);
+  expect(readingStands({ planId: "p1", isNewest: true }, "p1")).toBe(false);
+  expect(readingStands({ planId: factId, isNewest: true }, factId.toUpperCase())).toBe(false);
+  expect(readingStands({ planId: factId.toUpperCase(), isNewest: true }, factId)).toBe(false);
+  expect(readingStands({ planId: "p1", isNewest: false }, "p2")).toBe(false);
+  expect(readingStands(null, "p2")).toBe(false);
 });
 
 test("a measure may name where its number comes from; none, as in plans approved before, is external", () => {
@@ -112,10 +132,15 @@ test("whatsMissing names what stops a draft, and nothing once it can go", () => 
   expect(whatsMissing(planBody, plan({ steps: [step("a", "2027-01-01")] }))).toEqual([{ path: "steps.0.on", message: "step_outside_plan" }]);
 });
 
-test("only Fact bases count as citations", () => {
+test("only Fact bases count as citations, and reading bases come out apart by id", () => {
   const fact = { kind: "fact" as const, factId, version: 3 };
-  expect(strategyCitations(strategy({ channels: [{ ...channel("a"), basis: fact }, channel("b")] }))).toEqual([{ factId, version: 3 }]);
-  expect(planCitations(plan({ measures: [{ ...measure("a"), basis: fact }, measure("b")] }))).toEqual([{ factId, version: 3 }]);
+  const reading = { kind: "reading" as const, readingId: "r1" };
+  const s = strategy({ channels: [{ ...channel("a"), basis: fact }, channel("b"), { ...channel("c"), basis: reading }] });
+  const p = plan({ measures: [{ ...measure("a"), basis: fact }, measure("b"), { ...measure("c"), basis: reading }] });
+  expect(strategyCitations(s)).toEqual([{ factId, version: 3 }]);
+  expect(planCitations(p)).toEqual([{ factId, version: 3 }]);
+  expect(strategyReadings(s)).toEqual(["r1"]);
+  expect(planReadings(p)).toEqual(["r1"]);
 });
 
 test("a step on a channel the Strategy doesn't have is found, and a step with no channel isn't", () => {

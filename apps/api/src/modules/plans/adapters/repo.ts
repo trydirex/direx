@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Every plans SQL statement. Versions, progress and readings are only inserted. Items are read,
 // never written, to find the Item still waiting on a version.
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, ne, or, sql } from "drizzle-orm";
 import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { items } from "@direx/db/schema";
 import { marketingPlans, marketingPlanVersions, planMeasureReadings, planStepProgress, strategies, strategyVersions } from "@direx/db/schema-plans";
@@ -105,6 +105,22 @@ export async function progressOf(tx: PlansTx, planId: string): Promise<Progress[
 export async function readingsOf(tx: PlansTx, planId?: string): Promise<(Reading & { planId: string })[]> {
   const rows = await tx.select().from(planMeasureReadings).where(planId === undefined ? undefined : eq(planMeasureReadings.planId, planId)).orderBy(asc(planMeasureReadings.at));
   return rows.map((r) => ({ planId: r.planId, measureKey: r.measureKey, value: r.value, observedOn: r.observedOn, source: r.source as Reading["source"], note: r.note, actorUserId: r.actorUserId, at: r.at }));
+}
+/**
+ * A reading by id, under RLS so only this Workspace's, and whether it is still the newest for its plan
+ * and Measure: no other reading has a later observed day, or the same day and a later write, as
+ * tracking() orders them. Null when there is no such reading.
+ */
+export async function readingStanding(tx: PlansTx, id: string): Promise<{ planId: string; measureKey: string; isNewest: boolean } | null> {
+  const [r] = await tx.select().from(planMeasureReadings).where(eq(planMeasureReadings.id, id));
+  if (!r) return null;
+  const t = planMeasureReadings;
+  const newer = await tx
+    .select({ id: t.id })
+    .from(t)
+    .where(and(eq(t.planId, r.planId), eq(t.measureKey, r.measureKey), ne(t.id, r.id), or(gt(t.observedOn, r.observedOn), and(eq(t.observedOn, r.observedOn), gt(t.at, r.at)))))
+    .limit(1);
+  return { planId: r.planId, measureKey: r.measureKey, isNewest: newer.length === 0 };
 }
 
 /** The Items still waiting on a version of this Strategy or plan, newest last. */

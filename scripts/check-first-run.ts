@@ -93,6 +93,9 @@ async function main() {
   dev = spawn("bun", ["run", "dev"], { cwd: copy, env, detached: true, stdio: ["ignore", log, log] });
   await waitFor(`http://127.0.0.1:${apiPort}/health`, "/health answers");
   await waitFor(`${base}/`, "the sign-in page answers");
+  const firstRun = async () => ((await (await fetch(`${base}/api/sign-in-options`)).json()) as { firstRun: string | null }).firstRun;
+  must((await firstRun()) === "sign_up", "a new dev server's sign-in page doesn't open on sign-up");
+  pass("a new server's sign-in page opens on sign-up");
 
   const email = `first-run-${randomBytes(4).toString("hex")}@example.com`;
   const password = randomBytes(18).toString("base64");
@@ -100,6 +103,7 @@ async function main() {
   const cookie = sessionCookie(created);
   must(created.status === 200 && (await signedIn(cookie)), "signing up with a password gave no session");
   pass("sign up with a password");
+  must((await firstRun()) === null, "the sign-in page still opens on sign-up after someone signed up");
   must((await post("/api/auth/sign-out", {}, cookie)).status === 200, "sign-out failed");
   const again = await post("/api/auth/sign-in/email", { email, password });
   must(again.status === 200 && (await signedIn(sessionCookie(again))), "signing in with a password gave no session");

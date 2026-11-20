@@ -12,7 +12,7 @@ import { PlanImpact } from "../campaigns/PlanChange";
 import { Measures } from "../campaigns/Overview";
 import { factsQuery, type Fact } from "../facts/actions";
 import { dayWords } from "../seo/actions";
-import { addReading, basisLabel, countedFrom, emptyPlan, markStep, missingWords, newKey, planQuery, savePlan, say, sayDraft, sayRebased, startPlanDraft, submitPlan, type Plan as Loaded, type PlanBody, type Tracking } from "./actions";
+import { addReading, basisLabel, countedFrom, emptyPlan, markStep, missingWords, newKey, planQuery, savePlan, say, sayDraft, sayRebased, sourceWords, startPlanDraft, submitPlan, MEASURE_SOURCES, type MeasureSource, type Plan as Loaded, type PlanBody, type Tracking } from "./actions";
 import { Assumptions, BasisField, DraftProgress, FIELDSET, KeptDraft, Row, Text, useEdits, WaitingVersion } from "./Fields";
 
 const draftOf = (x: Loaded | undefined): PlanBody => ({ ...emptyPlan(), ...((x?.draft ?? x?.current ?? {}) as Partial<PlanBody>) });
@@ -330,7 +330,14 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
                   <Input aria-label="Measure" className="flex-1" value={m.label} onChange={(e) => setLine("measures", i, { label: e.target.value })} />
                   <Input aria-label="Target" className="w-48 max-w-full" value={m.target} onChange={(e) => setLine("measures", i, { target: e.target.value })} />
                   <BasisField value={m.basis} facts={facts} onChange={(basis) => setLine("measures", i, { basis })} />
-                  {countedFrom(m.source) && <small className="text-xs text-muted-foreground">Counted by Direx from {countedFrom(m.source)}</small>}
+                  {/* A different source starts a new reading history; old readings stay with the old key. */}
+                  <Select aria-label={`Where measure ${i + 1}'s number comes from`} value={m.source ?? "external"} onChange={(e) => setLine("measures", i, { source: e.target.value as MeasureSource, key: newKey() })}>
+                    {MEASURE_SOURCES.map((s) => (
+                      <option key={s} value={s}>
+                        {sourceWords(s)}
+                      </option>
+                    ))}
+                  </Select>
                   <Button type="button" size="sm" variant="outline" aria-label={`Remove measure ${i + 1}`} onClick={() => dropLine("measures", i)}>
                     Remove
                   </Button>

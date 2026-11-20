@@ -10,6 +10,17 @@ const cited = (bases: Basis[]): Citation[] =>
 export const strategyCitations = (b: StrategyBody): Citation[] => cited(b.channels.map((c) => c.basis));
 export const planCitations = (b: PlanBody): Citation[] => cited(b.measures.map((m) => m.basis));
 
+// Reading citations are kept apart from Fact ones: approval and the fact_changed note check Facts only.
+const readingsCited = (bases: Basis[]): string[] => bases.flatMap((b) => (b.kind === "reading" ? [b.readingId] : []));
+export const strategyReadings = (b: StrategyBody): string[] => readingsCited(b.channels.map((c) => c.basis));
+export const planReadings = (b: PlanBody): string[] => readingsCited(b.measures.map((m) => m.basis));
+
+// A reading citation stands only while it is still the newest reading for its Measure, on another plan.
+// A Strategy is drafted for no plan, so it passes null and any plan's newest reading may stand.
+export function readingStands(r: { planId: string; isNewest: boolean } | null, draftingPlanId: string | null): boolean {
+  return r !== null && r.isNewest && r.planId.toLowerCase() !== draftingPlanId?.toLowerCase();
+}
+
 /** All the words a person would read, for the banned-claims check. */
 export const strategyText = (b: StrategyBody): string =>
   [b.whoFor, b.positioning, ...b.personas.flatMap((p) => [p.name, p.notes ?? ""]), ...b.channels.flatMap((c) => [c.label, c.reason]), ...b.assumptions.map((a) => a.text)].join("\n");

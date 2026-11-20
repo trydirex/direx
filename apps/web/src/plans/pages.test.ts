@@ -8,7 +8,7 @@ import { expect, test, vi } from "vitest";
 import { api } from "../client";
 import { buttons, withQueries, withoutButtons } from "../testing";
 import type { Role } from "../items/actions";
-import { addReading, createPlan, dismissOffer, draftOutcome, getOffer, takeOffer, markStep, missingWords, savePlan, saveStrategy, say, sayDraft, startPlanDraft, startStrategyDraft, submitPlan, submitStrategy, type Plan as Loaded, type PlanBody, type Strategy as LoadedStrategy, type StrategyBody, type Tracking } from "./actions";
+import { addReading, basisLabel, createPlan, dismissOffer, draftOutcome, getOffer, takeOffer, markStep, missingWords, savePlan, saveStrategy, say, sayDraft, startPlanDraft, startStrategyDraft, submitPlan, submitStrategy, type Plan as Loaded, type PlanBody, type Strategy as LoadedStrategy, type StrategyBody, type Tracking } from "./actions";
 import { KeptDraft } from "./Fields";
 import { NewCampaign } from "./NewCampaign";
 import { Plan } from "./Plan";
@@ -154,6 +154,10 @@ test("a refusal reads as words", () => {
   expect(say("no_strategy")).toContain("Strategy first");
   expect(say(`citation_not_ok:${ID}`)).toContain("A brand fact this relies on");
   expect(missingWords([{ path: "goal", message: "Invalid" }, { path: "endsOn", message: "plan_dates_out_of_range" }])).toBe("goal, dates up to 45 days apart, ending after they start");
+});
+
+test("a reading basis reads as words, never its id", () => {
+  expect(basisLabel({ kind: "reading", readingId: ID })).toBe("Earlier Campaign reading");
 });
 
 test("each action calls its endpoint", async () => {

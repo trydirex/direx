@@ -76,6 +76,52 @@ test.each(["in time", "after timeout"])("sign-in options arriving %s keep their 
   expect(screen.getByRole("button", { name: "Continue with Microsoft" })).toBeTruthy();
 });
 
+/** Signed out, with sign-in options that say `firstRun`. */
+function serveNewServer(firstRun: "sign_up" | "needs_link" | null) {
+  serve(false);
+  const real = vi.mocked(api.GET).getMockImplementation()!;
+  vi.mocked(api.GET).mockImplementation(((...args: Parameters<typeof api.GET>) =>
+    args[0] === "/api/sign-in-options"
+      ? Promise.resolve({ data: { google: false, microsoft: false, firstRun }, response: new Response(null, { status: 200 }) })
+      : real(...args)) as typeof api.GET);
+}
+const CLAIM = `/claim/${"a".repeat(64)}`;
+
+test("a server with no accounts that admits anyone opens on sign-up", async () => {
+  serveNewServer("sign_up");
+  open("/");
+  expect(await screen.findByRole("heading", { name: "Sign up for Direx" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Back to sign in" })).toBeTruthy();
+});
+
+test("a production server with no accounts explains the setup link on its bare address, with no form", async () => {
+  serveNewServer("needs_link");
+  open(`/w/${W}/calendar`);
+  expect(await screen.findByRole("heading", { name: "This Direx isn't set up yet" })).toBeTruthy();
+  expect(screen.getByText("docker compose -f deploy/compose/compose.yml exec direx bun run server-admin --invite")).toBeTruthy();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("button")).toBeNull();
+});
+
+test("the setup link on a server with no accounts opens on sign-up and holds its token", async () => {
+  serveNewServer("needs_link");
+  const held = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("{}"));
+  open(CLAIM);
+  expect(await screen.findByRole("heading", { name: "Set up Direx" })).toBeTruthy();
+  expect(screen.getByText("Sign up to become this server's first Server admin.")).toBeTruthy();
+  await waitFor(() => expect(held).toHaveBeenCalledWith("/api/admission/token", expect.objectContaining({ body: JSON.stringify({ token: "a".repeat(64) }) })));
+});
+
+test("a server with accounts keeps today's sign-in, on the setup link too", async () => {
+  serveNewServer(null);
+  open(CLAIM);
+  expect(await screen.findByRole("heading", { name: "Sign in to claim this server" })).toBeTruthy();
+  cleanup();
+  serveNewServer(null);
+  open("/");
+  expect(await screen.findByRole("heading", { name: "Sign in to Direx" })).toBeTruthy();
+});
+
 test("signed in, / opens the first Workspace's Home", async () => {
   serve(true);
   const router = open("/");

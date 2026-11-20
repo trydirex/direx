@@ -22,8 +22,7 @@ const item = (o: Partial<Item> = {}): Item => ({
   title: "Email to Dana",
   workArea: "outreach",
   channel: "email",
-  groupKey: null,
-  groupLabel: null,
+  groupKey: null, groupLabel: null,
   at: null,
   warnings: [],
   clean: true,
@@ -36,6 +35,7 @@ const item = (o: Partial<Item> = {}): Item => ({
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -345,17 +345,13 @@ test("Clear discards pending search text even when the route has no search", asy
   const { onFilters } = show({ filters: { state: "sent" } });
   await screen.findByRole("list", { name: "Everything" });
   vi.useFakeTimers();
-  try {
-    const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "pending" } });
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-    expect(input.value).toBe("");
-    act(() => vi.advanceTimersByTime(300));
-    expect(onFilters).toHaveBeenCalledTimes(1);
-    expect(onFilters).toHaveBeenCalledWith({ state: undefined, channel: undefined, type: undefined, campaign: undefined, q: undefined });
-  } finally {
-    vi.useRealTimers();
-  }
+  const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "pending" } });
+  fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+  expect(input.value).toBe("");
+  act(() => vi.advanceTimersByTime(300));
+  expect(onFilters).toHaveBeenCalledTimes(1);
+  expect(onFilters).toHaveBeenCalledWith({ state: undefined, channel: undefined, type: undefined, campaign: undefined, q: undefined });
 });
 
 test("search limits pasted text to 100 characters and explains the limit", async () => {
@@ -378,27 +374,23 @@ test("a route search change cancels the abandoned draft and typing still debounc
   const { rerender } = render(view("current"));
   await screen.findByRole("list", { name: "Everything" });
   vi.useFakeTimers();
-  try {
-    const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "abandoned" } });
-    act(() => vi.advanceTimersByTime(100));
-    rerender(view("restored"));
-    expect(input.value).toBe("restored");
-    act(() => vi.advanceTimersByTime(300));
-    expect(onFilters).not.toHaveBeenCalled();
-    fireEvent.change(input, { target: { value: "new search" } });
-    act(() => vi.advanceTimersByTime(299));
-    expect(onFilters).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
-    expect(onFilters).toHaveBeenCalledExactlyOnceWith({ q: "new search" });
-    fireEvent.change(input, { target: { value: "discard this too" } });
-    rerender(view(undefined));
-    expect(input.value).toBe("");
-    act(() => vi.advanceTimersByTime(300));
-    expect(onFilters).toHaveBeenCalledTimes(1);
-  } finally {
-    vi.useRealTimers();
-  }
+  const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "abandoned" } });
+  act(() => vi.advanceTimersByTime(100));
+  rerender(view("restored"));
+  expect(input.value).toBe("restored");
+  act(() => vi.advanceTimersByTime(300));
+  expect(onFilters).not.toHaveBeenCalled();
+  fireEvent.change(input, { target: { value: "new search" } });
+  act(() => vi.advanceTimersByTime(299));
+  expect(onFilters).not.toHaveBeenCalled();
+  act(() => vi.advanceTimersByTime(1));
+  expect(onFilters).toHaveBeenCalledExactlyOnceWith({ q: "new search" });
+  fireEvent.change(input, { target: { value: "discard this too" } });
+  rerender(view(undefined));
+  expect(input.value).toBe("");
+  act(() => vi.advanceTimersByTime(300));
+  expect(onFilters).toHaveBeenCalledTimes(1);
 });
 
 test("an error answer to Approve says the approvals couldn't be confirmed", async () => {

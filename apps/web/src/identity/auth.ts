@@ -26,7 +26,8 @@ export async function holdInviteToken(token: string): Promise<void> {
   await post("/api/admission/token", { token }).catch(() => undefined);
 }
 
-type SignInOptions = { google: boolean; microsoft: boolean };
+/** `firstRun` is set only while the server has no accounts (`sign_up` in dev, `needs_link` outside it). */
+type SignInOptions = { google: boolean; microsoft: boolean; firstRun?: "sign_up" | "needs_link" | null };
 
 /**
  * Which of Google and Microsoft this server is set up for, or null when the server can't say. Fetched

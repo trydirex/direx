@@ -15,7 +15,7 @@ export type Plan = S["Plan"];
 export type PlanSummary = S["PlanSummary"];
 export type ListedPlan = S["ListedPlan"];
 
-export type Basis = { kind: "fact"; factId: string; version: number } | { kind: "source"; label: string; url?: string } | { kind: "assumption" };
+export type Basis = { kind: "fact"; factId: string; version: number } | { kind: "source"; label: string; url?: string } | { kind: "assumption" } | { kind: "reading"; readingId: string };
 export type Channel = { key: string; label: string; timing: "now" | "later"; reason: string; basis: Basis };
 export type StrategyBody = { schemaVersion: 1; whoFor: string; personas: { name: string; notes?: string }[]; positioning: string; channels: Channel[]; assumptions: { text: string }[] };
 export type Step = { key: string; on: string; channelKey?: string; title: string; template?: { subject: string; text: string; citations: { factId: string; version: number }[] } };
@@ -30,6 +30,9 @@ export type Tracking = { planned: number; done: number; skipped: number; steps: 
 const COUNTED_FROM: Record<Exclude<MeasureSource, "external">, string> = { replies: "email replies", interested_replies: "replies labelled interested", meetings: "meetings marked on People", deals: "deals marked on People" };
 /** What Direx counts a Measure from, such as "email replies"; null when a person enters its readings. */
 export const countedFrom = (source: MeasureSource | undefined) => (source && source !== "external" ? COUNTED_FROM[source] : null);
+/** The choices for where a Measure's number comes from, entered by a person first: a hand-written Measure starts there. */
+export const MEASURE_SOURCES: readonly MeasureSource[] = ["external", "replies", "interested_replies", "meetings", "deals"];
+export const sourceWords = (source: MeasureSource) => (source === "external" ? "Entered by a person" : `Counted by Direx from ${COUNTED_FROM[source]}`);
 
 export const emptyStrategy = (): StrategyBody => ({ schemaVersion: 1, whoFor: "", personas: [], positioning: "", channels: [], assumptions: [] });
 export const emptyPlan = (): PlanBody => ({ schemaVersion: 1, goal: "", audience: "", startsOn: "", endsOn: "", steps: [], measures: [], budget: [], assumptions: [] });
@@ -105,7 +108,8 @@ const WORDS: Record<string, string> = {
 export const missingWords = (m: { path: string; message: string }[], labels: Partial<Record<string, string>> = {}) => [...new Set(m.map((x) => WORDS[x.message] ?? labels[x.path.split(".")[0]!] ?? x.path))].join(", ");
 
 export const basisLabel = (b: Basis, factValue?: (id: string) => string | undefined) =>
-  b.kind === "assumption" ? "assumption" : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
+  // ponytail: a placeholder until the views carry the cited reading's Measure, value and day.
+  b.kind === "assumption" ? "assumption" : b.kind === "reading" ? "Earlier Campaign reading" : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
 
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 const one = (workspaceId: string, id: string) => ({ path: { workspaceId, id } });

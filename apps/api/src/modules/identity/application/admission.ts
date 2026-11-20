@@ -15,7 +15,9 @@ export function asciiEmail(email: string): string {
   return ascii ? `${addr.slice(0, at)}@${ascii}` : addr;
 }
 
-export function selfHostAdmission(opts: { devMode: boolean }): Admission {
+/** `hasAccounts` is only for tests, whose shared database always has accounts. */
+export function selfHostAdmission(opts: { devMode: boolean; hasAccounts?: () => Promise<boolean> }): Admission {
+  const hasAccounts = opts.hasAccounts ?? repo.serverHasAccounts;
   return {
     async admit({ email, emailVerified, token }) {
       if (opts.devMode) return { ok: true, via: "open" };
@@ -27,6 +29,9 @@ export function selfHostAdmission(opts: { devMode: boolean }): Admission {
     },
     canCreateOrganization: async (userId) => opts.devMode || (await repo.isServerAdmin(userId)),
     status: () => repo.serverStatus(),
+    // Keyed on accounts, not on a Server admin: an upgraded server can be unclaimed with users who
+    // must still see sign-in (ADR 0024).
+    firstRun: async () => ((await hasAccounts()) ? null : opts.devMode ? "sign_up" : "needs_link"),
   };
 }
 

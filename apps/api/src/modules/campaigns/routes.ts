@@ -7,6 +7,7 @@ import { WarningShape } from "../items/index";
 import { WARNINGS } from "../outreach/index";
 import type { Campaigns } from "./application/create";
 import { STATUSES } from "./domain/lifecycle";
+import { CHANNELS as OVERLAP_CHANNELS, OVERLAP_KINDS } from "./domain/overlaps";
 import { REJECT_REASONS, REWRITE_PRESETS, rewriteInstruction, type RejectReason, type RewritePreset } from "./domain/rewrite";
 
 const REASON_KEYS = Object.keys(REJECT_REASONS) as [RejectReason, ...RejectReason[]];
@@ -616,6 +617,39 @@ const resultsRoute = createRoute({
   responses: { 200: json(Results, "Sends by channel, what came back on email, each measure against its target, and each step's funnel"), ...errors },
 });
 
+// Per outcome kind, the Campaign's Touches each Person got before it, summed by channel mix. A row counts
+// People reached; a rate shows only where two rows each have enough outcomes to compare, and none is ranked.
+const OverlapChannel = z.enum(OVERLAP_CHANNELS);
+const Overlaps = z
+  .strictObject({
+    kinds: z.array(
+      z.strictObject({
+        kind: z.enum(OVERLAP_KINDS),
+        rows: z.array(z.strictObject({ channels: z.array(OverlapChannel), reached: z.number().int(), outcomes: z.number().int(), rate: z.number().int().nullable() })),
+        people: z.array(
+          z.strictObject({
+            personId: z.uuid(),
+            name: z.string().nullable(),
+            email: z.string().nullable(),
+            on: z.iso.date(),
+            touches: z.array(z.strictObject({ on: z.iso.date(), stepKey: z.string(), title: z.string().nullable(), channel: OverlapChannel })),
+          }),
+        ),
+        // Outcome People past the list's cap, counted but not listed.
+        more: z.number().int(),
+      }),
+    ),
+    hasPosts: z.boolean(),
+  })
+  .openapi("CampaignOverlaps");
+const overlapsRoute = createRoute({
+  method: "get",
+  path: "/api/w/{workspaceId}/campaigns/{id}/overlaps",
+  middleware: [requirePermission("workspace.read")],
+  request: { params: one },
+  responses: { 200: json(Overlaps, "For interested replies, meetings and deals: People each channel mix reached, how many had the outcome, and each one's Touches before it"), ...errors },
+});
+
 // What Direx did for one Campaign, newest first.
 const activityRoute = createRoute({
   method: "get",
@@ -709,6 +743,11 @@ export function campaignRoutes(deps: { campaigns: () => Campaigns }) {
   app.openapi(resultsRoute, async (c) => {
     const { workspaceId, id } = c.req.valid("param");
     const r = await deps.campaigns().outcomes(workspaceId, id);
+    return r ? c.json(r, 200) : c.json({ error: "not_found" }, 404);
+  });
+  app.openapi(overlapsRoute, async (c) => {
+    const { workspaceId, id } = c.req.valid("param");
+    const r = await deps.campaigns().overlaps(workspaceId, id);
     return r ? c.json(r, 200) : c.json({ error: "not_found" }, 404);
   });
   app.openapi(activityRoute, async (c) => {

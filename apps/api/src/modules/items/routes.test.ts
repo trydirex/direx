@@ -135,6 +135,8 @@ test("the list pages by its cursor, filters by the query, and refuses a bad curs
   // An offset, a cursor edited by hand, and a newest-first cursor sent to Needs you.
   for (const bad of ["500", `${first}x`, first.slice(0, -2)]) expect(await read(`cursor=${bad}`)).toEqual({ status: 400, body: { error: "bad_cursor" } });
   expect(await read(`needsYou=true&cursor=${first}`)).toEqual({ status: 400, body: { error: "bad_cursor" } });
+  const impossible = Buffer.from(JSON.stringify(["newest", "2026-13-19T09:00:00.123456Z", "00000000-0000-4000-8000-000000000001"])).toString("base64url");
+  expect(await read(`cursor=${impossible}`)).toEqual({ status: 400, body: { error: "bad_cursor" } });
   for (const bad of ["state=sent,nope", "state=", "channel=e%20mail", "type=Social", "campaign=c1%25", `q=${"x".repeat(101)}`, "q=%20%20"])
     expect((await read(bad)).status, bad).toBe(400);
 });

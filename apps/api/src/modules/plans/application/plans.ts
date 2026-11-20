@@ -6,6 +6,7 @@ import type { Facts } from "../../facts";
 import type { Items } from "../../items";
 import {
   archivePlanRow,
+  citedReadingRows,
   inWorkspace,
   insertPlan,
   insertPlanVersion,
@@ -15,7 +16,6 @@ import {
   planVersionsOf,
   progressOf,
   readingsOf,
-  readingStanding,
   readPlan,
   readPlanVersion,
   readStrategy,
@@ -41,16 +41,17 @@ export type OnPlanCreated = (tx: PlansTx, p: { workspaceId: string; planId: stri
  * reading's plan as approved now, or its key when that version no longer has it.
  */
 export async function citedReadings(tx: PlansTx, ids: string[]) {
+  const unique = [...new Set(ids)];
+  const rows = await citedReadingRows(tx, unique.filter((id) => z.uuid().safeParse(id).success));
+  const byId = new Map(rows.map((r) => [r.id, r]));
   const out = [];
-  for (const id of new Set(ids)) {
-    const r = z.uuid().safeParse(id).success ? await readingStanding(tx, id) : null;
+  for (const id of unique) {
+    const r = byId.get(id.toLowerCase());
     if (!r) {
       out.push({ id, found: false, measureLabel: null, value: null, source: null, observedOn: null, newer: false });
       continue;
     }
-    const plan = await readPlan(tx, r.planId);
-    const v = plan?.currentVersion == null ? undefined : await readPlanVersion(tx, r.planId, plan.currentVersion);
-    const measureLabel = (v?.body as PlanBody | undefined)?.measures.find((m) => m.key === r.measureKey)?.label ?? r.measureKey;
+    const measureLabel = (r.body as PlanBody | null)?.measures.find((m) => m.key === r.measureKey)?.label ?? r.measureKey;
     out.push({ id, found: true, measureLabel, value: r.value, source: r.source, observedOn: r.observedOn, newer: !r.isNewest });
   }
   return out;

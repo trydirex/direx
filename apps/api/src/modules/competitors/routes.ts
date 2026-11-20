@@ -4,6 +4,7 @@
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { requirePermission, type MemberEnv } from "../identity/index";
 import type { Competitors } from "./application/competitors";
+import { createFindPages, type FindPages } from "./application/find-pages";
 import type { Snapshots } from "./application/snapshots";
 import { MAX_NAME_CHARS, MAX_URL_CHARS, SOURCES, type Source } from "./domain/competitor";
 import { LABELS, type Label } from "./domain/labels";
@@ -16,7 +17,7 @@ const errors = {
   401: json(ErrorBody, "Not signed in"),
   403: json(ErrorBody, "Not allowed"),
   404: json(ErrorBody, "Not found"),
-  409: json(ErrorBody, "Refused: the list is full or the name is taken"),
+  409: json(ErrorBody, "Refused: the list is full, the name is taken, or Find pages is already running for this Workspace"),
 };
 const ws = z.object({ workspaceId: z.uuid() });
 const one = ws.extend({ id: z.uuid() });
@@ -99,10 +100,26 @@ const checkRoute = createRoute({
   responses: { 200: json(z.object({ checks: z.array(Check) }), "Every URL on the row, read again"), ...errors },
 });
 
+const Found = z.object({ url: z.string(), via: z.enum(["homepage", "sitemap", "roadmap"]), text: z.string() }).openapi("CompetitorFoundPage");
+const FindResult = z
+  .union([
+    z.object({ ok: z.literal(true), pricing: Found.nullable(), changelog: Found.nullable(), alsoPricing: z.array(z.string()) }),
+    z.object({ ok: z.literal(false), reason: z.enum(["other_site", "robots_disallowed", "unreadable"]), host: z.string().optional(), detail: z.string().optional() }),
+  ])
+  .openapi("CompetitorFindPages");
+const findPagesRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/competitors/find-pages",
+  middleware: [requirePermission("workspace.settings")],
+  request: { params: ws, ...body(z.strictObject({ landingUrl: z.url({ protocol: /^https?$/ }).max(MAX_URL_CHARS) })) },
+  responses: { 200: json(FindResult, "The pricing and changelog pages found from the homepage and sitemap, or why none could be looked for. Nothing is saved"), ...errors },
+});
+
 const status = (reason: string) => (reason === "not_found" ? 404 : reason === "too_many" || reason === "name_taken" ? 409 : 400);
 
-export function competitorRoutes(deps: { competitors: () => Competitors; snapshots: () => Snapshots }) {
+export function competitorRoutes(deps: { competitors: () => Competitors; snapshots: () => Snapshots; findPages?: FindPages }) {
   const { competitors, snapshots } = deps;
+  const findPages = deps.findPages ?? createFindPages();
   return new OpenAPIHono<MemberEnv>()
     .openapi(listRoute, async (c) => {
       const ws = c.get("member").workspaceId;
@@ -142,5 +159,10 @@ export function competitorRoutes(deps: { competitors: () => Competitors; snapsho
     .openapi(checkRoute, async (c) => {
       const checks = await competitors().check(c.get("member").workspaceId, c.req.valid("param").id);
       return checks ? c.json({ checks }, 200) : c.json({ error: "not_found" }, 404);
+    })
+    .openapi(findPagesRoute, async (c) => {
+      const r = await findPages(c.get("member").workspaceId, c.req.valid("json").landingUrl);
+      if (!r.ok && r.reason === "busy") return c.json({ error: "busy" }, 409);
+      return c.json(r, 200);
     });
 }

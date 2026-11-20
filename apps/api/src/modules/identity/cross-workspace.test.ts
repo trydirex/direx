@@ -396,6 +396,7 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "POST /api/w/:workspaceId/competitors": { path: `/api/w/${w2}/competitors`, body: { name: "Rival", landingUrl: "http://127.0.0.1/" } },
   "PATCH /api/w/:workspaceId/competitors/:id": { path: `/api/w/${w2}/competitors/${competitorId}`, body: { name: "Rival 2" } },
   "POST /api/w/:workspaceId/competitors/:id/check": { path: `/api/w/${w2}/competitors/${competitorId}/check` },
+  "POST /api/w/:workspaceId/competitors/find-pages": { path: `/api/w/${w2}/competitors/find-pages`, body: { landingUrl: "http://127.0.0.1/" } },
   "GET /api/w/:workspaceId/competitors/:id/changes": { path: `/api/w/${w2}/competitors/${competitorId}/changes` },
   // Last of the four: W2's Owner removes the row the cases above use.
   "DELETE /api/w/:workspaceId/competitors/:id": { path: `/api/w/${w2}/competitors/${competitorId}` },

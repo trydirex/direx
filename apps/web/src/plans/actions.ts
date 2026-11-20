@@ -8,7 +8,8 @@ import { api } from "../client";
 import { statusLabel, type RunDetail } from "../agents/actions";
 import { messageForCode } from "../api/messages";
 import { ITEM_MESSAGES } from "../items/actions";
-import { dayWords } from "../seo/actions";
+// The short day the campaign screens use beside these labels, such as "Thu 12 Nov".
+import { dayWords } from "../campaigns/actions";
 
 type S = components["schemas"];
 export type Strategy = S["Strategy"];
@@ -113,7 +114,7 @@ export const missingWords = (m: { path: string; message: string }[], labels: Par
 const readingWords = (c: CitedReading | undefined) => (c?.found ? `${c.measureLabel} ${c.value}, ${c.source === "system" ? "counted by Direx" : "entered by a person"}, ${dayWords(c.observedOn!)}` : null);
 const readingLabel = (c: CitedReading | undefined) => {
   const words = readingWords(c);
-  return words ? `From an earlier Campaign: ${words}${c!.newer ? " (since changed)" : ""}` : "From a Campaign reading that isn't in this Workspace";
+  return words ? `From an earlier Campaign: ${words}${c!.newer ? ", since changed" : ""}` : "From a Campaign reading that isn't in this Workspace";
 };
 /** The note for a cited reading a newer one has replaced, on a plan or the Strategy. */
 export const readingChanged = (what: "plan" | "Strategy", readingId: string | undefined, cited: CitedReading[] = []) => {

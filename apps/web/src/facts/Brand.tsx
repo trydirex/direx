@@ -129,7 +129,7 @@ const SAY: Field[] = ["what_you_sell", "who_buys", "price", "claim", "never_say"
 type Key = Field | "voice" | "lessons" | "competitors" | "strategy" | `item:${string}`;
 
 /** What a Workspace is allowed to say about itself, and where each fact came from: a list on one side, the chosen part on the other. */
-export function Brand(p: { workspaceId: string; role: Role; open?: "lessons"; initial?: { facts: Fact[]; conflicts: Item[]; proposals: Item[]; runs?: Run[] } }) {
+export function Brand(p: { workspaceId: string; role: Role; open?: "lessons" | "competitors"; initial?: { facts: Fact[]; conflicts: Item[]; proposals: Item[]; runs?: Run[] } }) {
   const { workspaceId, role } = p;
   const client = useQueryClient();
   const facts = useQuery({ ...factsQuery(workspaceId), initialData: p.initial?.facts });

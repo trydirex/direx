@@ -121,6 +121,34 @@ test.each([
   expect(sent()).toMatchObject({ path: endpoint, body: { callbackURL: "/claim" } });
 });
 
+test.each([
+  { button: "Continue with Google", endpoint: "/api/auth/sign-in/social", body: { provider: "google" } },
+  { button: "Continue with Microsoft", endpoint: "/api/auth/sign-in/social", body: { provider: "microsoft" } },
+  { button: "Email me a sign-in link", endpoint: "/api/auth/sign-in/magic-link", body: { email: "sam@example.com" } },
+])("$button waits for the setup token before starting sign-in", async ({ button, endpoint, body }) => {
+  const hold = Promise.withResolvers<Response>();
+  answer(200);
+  fetchSpy.mockImplementation((path: RequestInfo | URL) => path === "/api/admission/token" ? hold.promise : Promise.resolve(Response.json({ url: "/provider" })));
+  render(withQueries(<SignIn callbackURL="/claim" inviteToken={"a".repeat(64)} />));
+  if (body.email) await fill(body.email);
+  await userEvent.click(screen.getByRole("button", { name: button }));
+  expect(fetchSpy).toHaveBeenCalledExactlyOnceWith("/api/admission/token", expect.anything());
+  hold.resolve(Response.json({ ok: true }));
+  await vi.waitFor(() => expect(sent()).toEqual({ path: endpoint, body: { ...body, callbackURL: "/claim", errorCallbackURL: "/claim" } }));
+});
+
+test("a password reset from the setup link doesn't wait for the invite token", async () => {
+  const hold = Promise.withResolvers<Response>();
+  answer(200);
+  fetchSpy.mockImplementation((path: RequestInfo | URL) => path === "/api/admission/token" ? hold.promise : Promise.resolve(Response.json({})));
+  render(withQueries(<SignIn callbackURL="/claim" initialMode="forgot" inviteToken={"a".repeat(64)} />));
+  await fill("sam@example.com");
+  await userEvent.click(screen.getByRole("button", { name: "Email me a reset link" }));
+  expect(await screen.findByText(/we sent it a reset link/)).toBeTruthy();
+  expect(sent()).toEqual({ path: "/api/auth/request-password-reset", body: { email: "sam@example.com", redirectTo: "/reset-password" } });
+  hold.resolve(Response.json({ ok: true }));
+});
+
 test("a refused password sign-up shows the server's reason", async () => {
   const message = "This server takes invited people only. Ask whoever runs it for an invite.";
   answer(400, { code: "SIGNUP_REFUSED", message });

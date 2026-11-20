@@ -61,9 +61,18 @@ export function SignIn({
   const fail = (e: Error) => setError(e.message);
   const signedIn = () => location.assign(callbackURL);
 
+  // The tokenless claim page relies on the cookie set by the hold response.
+  const claimTokenHeld = () => callbackURL === "/claim" ? tokenHeld.current : undefined;
+  const social = async (provider: "google" | "microsoft") => {
+    await claimTokenHeld();
+    await signInWith(provider, callbackURL);
+  };
+  const magicLink = async () => {
+    await claimTokenHeld();
+    await sendSignInLink(email, callbackURL);
+  };
   const submit = async () => {
-    // The tokenless claim page relies on the cookie set by the hold response.
-    if (callbackURL === "/claim" && mode !== "forgot") await tokenHeld.current;
+    if (mode !== "forgot") await claimTokenHeld();
     if (mode === "sign_in") {
       await signInWithPassword(email, password, callbackURL);
       signedIn();
@@ -95,12 +104,12 @@ export function SignIn({
         {(providers.google || providers.microsoft) && (
           <div className="flex flex-col gap-2">
             {providers.google && (
-              <NativeButton type="button" variant="outline" onClick={() => signInWith("google", callbackURL).catch(fail)}>
+              <NativeButton type="button" variant="outline" onClick={() => social("google").catch(fail)}>
                 Continue with Google
               </NativeButton>
             )}
             {providers.microsoft && (
-              <NativeButton type="button" variant="outline" onClick={() => signInWith("microsoft", callbackURL).catch(fail)}>
+              <NativeButton type="button" variant="outline" onClick={() => social("microsoft").catch(fail)}>
                 Continue with Microsoft
               </NativeButton>
             )}
@@ -164,7 +173,7 @@ export function SignIn({
             onClick={() => {
               if (!email) return setError("Enter your email address first.");
               setPending("link");
-              sendSignInLink(email, callbackURL)
+              magicLink()
                 .then(() => setSent(`Check ${email} for a sign-in link. It works once and expires in 5 minutes.`), fail)
                 .finally(() => setPending(undefined));
             }}

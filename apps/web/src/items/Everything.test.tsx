@@ -203,6 +203,27 @@ test("Approve sends only the clean rows that need approval, then says what went 
   expect((screen.getByRole("checkbox", { name: "Select all shown" }) as HTMLInputElement).checked).toBe(false);
 });
 
+test("Approve reports an unconfirmed outcome, clears selection, and refreshes after a connection failure", async () => {
+  const row = item({ id: "a", state: "needs_approval", title: "First" });
+  const asked = serve([
+    { items: [row], nextCursor: null },
+    { items: [{ ...row, state: "scheduled" }], nextCursor: null },
+  ]);
+  const posts = vi.spyOn(api, "POST").mockRejectedValue(new Error("connection lost"));
+  show();
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Select all shown" }));
+  await userEvent.click(screen.getByRole("button", { name: "Approve 1" }));
+  await userEvent.click(within(openDialog("Approve 1?")!).getByRole("button", { name: "Approve 1" }));
+  expect(posts).toHaveBeenCalledTimes(1);
+  expect((await screen.findByRole("alert")).textContent).toBe("Couldn't confirm the approvals. Check the refreshed list before trying again.");
+  await waitFor(() => expect(asked).toHaveLength(2));
+  expect(await within(screen.getByRole("list", { name: "Everything" })).findByText("Scheduled")).toBeTruthy();
+  expect(screen.queryByText(/selected$/)).toBeNull();
+  expect((screen.getByRole("checkbox", { name: "Select all shown" }) as HTMLInputElement).checked).toBe(false);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.queryByText("Approved 1.")).toBeNull();
+});
+
 test("Withdraw cancels each ticked row that can still be withdrawn, and counts the ones it couldn't", async () => {
   serve([
     {

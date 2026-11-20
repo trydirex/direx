@@ -93,9 +93,13 @@ export function Everything(p: {
     setPending(true);
     try {
       if (confirming === "approve") {
-        const r = await approveClean(p.workspaceId, approvable);
-        approvedToast(p.workspaceId, r.ids, editor, refresh);
-        setRefused(r.refused.length > 0 ? `${r.refused.length} didn't go through: ${message(r.refused[0]!.reason)}` : undefined);
+        try {
+          const r = await approveClean(p.workspaceId, approvable);
+          approvedToast(p.workspaceId, r.ids, editor, refresh);
+          setRefused(r.refused.length > 0 ? `${r.refused.length} didn't go through: ${message(r.refused[0]!.reason)}` : undefined);
+        } catch {
+          setRefused("Couldn't confirm the approvals. Check the refreshed list before trying again.");
+        }
       } else {
         // Wait for every request, even if one loses its connection, before reading the list again.
         const results = await Promise.allSettled(withdrawable.map((i) => cancel(p.workspaceId, i.id)));

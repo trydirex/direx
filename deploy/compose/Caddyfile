@@ -1,5 +1,12 @@
-# Serves Direx on the domain install.sh --public was given, with a certificate Caddy fetches and
-# renews itself. The domain's DNS must point at this server before the first start.
-{$DIREX_DOMAIN} {
-	reverse_proxy direx:3000
+# Caddy on a Direx server. install.sh picks the sites in DIREX_CADDY_SITES: public.caddy for the app
+# on its own domain (--public), tracking.caddy for tracked links on customers' domains (--tracking), or
+# both. A server set up before tracking existed has no DIREX_CADDY_SITES and keeps public.caddy.
+{
+	# Caddy gets a certificate for a tracking host only when Direx says yes, over the Compose network
+	# on a port that is never published (ADR 0035 rules 006 and 007).
+	on_demand_tls {
+		ask http://direx:3001/ask
+	}
 }
+
+import /etc/caddy/sites/{$DIREX_CADDY_SITES:public.caddy}

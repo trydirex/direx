@@ -5,7 +5,9 @@
 export type Basis =
   | { kind: "fact"; factId: string; version: number }
   | { kind: "source"; label: string; url?: string | undefined }
-  | { kind: "assumption" };
+  | { kind: "assumption" }
+  // A stored Measure reading from an earlier Campaign. Readings are append-only, so the id fixes the value.
+  | { kind: "reading"; readingId: string };
 
 export type Assumption = { text: string };
 

@@ -63,8 +63,12 @@ const decode = (s: string) => {
  * `verify`, says why it failed, in one line that never holds the password or the URL.
  */
 export async function checkSmtp(url: string, from: string, testTo?: string): Promise<SmtpCheck> {
-  const u = URL.canParse(url) ? new URL(url) : null;
-  if (!u || (u.protocol !== "smtp:" && u.protocol !== "smtps:")) return { ok: false, line: "that isn't an smtp:// or smtps:// URL" };
+  const invalid = { ok: false, line: "that isn't an smtp:// or smtps:// URL" } as const;
+  if (!/^smtps?:/i.test(url)) return invalid;
+  // Nodemailer treats a slashless SMTP URL as an authority, where URL sees an opaque path.
+  const normalized = url.replace(/^(smtps?:)(?!\/\/)(?=[\s\S])/i, "$1//");
+  const u = URL.canParse(normalized) ? new URL(normalized) : null;
+  if (!u) return invalid;
   const at = { host: u.hostname, port: Number(u.port) || (u.protocol === "smtps:" ? 465 : 587) };
   // A server's reply can echo what it was sent, so every line loses the URL and the password.
   const secrets = [url, u.password, decode(u.password)].filter(Boolean);
@@ -80,8 +84,8 @@ export async function checkSmtp(url: string, from: string, testTo?: string): Pro
     // Nodemailer gives URL options precedence over defaults. Keep protocol replies off the console.
     const diagnostics = ["logger", "debug", "transactionLog"].filter((key) => u.searchParams.has(key));
     for (const key of diagnostics) u.searchParams.delete(key);
-    const probeUrl = diagnostics.length ? u.href : url;
-    if (diagnostics.length) secrets.push(probeUrl);
+    const probeUrl = diagnostics.length ? u.href : normalized;
+    if (probeUrl !== url) secrets.push(probeUrl);
     transport = createTransport(probeUrl);
     if (transport.transporter.name !== "SMTP" && transport.transporter.name !== "SMTP (pool)") {
       return { ok: false, line: "that URL doesn't select an SMTP transport" };

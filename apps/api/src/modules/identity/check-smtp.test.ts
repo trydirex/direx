@@ -116,9 +116,10 @@ test("a closed port says the server couldn't be reached", async () => {
   expect(await failed(checkSmtp(urlFor(port), "a@example.com"))).toBe(`couldn't reach 127.0.0.1:${port}`);
 });
 
-test("a refused sender gives the server's reply, without the password it echoed", async () => {
+test.each(["smtp://", "smtp:"])("a refused sender for %s gives the reply without the password it echoed", async (scheme) => {
   const { server, sent } = start({ mailFrom: `550 domain not verified for ${PASS}` });
-  const line = await failed(checkSmtp(urlFor(server.port), "a@example.com", "me@example.com"));
+  const url = urlFor(server.port).replace("smtp://", scheme);
+  const line = await failed(checkSmtp(url, "a@example.com", "me@example.com"));
   expect(line).toBe("127.0.0.1 refused the test email: 550 domain not verified for ***");
   expect(sent).toEqual([]);
 });
@@ -127,7 +128,7 @@ test("even a URL with diagnostics enabled keeps replies out of the console", asy
   const { server } = start({ mailFrom: `550 refused ${PASS}` });
   const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
   try {
-    const url = urlFor(server.port, "?%6cogger=true&debug=true&transactionLog=true");
+    const url = urlFor(server.port, "?%6cogger=true&debug=true&transactionLog=true").replace("smtp://", "smtp:");
     expect(await failed(checkSmtp(url, "a@example.com", "me@example.com"))).toBe("127.0.0.1 refused the test email: 550 refused ***");
     expect(log).not.toHaveBeenCalled();
   } finally {
@@ -158,6 +159,13 @@ test("TLS fails on a server that refuses the STARTTLS the URL requires, and on s
 test("a URL that isn't SMTP is refused without echoing it", async () => {
   expect(await failed(checkSmtp(`https://u:${PASS}@x`, "a@example.com"))).toBe("that isn't an smtp:// or smtps:// URL");
   expect(await failed(checkSmtp(PASS, "a@example.com"))).toBe("that isn't an smtp:// or smtps:// URL");
+});
+
+test("a URL Nodemailer would not recognize at startup cannot pass a probe via diagnostic cleanup", async () => {
+  const { server, sent } = start();
+  const url = ` ${urlFor(server.port, "?debug=true").replace("smtp://", "smtp:")}`;
+  expect(await failed(checkSmtp(url, "a@example.com", "me@example.com"))).toBe("that isn't an smtp:// or smtps:// URL");
+  expect(sent).toEqual([]);
 });
 
 test("a login alone sends nothing; with testTo exactly one message goes to it", async () => {

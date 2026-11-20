@@ -25,6 +25,7 @@
     "./schema-docs": "./src/schema-docs.ts",
     "./schema-door": "./src/schema-door.ts",
     "./schema-retention": "./src/schema-retention.ts",
+    "./schema-tracking": "./src/schema-tracking.ts",
     "./retention": "./src/retention.ts",
     "./auth": "./src/auth.ts",
     "./user": "./src/user.ts",

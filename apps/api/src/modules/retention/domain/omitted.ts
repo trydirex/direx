@@ -12,12 +12,14 @@ export const OMITTED: Readonly<Record<string, readonly string[]>> = {
   "public.placement_member_keys": ["ciphertext", "nonce"],
   // The key that hashes addresses for relationship holds and correspondents.
   "public.outreach_settings": ["email_hash_key"],
-  // What proves a bearer token, an invite link, an unsubscribe link, a calendar feed or a connect link.
+  // What proves a bearer token, an invite link, an unsubscribe link, a calendar feed, a connect link or a
+  // per-Person tracked link (ADR 0035).
   "public.external_tokens": ["token_hash"],
   "public.workspace_invites": ["token_hash"],
   "public.unsubscribe_tokens": ["token_hash"],
   "public.review_feeds": ["token_hash"],
   "public.connect_links": ["token_hash", "state_hash", "sealed_state"],
+  "public.tracked_link_uses": ["token_hash"],
 };
 
 /** Columns that look like secrets and are not: they go into the export. */

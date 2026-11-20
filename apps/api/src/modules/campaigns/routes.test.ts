@@ -401,13 +401,13 @@ test("anyone in the Workspace reads the write-up: null before, then its cited re
   const r = (await inW<{ id: string }>("select id from plan_measure_readings where plan_id = $1", [planId]))[0]!.id;
   const suggestion = { assumption: "Ops leads answer one email.", because: "Direx counted 3 meetings.", readingIds: [r], outcome: "added" };
   await inW("insert into campaign_write_ups (workspace_id, campaign_id, status, paragraph, cites, suggestions, created_at, written_at) values ($1, $2, 'written', 'Q4 booked 3 meetings.', $3, $4, now(), '2026-12-02T09:00:00Z')", [W, id, JSON.stringify([r]), JSON.stringify([suggestion])]);
-  const cite = { readingId: r, label: "M", value: "3", source: "person", observedOn: "2026-11-20" };
+  const cite = { readingId: r, label: "M", value: "3", source: "person", observedOn: "2026-11-20", now: null };
   const written = { status: "written", paragraph: "Q4 booked 3 meetings.", cites: [cite], suggestions: [suggestion], failure: null, itemId: null, writtenAt: "2026-12-02T09:00:00.000Z", corrected: false };
   for (const cookie of [roles.viewer, roles.contributor, roles.marketer, owner]) expect(await read(writeUp, cookie)).toEqual({ writeUp: written });
 
   // A newer reading for the cited Measure: the cite still shows what was written from, and says it was corrected.
   await send("POST", url(`/plans/${planId}/measures/m/readings`), owner, { value: "4", observedOn: "2026-11-25" });
-  expect(await read(writeUp)).toEqual({ writeUp: { ...written, corrected: true } });
+  expect(await read(writeUp)).toEqual({ writeUp: { ...written, cites: [{ ...cite, now: { value: "4", observedOn: "2026-11-25" } }], corrected: true } });
   // A cited reading that no longer resolves is left out, and counts as corrected too.
   await inW("update campaign_write_ups set cites = $2 where campaign_id = $1", [id, JSON.stringify([crypto.randomUUID()])]);
   expect(await read(writeUp)).toEqual({ writeUp: { ...written, cites: [], corrected: true } });

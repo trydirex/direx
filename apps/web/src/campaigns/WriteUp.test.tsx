@@ -31,8 +31,8 @@ const written: Data = {
   status: "written",
   paragraph: "The Campaign reached 60 People by email and 30 by LinkedIn DM.",
   cites: [
-    { readingId: READING, label: "Meetings", value: "6", source: "system", observedOn: "2026-11-12" },
-    { readingId: "00000000-0000-4000-8000-000000000002", label: "Signups", value: "142", source: "person", observedOn: "2026-11-10" },
+    { readingId: READING, label: "Meetings", value: "6", source: "system", observedOn: "2026-11-12", now: null },
+    { readingId: "00000000-0000-4000-8000-000000000002", label: "Signups", value: "142", source: "person", observedOn: "2026-11-10", now: null },
   ],
   suggestions,
   failure: null,
@@ -177,6 +177,22 @@ test("a lost approval response refreshes the Item and lets the reviewer retry", 
   expect(post).toHaveBeenCalledTimes(2);
   expect(done).toHaveBeenCalledOnce();
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+test("a corrected cite shows the value it was written from and what its Measure reads now", async () => {
+  const [meetings, signups] = written.cites;
+  const { card } = await show({ ...written, corrected: true, cites: [{ ...meetings!, now: { value: "7", observedOn: "2026-11-20" } }, signups!] });
+  expect(card.getByText("Meetings: 6")).toBeTruthy();
+  expect(card.getByText(/^Corrected since: now 7, as of /)).toBeTruthy();
+  expect(card.getAllByText(/^Corrected since/)).toHaveLength(1);
+});
+
+test("a ticked suggestion with no text isn't counted on the button", async () => {
+  choose();
+  await userEvent.clear(screen.getByRole("textbox", { name: "Suggestion 1" }));
+  const add = screen.getByRole("button", { name: "Add 1 to the Strategy" });
+  expect((add as HTMLButtonElement).disabled).toBe(true);
+  expect(screen.getByText("A ticked suggestion needs some text.")).toBeTruthy();
 });
 
 test("unticking one and editing the other sends only the ticked one, with its new text", async () => {

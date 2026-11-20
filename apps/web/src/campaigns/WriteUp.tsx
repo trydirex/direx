@@ -87,6 +87,7 @@ export function WriteUp(p: { workspaceId: string; campaign: Pick<Loaded, "id" | 
                   <li key={c.readingId} className="flex flex-col">
                     <span>{`${c.label}: ${c.value}`}</span>
                     <small className="text-xs text-muted-foreground">{`As of ${dayWords(c.observedOn)}, ${c.source === "person" ? "entered by a person" : "counted by Direx"}`}</small>
+                    {c.now && <small className="text-xs font-medium">{`Corrected since: now ${c.now.value}, as of ${dayWords(c.now.observedOn)}`}</small>}
                   </li>
                 ))}
               </ul>
@@ -133,6 +134,8 @@ export function AssumptionsChoice(p: { workspaceId: string; item: Pick<Item, "id
   const [error, setError] = useState<string>();
   const deciding = p.approve && p.item.state === "needs_approval";
   const chosen = texts.map((t) => t.trim()).filter((_, n) => ticked[n]);
+  // The button counts only what it would add: a ticked suggestion with no text, or too much, isn't one.
+  const usable = chosen.filter((t) => t && t.length <= MAX_TEXT).length;
   const why = !chosen.length ? "Tick at least one suggestion." : chosen.some((t) => !t) ? "A ticked suggestion needs some text." : chosen.some((t) => t.length > MAX_TEXT) ? `Keep each suggestion to ${MAX_TEXT} characters.` : null;
 
   async function add() {
@@ -182,7 +185,7 @@ export function AssumptionsChoice(p: { workspaceId: string; item: Pick<Item, "id
       {error && <Notice tone="error">{error}</Notice>}
       <div className="flex flex-wrap items-center gap-3">
         <Button pending={pending} disabled={!!why} aria-describedby={why ? "assumptions-why" : undefined} onClick={() => void add()}>
-          {chosen.length ? `Add ${chosen.length} to the Strategy` : "Add to the Strategy"}
+          {usable ? `Add ${usable} to the Strategy` : "Add to the Strategy"}
         </Button>
         {why && (
           <span id="assumptions-why" className="text-sm text-muted-foreground">

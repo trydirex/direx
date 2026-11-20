@@ -23,7 +23,7 @@ type ItemPorts = Pick<Items, "settleGroupIn" | "createItemIn">;
 export type WriteUpView = {
   status: "writing" | "written" | "failed";
   paragraph: string | null;
-  cites: { readingId: string; label: string; value: string; source: "person" | "system"; observedOn: string }[];
+  cites: { readingId: string; label: string; value: string; source: "person" | "system"; observedOn: string; now: { value: string; observedOn: string } | null }[];
   suggestions: (Suggestion & { outcome?: "added" | "not_added" })[];
   failure: string | null;
   itemId: string | null;
@@ -142,12 +142,17 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
     const plan = await d.plans.plan(workspaceId, read.row.planId);
     // readingsOf hands tracking() each row with its id, which its Reading type leaves out.
     const found = new Map(
-      (plan?.tracking?.measures ?? []).flatMap((m) => (m.readings as (typeof m.readings[number] & { id: string })[]).map((r) => [r.id, { r, label: m.label, newest: (m.latest as { id: string } | null)?.id === r.id }] as const)),
+      (plan?.tracking?.measures ?? []).flatMap((m) =>
+        (m.readings as (typeof m.readings[number] & { id: string })[]).map((r) => [r.id, { r, label: m.label, latest: m.latest as (typeof m.readings[number] & { id: string }) | null }] as const),
+      ),
     );
     const ids = w.cites as string[];
     const cites = ids.flatMap((id) => {
       const f = found.get(id);
-      return f ? [{ readingId: id, label: f.label, value: f.r.value, source: f.r.source, observedOn: f.r.observedOn }] : [];
+      if (!f) return [];
+      // A cite keeps the value it was written from; `now` says what its Measure reads since a correction.
+      const now = f.latest && f.latest.id !== id ? { value: f.latest.value, observedOn: f.latest.observedOn } : null;
+      return [{ readingId: id, label: f.label, value: f.r.value, source: f.r.source, observedOn: f.r.observedOn, now }];
     });
     return {
       status: w.status as WriteUpView["status"],
@@ -157,7 +162,7 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
       failure: w.failure,
       itemId: w.itemId,
       writtenAt: w.writtenAt?.toISOString() ?? null,
-      corrected: ids.some((id) => !found.get(id)?.newest),
+      corrected: cites.length < ids.length || cites.some((c) => c.now !== null),
     };
   }
 

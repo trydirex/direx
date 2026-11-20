@@ -658,7 +658,7 @@ const WriteUp = z
       .object({
         status: z.enum(["writing", "written", "failed"]),
         paragraph: z.string().nullable(),
-        cites: z.array(z.object({ readingId: z.uuid(), label: z.string(), value: z.string(), source: z.enum(["person", "system"]), observedOn: z.string() })),
+        cites: z.array(z.object({ readingId: z.uuid(), label: z.string(), value: z.string(), source: z.enum(["person", "system"]), observedOn: z.string(), now: z.object({ value: z.string(), observedOn: z.string() }).nullable() })),
         suggestions: z.array(z.object({ assumption: z.string(), because: z.string(), readingIds: z.array(z.string()), outcome: z.enum(["added", "not_added"]).optional() })),
         failure: z.string().nullable(),
         itemId: z.uuid().nullable(),

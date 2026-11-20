@@ -15,11 +15,17 @@ import { can, type Permission, type Role } from "./domain/roles";
  * too, so no shared cache keeps a response that carries a session cookie.
  */
 export async function readSession(auth: () => Auth, c: Context) {
+  return (await readSessionWithCookies(auth, c)).response;
+}
+
+async function readSessionWithCookies(auth: () => Auth, c: Context) {
   const { headers, response } = await auth().api.getSession({ headers: c.req.raw.headers, returnHeaders: true });
-  for (const cookie of headers.getSetCookie()) c.header("Set-Cookie", cookie, { append: true });
-  const cacheControl = headers.get("cache-control");
+  const cookies = headers.getSetCookie();
+  for (const cookie of cookies) c.header("Set-Cookie", cookie, { append: true });
+  const setsCookies = cookies.length > 0;
+  const cacheControl = setsCookies ? "no-store" : headers.get("cache-control");
   if (cacheControl) c.header("Cache-Control", cacheControl);
-  return response;
+  return { response, setsCookies };
 }
 
 export type Member = {
@@ -54,7 +60,7 @@ export function requireMember(auth: () => Auth, o: { deleted?: boolean } = {}) {
     // A Workspace route takes a session only. Sessions are cookies, so any Authorization header is a
     // credential meant for somewhere else, an External token included (ADR 0032 rule 002).
     if (c.req.header("authorization") !== undefined) return c.json({ error: "token_not_accepted" }, 401);
-    const s = await readSession(auth, c);
+    const { response: s, setsCookies } = await readSessionWithCookies(auth, c);
     if (!s) return c.json({ error: "not_signed_in" }, 401);
     const workspaceId = c.req.param("workspaceId");
     const found = workspaceId && UUID.test(workspaceId) ? await memberRole(workspaceId, s.user.id, o.deleted) : null;
@@ -68,6 +74,8 @@ export function requireMember(auth: () => Auth, o: { deleted?: boolean } = {}) {
       signedInAt: new Date(s.session.createdAt),
     });
     await next();
+    // Handlers may supply their own cache policy. It must not override no-store on a cookie response.
+    if (setsCookies) c.header("Cache-Control", "no-store");
   });
 }
 

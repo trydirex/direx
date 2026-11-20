@@ -12,6 +12,8 @@ export type WorkspaceExport = components["schemas"]["WorkspaceExport"];
 export type ExternalToken = components["schemas"]["ExternalToken"];
 export type TokenChoices = components["schemas"]["ExternalTokenChoices"];
 export type NewToken = { name: string; days: number; readers: string[]; kinds: string[] };
+export type TrackingDomain = components["schemas"]["TrackingDomain"];
+export type CheckResult = "verified" | "dns_ok" | "dns_mismatch" | "stopped" | "not_configured";
 
 const inW = (workspaceId: string) => ({ params: { path: { workspaceId } } });
 
@@ -63,3 +65,29 @@ export async function deleteWorkspace(workspaceId: string): Promise<string | nul
 
 /** Where a ready export downloads from, while the signed-in Owner's session lasts. */
 export const exportHref = (workspaceId: string, id: string) => `/api/exports/${workspaceId}/${id}`;
+
+/** The Workspace's tracking domains (ADR 0035). Owners and Admins only. */
+export const trackingDomainsQuery = (workspaceId: string) =>
+  queryOptions({
+    queryKey: inWorkspace(workspaceId, "tracking-domains"),
+    queryFn: async (): Promise<TrackingDomain[]> => (await call(api.GET("/api/w/{workspaceId}/tracking/domains", inW(workspaceId)))).domains,
+  });
+
+/** Adds a hostname: the new domain, or the API's error code. */
+export async function addTrackingDomain(workspaceId: string, hostname: string): Promise<{ domain: TrackingDomain } | { error: string }> {
+  const { data, error } = await api.POST("/api/w/{workspaceId}/tracking/domains", { ...inW(workspaceId), body: { hostname } });
+  return data ? { domain: data.domain } : { error: error.error };
+}
+
+const oneDomain = (workspaceId: string, id: string) => ({ params: { path: { workspaceId, id } } });
+
+export const checkTrackingDomain = async (workspaceId: string, id: string): Promise<CheckResult> =>
+  (await call(api.POST("/api/w/{workspaceId}/tracking/domains/{id}/check", oneDomain(workspaceId, id)))).result;
+
+export const stopTrackingDomain = (workspaceId: string, id: string) => call(api.POST("/api/w/{workspaceId}/tracking/domains/{id}/stop", oneDomain(workspaceId, id)));
+
+/** Removes a domain nothing uses: null when it worked, or the API's error code (`in_use`). */
+export async function removeTrackingDomain(workspaceId: string, id: string): Promise<string | null> {
+  const { error } = await api.DELETE("/api/w/{workspaceId}/tracking/domains/{id}", oneDomain(workspaceId, id));
+  return error ? error.error : null;
+}

@@ -51,6 +51,7 @@ const SettingsOverview = lazyRouteComponent(() => import("./settings/Overview"),
 const Sending = lazyRouteComponent(() => import("./settings/Sending"), "Sending");
 const ReviewTime = lazyRouteComponent(() => import("./settings/ReviewTime"), "ReviewTime");
 const Tokens = lazyRouteComponent(() => import("./settings/Tokens"), "Tokens");
+const TrackingDomains = lazyRouteComponent(() => import("./settings/TrackingDomains"), "TrackingDomains");
 // The Item dialog loads on first open, not with Home or the Calendar. React.lazy, not
 // lazyRouteComponent: it renders before anything preloads it.
 const ItemDialog = lazy(() => import("./items/ItemPanel").then((m) => ({ default: m.ItemDialog })));
@@ -656,6 +657,9 @@ function SettingsNav() {
       <Link to="/w/$workspaceId/settings/tokens" params={params} className={sectionLink}>
         External tokens
       </Link>
+      <Link to="/w/$workspaceId/settings/tracking-domains" params={params} className={sectionLink}>
+        Tracking domains
+      </Link>
     </SectionNav>
   );
 }
@@ -705,6 +709,15 @@ const tokensRoute = page("settings/tokens", function TokensRoute() {
     </>
   );
 }, Tokens);
+const trackingDomainsRoute = page("settings/tracking-domains", function TrackingDomainsRoute() {
+  const w = useWorkspace();
+  return (
+    <>
+      <SettingsNav />
+      <TrackingDomains workspaceId={w.workspaceId} role={w.role} />
+    </>
+  );
+}, TrackingDomains);
 const credentialsRoute = createRoute({
   getParentRoute: () => workspaceRoute,
   loader: preloading(Credentials),
@@ -798,6 +811,7 @@ export const routeTree = rootRoute.addChildren([
       lessonsRoute,
       settingsRoute,
       sendingRoute,
+      trackingDomainsRoute,
       membersRoute,
       tokensRoute,
       credentialsRoute,

@@ -26,6 +26,10 @@ services:
     environment:
       NODE_ENV: production
       DIREX_DATA_DIR: /home/bun/.direx
+      # The tracking edge's ask, for Caddy only: 3001 is reachable on the Compose network and never
+      # published (ADR 0035 rule 006).
+      DIREX_TRACKING_ASK_PORT: "3001"
+      DIREX_TRACKING_ASK_HOST: 0.0.0.0
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,13 +59,14 @@ services:
     cap_drop: [ALL]
     user: bun
 
-  # Automatic HTTPS for a public domain. Only with install.sh --public, which sets
-  # COMPOSE_PROFILES=public and DIREX_DOMAIN in .env.
+  # Automatic HTTPS, for the app's own domain (install.sh --public), tracked links on customers'
+  # domains (install.sh --tracking), or both. Each flag adds its profile and site to .env.
   caddy:
     image: caddy:2
-    profiles: [public]
+    profiles: [public, tracking]
     environment:
       DIREX_DOMAIN: ${DIREX_DOMAIN:-}
+      DIREX_CADDY_SITES: ${DIREX_CADDY_SITES:-public.caddy}
     depends_on:
       - direx
     ports:
@@ -70,6 +75,7 @@ services:
       - "443:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
       - caddy-data:/data
       - caddy-config:/config
     restart: unless-stopped

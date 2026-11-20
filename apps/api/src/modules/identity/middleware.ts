@@ -3,7 +3,7 @@
 // which role. A Workspace the caller is not a member of is 404, so its existence does not leak.
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import type { Auth } from "./adapters/auth";
+import { SESSION_CAP_MS, type Auth } from "./adapters/auth";
 import { memberRole } from "./adapters/repo";
 import { can, type Permission, type Role } from "./domain/roles";
 
@@ -25,7 +25,21 @@ async function readSessionWithCookies(auth: () => Auth, c: Context) {
   const setsCookies = cookies.length > 0;
   const cacheControl = setsCookies ? "no-store" : headers.get("cache-control");
   if (cacheControl) c.header("Cache-Control", cacheControl);
-  return { response, setsCookies };
+  return { response: await withinCap(auth, response), setsCookies };
+}
+
+type Session = Awaited<ReturnType<Auth["api"]["getSession"]>>;
+
+/** A session past SESSION_CAP_MS since sign-in is deleted and counts as none, however recently it was used (ADR 0037 rule 003). */
+async function withinCap(auth: () => Auth, s: Session): Promise<Session> {
+  if (!s || Date.now() - new Date(s.session.createdAt).getTime() <= SESSION_CAP_MS) return s;
+  await (await auth().$context).internalAdapter.deleteSession(s.session.token);
+  return null;
+}
+
+/** Ends a session past the cap before one of Better Auth's own routes sees it. Copies no cookie onto that route's answer. */
+export async function endSessionPastCap(auth: () => Auth, headers: Headers): Promise<void> {
+  await withinCap(auth, await auth().api.getSession({ headers }));
 }
 
 export type Member = {

@@ -7,7 +7,7 @@ import { claimServer, isServerAdmin } from "./application/admission";
 import { createOrganization, listDeletedWorkspaces, listMyWorkspaces } from "./application/orgs";
 import { INVITE_COOKIE, type Admission } from "./domain/admission";
 import { ROLES } from "./domain/roles";
-import { readSession, requireMember, STEP_UP_MS, type MemberEnv } from "./middleware";
+import { endSessionPastCap, readSession, requireMember, STEP_UP_MS, type MemberEnv } from "./middleware";
 
 const ErrorBody = z.object({ error: z.string() }).openapi("Error");
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -154,7 +154,11 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
       }
     },
   });
-  app.on(["GET", "POST"], "/api/auth/*", (c) => auth().handler(c.req.raw));
+  app.on(["GET", "POST"], "/api/auth/*", async (c) => {
+    // The 90-day cap holds on Better Auth's own routes too (ADR 0037 rule 003).
+    if (c.req.header("cookie")) await endSessionPastCap(auth, c.req.raw.headers);
+    return auth().handler(c.req.raw);
+  });
   app.use("/api/w/:workspaceId", requireMember(auth));
   app.use("/api/w/:workspaceId/*", requireMember(auth));
 

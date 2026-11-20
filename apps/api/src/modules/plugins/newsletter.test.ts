@@ -64,10 +64,11 @@ test("Kit and beehiiv are newsletter providers, and take a pasted key", () => {
   ]);
 });
 
-test("the newsletter lists are Kit and beehiiv, each with its subscribers query", () => {
+test("the newsletter lists are Kit, beehiiv and Mailchimp, each with its subscribers query", () => {
   expect(newsletterLists(firstPartyPlugins().map((p) => p.manifest))).toEqual([
     { connection: "kit", name: "Kit", subscribers: "com.trydirex.kit/newsletter.subscribers", profile: "com.trydirex.kit/newsletter.profile", stats: "com.trydirex.kit/newsletter.stats", lists: null, publish: "com.trydirex.kit/newsletter.publish", publishDedupe: "queryable", publishLeadMs: 300_000 },
     { connection: "beehiiv", name: "beehiiv", subscribers: "com.trydirex.beehiiv/newsletter.subscribers", profile: "com.trydirex.beehiiv/newsletter.profile", stats: "com.trydirex.beehiiv/newsletter.stats", lists: null, publish: "com.trydirex.beehiiv/newsletter.publish", publishDedupe: "blind", publishLeadMs: 0 },
+    { connection: "mailchimp", name: "Mailchimp", subscribers: "com.trydirex.mailchimp/newsletter.subscribers", profile: "com.trydirex.mailchimp/newsletter.profile", stats: "com.trydirex.mailchimp/newsletter.stats", lists: "com.trydirex.mailchimp/newsletter.lists", publish: "com.trydirex.mailchimp/newsletter.publish", publishDedupe: "queryable", publishLeadMs: 0 },
   ]);
 });
 

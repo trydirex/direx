@@ -4,7 +4,8 @@
 // run started, and a citation that doesn't hold becomes an assumption rather than a claim.
 import type { DraftInput, Sink } from "../../agents";
 import type { Facts } from "../../facts";
-import { ensureStrategy, fillPlanDraft, fillStrategyDraft, inWorkspace, lockPlan, readPlan, readStrategy, readStrategyVersion } from "../adapters/repo";
+import { ensureStrategy, fillPlanDraft, fillStrategyDraft, inWorkspace, lockPlan, readingStanding, readPlan, readStrategy, readStrategyVersion } from "../adapters/repo";
+import { readingStands } from "../domain/labels";
 import type { Basis, PlanBody, StrategyBody } from "../domain/types";
 
 type FactReads = Pick<Facts, "usableFacts" | "checkCitation">;
@@ -43,7 +44,12 @@ export function drafting({ facts, now }: { facts: FactReads; now: () => Date }) 
   };
 }
 
-async function honest(workspaceId: string, facts: FactReads, basis: Basis): Promise<Basis> {
+// `draftingPlanId` is the plan this draft is for, null for the Strategy: a plan can't rest on its own readings.
+async function honest(workspaceId: string, facts: FactReads, basis: Basis, draftingPlanId: string | null): Promise<Basis> {
+  if (basis.kind === "reading") {
+    const r = await inWorkspace(workspaceId, (tx) => readingStanding(tx, basis.readingId));
+    return readingStands(r, draftingPlanId) ? basis : { kind: "assumption" };
+  }
   if (basis.kind !== "fact") return basis;
   return (await facts.checkCitation(workspaceId, basis.factId, basis.version)) === "ok" ? basis : { kind: "assumption" };
 }
@@ -54,7 +60,7 @@ export function planSinks({ facts, now }: { facts: FactReads; now?: () => Date }
   return {
     async strategy_proposal(workspaceId, proposal, context) {
       const body = proposal.body as StrategyBody;
-      const channels = await Promise.all(body.channels.map(async (c) => ({ ...c, basis: await honest(workspaceId, facts, c.basis) })));
+      const channels = await Promise.all(body.channels.map(async (c) => ({ ...c, basis: await honest(workspaceId, facts, c.basis, null) })));
       const { target } = context.input as DraftInput;
       return inWorkspace(workspaceId, async (tx) => {
         const row = await ensureStrategy(tx, workspaceId, clock());
@@ -67,8 +73,8 @@ export function planSinks({ facts, now }: { facts: FactReads; now?: () => Date }
 
     async plan_proposal(workspaceId, proposal, context) {
       const body = proposal.body as PlanBody;
-      const measures = await Promise.all(body.measures.map(async (m) => ({ ...m, basis: await honest(workspaceId, facts, m.basis) })));
       const { target } = context.input as DraftInput;
+      const measures = await Promise.all(body.measures.map(async (m) => ({ ...m, basis: await honest(workspaceId, facts, m.basis, target.id) })));
       return inWorkspace(workspaceId, async (tx) => {
         const row = await lockPlan(tx, target.id!);
         if (!row) return { ok: false, code: "not_found" };

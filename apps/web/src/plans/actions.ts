@@ -15,7 +15,7 @@ export type Plan = S["Plan"];
 export type PlanSummary = S["PlanSummary"];
 export type ListedPlan = S["ListedPlan"];
 
-export type Basis = { kind: "fact"; factId: string; version: number } | { kind: "source"; label: string; url?: string } | { kind: "assumption" };
+export type Basis = { kind: "fact"; factId: string; version: number } | { kind: "source"; label: string; url?: string } | { kind: "assumption" } | { kind: "reading"; readingId: string };
 export type Channel = { key: string; label: string; timing: "now" | "later"; reason: string; basis: Basis };
 export type StrategyBody = { schemaVersion: 1; whoFor: string; personas: { name: string; notes?: string }[]; positioning: string; channels: Channel[]; assumptions: { text: string }[] };
 export type Step = { key: string; on: string; channelKey?: string; title: string; template?: { subject: string; text: string; citations: { factId: string; version: number }[] } };
@@ -105,7 +105,8 @@ const WORDS: Record<string, string> = {
 export const missingWords = (m: { path: string; message: string }[], labels: Partial<Record<string, string>> = {}) => [...new Set(m.map((x) => WORDS[x.message] ?? labels[x.path.split(".")[0]!] ?? x.path))].join(", ");
 
 export const basisLabel = (b: Basis, factValue?: (id: string) => string | undefined) =>
-  b.kind === "assumption" ? "assumption" : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
+  // ponytail: a placeholder until the views carry the cited reading's Measure, value and day.
+  b.kind === "assumption" ? "assumption" : b.kind === "reading" ? "Earlier Campaign reading" : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
 
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 const one = (workspaceId: string, id: string) => ({ path: { workspaceId, id } });

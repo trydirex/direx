@@ -8,6 +8,8 @@ import { withUser } from "@direx/db/user";
 import { and, count, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { Role } from "../domain/roles";
 
+export { WorkspacePurging };
+
 export type MyWorkspace = { id: string; name: string; role: Role; organization: { id: string; name: string } };
 
 /** Creates an Organization, its first Workspace and the Owner in one transaction. */
@@ -199,6 +201,12 @@ export async function inviteBy(tx: WorkspaceTx, where: { id: string } | { tokenH
   const cond = "id" in where ? eq(workspaceInvites.id, where.id) : eq(workspaceInvites.tokenHash, where.tokenHash);
   const [row] = await tx.select().from(workspaceInvites).where(cond).for("update");
   return row ? { ...row, role: row.role as Role } : null;
+}
+
+/** The Workspace's name, or null when it is empty or the Workspace can't be read. */
+export async function workspaceName(tx: WorkspaceTx): Promise<string | null> {
+  const [w] = await tx.select({ name: workspaces.name }).from(workspaces);
+  return w?.name || null;
 }
 
 /** What an invite page names: the Workspace, and whoever sent the invite (their name, else their email). */

@@ -48,7 +48,9 @@ test("a demoted Admin's live tokens each get one stop row, and the Owners and Ad
   const byToken = (a: { tokenId: string | null }, b: { tokenId: string | null }) => a.tokenId!.localeCompare(b.tokenId!);
   expect((await stopsFor([...ids, revoked.id])).sort(byToken)).toEqual(ids.map((tokenId) => ({ event: "external_token.stopped", tokenId, actor: null, stepUp: false })).sort(byToken));
   expect(outbox.map((m) => m.to)).toEqual(await adminEmails(W));
-  expect(outbox[0]!.subject).toBe("2 External tokens stopped working");
+  // The seeded Workspace is named "Test"; the notice says so, for an Admin of several.
+  expect(outbox[0]!.subject).toBe("Test: 2 External tokens stopped working");
+  expect(outbox[0]!.text).toMatch(/^Workspace: Test\n\n/);
   expect(outbox[0]!.text).toContain('"Zapier"');
   expect(outbox[0]!.text).toContain('"Nightly script"');
   expect(outbox[0]!.text).not.toContain('"Old"');
@@ -60,7 +62,7 @@ test("a removal stops tokens the same way", async () => {
   await setRole(W, admin, null);
   await stopped(W, admin, "admin", null);
   expect(await stopsFor(ids)).toHaveLength(1);
-  expect(outbox[0]!.subject).toBe("An External token stopped working");
+  expect(outbox[0]!.subject).toBe("Test: An External token stopped working");
 });
 
 test("nothing is written or sent when the member keeps the permission, never had it, or has no live tokens", async () => {

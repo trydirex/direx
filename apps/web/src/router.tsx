@@ -126,7 +126,7 @@ const signedInRoute = createRoute({
     // A server with no accounts yet opens on sign-up, or explains the bootstrap link (ADR 0024). A slow
     // or failed answer leaves firstRun unset, so a server with people on it always shows sign-in.
     const firstRun = options.data?.firstRun;
-    if (firstRun === "sign_up") return <SignIn callbackURL={here()} initialMode="sign_up" offerSignUp />;
+    if (firstRun === "sign_up") return <SignIn callbackURL={callbackURL} inviteToken={claim ? inviteToken : undefined} initialMode="sign_up" offerSignUp />;
     if (firstRun === "needs_link" && claim)
       return <SignIn signUpTitle="Set up Direx" note="Sign up to become this server's first Server admin." callbackURL={callbackURL} inviteToken={inviteToken} initialMode="sign_up" offerSignUp />;
     if (firstRun === "needs_link" && !invite) return <NotSetUp />;

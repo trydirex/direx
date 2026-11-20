@@ -6,6 +6,7 @@ import { testIdentity } from "./test-auth";
 
 const { signIn, call, createOrg, inviteToken, addMember, outbox } = testIdentity();
 const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -190,12 +191,46 @@ test("a session read past Better Auth's updateAge sends the renewed cookie back,
   vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);
   const renewedRes = await call(`/api/w/${workspace.id}`, owner);
   const renewed = sessionCookie(renewedRes);
-  expect(renewed).toContain("Max-Age=604800");
+  expect(renewed).toContain(`Max-Age=${30 * DAY / 1000}`);
   expect(renewedRes.headers.get("cache-control")).toBe("no-store");
   expect((await call("/api/me", renewed!.split(";")[0])).status).toBe(200);
 
   vi.setSystemTime(Date.now() + 2 * 24 * 60 * MIN);
-  expect(sessionCookie(await call("/api/me", owner))).toContain("Max-Age=604800");
+  expect(sessionCookie(await call("/api/me", owner))).toContain(`Max-Age=${30 * DAY / 1000}`);
+});
+
+test("a sign-in ends after 30 days without use (ADR 0037 rule 001)", async () => {
+  const owner = await signIn();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 29 * DAY);
+  expect((await call("/api/me", owner)).status).toBe(200);
+  vi.setSystemTime(Date.now() + 31 * DAY);
+  expect((await call("/api/me", owner)).status).toBe(401);
+});
+
+test("a sign-in in daily use still ends 90 days after it was made, on Direx and Better Auth routes (ADR 0037 rule 003)", async () => {
+  const owner = await signIn();
+  const { workspace } = await createOrg(owner);
+  const start = Date.now();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  for (const day of [20, 40, 60, 80, 89]) {
+    vi.setSystemTime(start + day * DAY);
+    expect((await call(`/api/w/${workspace.id}`, owner)).status).toBe(200);
+  }
+  vi.setSystemTime(start + 91 * DAY);
+  expect(await (await call("/api/auth/get-session", owner)).json()).toBeNull();
+  expect((await call(`/api/w/${workspace.id}`, owner)).status).toBe(401);
+
+  // Reached first through a Direx route, the session is gone for Better Auth too.
+  const other = await signIn();
+  const made = Date.now();
+  for (const day of [20, 40, 60, 80, 89]) {
+    vi.setSystemTime(made + day * DAY);
+    expect((await call("/api/me", other)).status).toBe(200);
+  }
+  vi.setSystemTime(made + 91 * DAY);
+  expect((await call("/api/me", other)).status).toBe(401);
+  expect(await (await call("/api/auth/get-session", other)).json()).toBeNull();
 });
 
 test("deleting a Workspace cancels its queued jobs and leaves another Workspace's (ADR 0030 rule 007)", async () => {

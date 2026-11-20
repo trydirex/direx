@@ -370,6 +370,11 @@ export type Results = S["CampaignResults"];
 export const resultsQuery = (workspaceId: string, id: string) =>
   queryOptions({ queryKey: inWorkspace(workspaceId, "campaigns", id, "results"), queryFn: () => call(api.GET("/api/w/{workspaceId}/campaigns/{id}/results", inC(workspaceId, id))) });
 
+export type Overlaps = S["CampaignOverlaps"];
+/** For interested replies, meetings and deals: People each channel mix reached, how many had the outcome, and each one's Touches before it. */
+export const overlapsQuery = (workspaceId: string, id: string) =>
+  queryOptions({ refetchOnMount: "always", queryKey: inWorkspace(workspaceId, "campaigns", id, "overlaps"), queryFn: () => call(api.GET("/api/w/{workspaceId}/campaigns/{id}/overlaps", inC(workspaceId, id))) });
+
 const NETWORKS: Record<string, string> = { linkedin: "LinkedIn", x: "X", bluesky: "Bluesky", threads: "Threads", mastodon: "Mastodon", facebook: "Facebook", instagram: "Instagram" };
 /** A network's name as people write it, such as "LinkedIn". An unknown one reads as it is stored. */
 export const networkWords = (channel: string) => NETWORKS[channel] ?? channel;

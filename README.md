@@ -57,8 +57,8 @@ bun run setup
 bun run dev
 ```
 
-Open http://localhost:5173 and press **New here? Sign up**. Your email address is your username,
-and the password needs at least 12 characters.
+Open http://localhost:5173. A new Direx opens on sign-up. Your email address is your username, and
+the password needs at least 12 characters.
 
 `bun run setup` is safe to run again. It installs dependencies, creates `.env`, starts Postgres in
 Docker and prepares the database. It never overwrites your `.env`, except to change the Postgres
@@ -140,8 +140,9 @@ account or API key. See [skills/README.md](skills/README.md).
   [docs/deployment-secrets.md](docs/deployment-secrets.md) covers each one, including file storage.
 - **On a production server,** set `NODE_ENV=production`. Only invited people can sign up there, and
   mail has to work. To become the first Server admin, run `bun run server-admin --invite`. It prints
-  a link that works once, for 72 hours. Open it, sign in and press **Become Server admin**. The
-  **Server** page then sets who may sign up. `bun run doctor` checks the mail and the Server admin.
+  a link that works once, for 72 hours. Open it, sign up (or sign in, if you already have a
+  sign-in on this server) and press **Become Server admin**. If the link is lost, the server's
+  address says how to make a new one. The **Server** page then sets who may sign up. `bun run doctor` checks the mail and the Server admin.
   Start it with `bun run start`, one process that serves the app and works every job. On a stop
   signal it finishes what is already sending, which can take up to 5 minutes 30 seconds, so give
   it 6 minutes before a hard kill: `TimeoutStopSec=360` under systemd, `stop_grace_period: 6m` in

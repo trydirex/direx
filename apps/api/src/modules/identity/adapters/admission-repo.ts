@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Server admission through the system functions of migration 0126: no Workspace is set, and the
-// tables themselves have no grants (DX-R-0024-010).
+// tables themselves have no grants (DX-R-0024-010). The one exception, `serverHasAccounts`, reads
+// an auth table, which direx_app may.
 import { withSystem } from "@direx/db";
+import { authSchema } from "@direx/db/auth";
 import { sql } from "drizzle-orm";
 import type { ServerStatus, SignupPolicy } from "../domain/admission";
 
@@ -80,4 +82,10 @@ export async function serverStatus(): Promise<ServerStatus> {
   const { rows } = await withSystem((tx) => tx.execute(sql`select * from system.server_status()`));
   const r = rows[0] as { claimed: boolean; signup_policy: SignupPolicy; allowed_domains: string[] };
   return { claimed: r.claimed, policy: r.signup_policy, domains: r.allowed_domains };
+}
+
+/** Whether anyone has an account yet. Read directly: direx_app may read the auth tables (migration 0012). */
+export async function serverHasAccounts(): Promise<boolean> {
+  const rows = await withSystem((tx) => tx.select({ id: authSchema.user.id }).from(authSchema.user).limit(1));
+  return rows.length > 0;
 }

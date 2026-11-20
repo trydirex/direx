@@ -35,6 +35,17 @@ test("dev and test admit everyone, verified or not, and anyone may create an Org
   expect(await dev.canCreateOrganization(crypto.randomUUID())).toBe(true);
 });
 
+test("a server with no accounts leads to sign-up in dev and to the bootstrap link outside it; any account ends that", async () => {
+  const none = async () => false;
+  expect(await selfHostAdmission({ devMode: true, hasAccounts: none }).firstRun?.()).toBe("sign_up");
+  expect(await selfHostAdmission({ devMode: false, hasAccounts: none }).firstRun?.()).toBe("needs_link");
+  // The shared test database always has accounts, and the server is unclaimed here (beforeEach):
+  // an upgraded server with users and no Server admin still shows sign-in.
+  await insertAuthUser(crypto.randomUUID());
+  expect(await prod.firstRun?.()).toBeNull();
+  expect(await dev.firstRun?.()).toBeNull();
+});
+
 test("outside dev an unverified email is refused before any policy", async () => {
   await setPolicy("anyone");
   expect(await prod.admit({ email: "x@example.com", emailVerified: false })).toEqual({ ok: false, reason: "unverified" });

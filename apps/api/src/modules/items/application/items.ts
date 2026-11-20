@@ -27,6 +27,7 @@ import {
   type ListFilter,
   type NewDetails,
 } from "../adapters/repo";
+import { encodeListCursor } from "../domain/list-cursor";
 import { reasonLabel } from "../domain/reasons";
 import { visibleState, type LedgerState, type OwnState, type VisibleState } from "../domain/state";
 import { sameWarning, type Warning } from "../domain/warnings";
@@ -290,9 +291,13 @@ export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, rec
     },
     submitItemIn,
 
-    async list(workspaceId: string, f: Omit<ListFilter, "now">) {
+    /**
+     * One page of Items; `after` comes from `parseListCursor`. `offset: 0` means the first page and
+     * is ignored. ponytail: older tests still name it; drop the field when those tests next change.
+     */
+    async list(workspaceId: string, { offset: _first, ...f }: Omit<ListFilter, "now"> & { offset?: 0 }) {
       const r = await inWorkspace(workspaceId, (tx) => listItems(tx, { ...f, now: now() }));
-      return { items: r.rows.map(shown), needsYouCount: r.needsYouCount };
+      return { items: r.rows.map(shown), needsYouCount: r.needsYouCount, nextCursor: r.next && encodeListCursor(r.next) };
     },
 
     /** One Item, what it would do, and its history with internal steps left out. */

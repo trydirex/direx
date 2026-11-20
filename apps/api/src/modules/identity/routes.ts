@@ -115,11 +115,18 @@ const claimRoute = createRoute({
 });
 
 // Before sign-in: which of Google and Microsoft this server is set up for, so the sign-in page
-// shows only the buttons that work. It names providers, never a client ID or secret.
+// shows only the buttons that work, and whether the server has no accounts yet, so a new server's
+// page can lead to sign-up or the bootstrap link. It names providers, never a client ID or secret,
+// and says nothing more about the server.
 const signInOptionsRoute = createRoute({
   method: "get",
   path: "/api/sign-in-options",
-  responses: { 200: json(z.object({ google: z.boolean(), microsoft: z.boolean() }).openapi("SignInOptions"), "The sign-in providers this server is set up for") },
+  responses: {
+    200: json(
+      z.object({ google: z.boolean(), microsoft: z.boolean(), firstRun: z.enum(["sign_up", "needs_link"]).nullable() }).openapi("SignInOptions"),
+      "The sign-in providers this server is set up for; firstRun is null once any account exists",
+    ),
+  },
 });
 
 // Someone who signed up with an email link, Google or Microsoft adds a password (ADR 0024).
@@ -152,9 +159,10 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
   app.use("/api/w/:workspaceId/*", requireMember(auth));
 
   return app
-    .openapi(signInOptionsRoute, (c) => {
+    .openapi(signInOptionsRoute, async (c) => {
       const p = auth().options.socialProviders;
-      return c.json({ google: !!p.google, microsoft: !!p.microsoft }, 200);
+      const firstRun = (await admission().firstRun?.()) ?? null;
+      return c.json({ google: !!p.google, microsoft: !!p.microsoft, firstRun }, 200);
     })
     .openapi(meRoute, async (c) => {
       const s = await session(c.req.raw.headers);

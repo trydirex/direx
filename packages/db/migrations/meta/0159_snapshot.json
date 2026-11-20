@@ -16809,7 +16809,7 @@
       "checkConstraints": {
         "competitor_finds_kind_check": {
           "name": "competitor_finds_kind_check",
-          "value": "(\"competitor_finds\".\"kind\" = 'own_site' and \"competitor_finds\".\"site\" is not null and \"competitor_finds\".\"terms\" is null and \"competitor_finds\".\"confirmed_micros\" is null and \"competitor_finds\".\"confirmed_by\" is null)\n        or (\"competitor_finds\".\"kind\" = 'search' and \"competitor_finds\".\"site\" is null and \"competitor_finds\".\"terms\" is not null and \"competitor_finds\".\"confirmed_micros\" >= 0 and \"competitor_finds\".\"confirmed_by\" is not null)"
+          "value": "(\"competitor_finds\".\"kind\" = 'own_site' and \"competitor_finds\".\"site\" is not null and \"competitor_finds\".\"terms\" is null and \"competitor_finds\".\"confirmed_micros\" is null and \"competitor_finds\".\"confirmed_by\" is null)\n        or (\"competitor_finds\".\"kind\" = 'search' and \"competitor_finds\".\"site\" is null and \"competitor_finds\".\"terms\" is not null and \"competitor_finds\".\"confirmed_micros\" is not null and \"competitor_finds\".\"confirmed_micros\" >= 0 and \"competitor_finds\".\"confirmed_by\" is not null)"
         }
       },
       "isRLSEnabled": false
@@ -16967,7 +16967,7 @@
         },
         "competitor_proposals_closed_check": {
           "name": "competitor_proposals_closed_check",
-          "value": "(\"competitor_proposals\".\"closed_at\" is null and \"competitor_proposals\".\"closed_by\" is null and \"competitor_proposals\".\"closed_as\" is null) or (\"competitor_proposals\".\"closed_at\" is not null and \"competitor_proposals\".\"closed_by\" is not null and \"competitor_proposals\".\"closed_as\" in ('added', 'dismissed'))"
+          "value": "(\"competitor_proposals\".\"closed_at\" is null and \"competitor_proposals\".\"closed_by\" is null and \"competitor_proposals\".\"closed_as\" is null) or (\"competitor_proposals\".\"closed_at\" is not null and \"competitor_proposals\".\"closed_by\" is not null and \"competitor_proposals\".\"closed_as\" is not null and \"competitor_proposals\".\"closed_as\" in ('added', 'dismissed'))"
         }
       },
       "isRLSEnabled": false

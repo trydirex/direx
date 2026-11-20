@@ -343,3 +343,33 @@ test("a dropped connection while withdrawing says so and reads the list again", 
   await waitFor(() => expect(asked).toHaveLength(2));
   expect(screen.queryByText(/^Withdrew/)).toBeNull();
 });
+
+test("a route search change cancels the abandoned draft and typing still debounces", async () => {
+  serve([{ items: [item()], nextCursor: null }]);
+  const onFilters = vi.fn();
+  const view = (q: string | undefined) => withQueries(<Everything workspaceId={W} role="owner" ItemView={ItemView as never} filters={{ q }} onFilters={onFilters} onItem={vi.fn()} />);
+  const { rerender } = render(view("current"));
+  await screen.findByRole("list", { name: "Everything" });
+  vi.useFakeTimers();
+  try {
+    const input = screen.getByLabelText("Search titles and campaigns") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "abandoned" } });
+    act(() => vi.advanceTimersByTime(100));
+    rerender(view("restored"));
+    expect(input.value).toBe("restored");
+    act(() => vi.advanceTimersByTime(300));
+    expect(onFilters).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "new search" } });
+    act(() => vi.advanceTimersByTime(299));
+    expect(onFilters).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(onFilters).toHaveBeenCalledExactlyOnceWith({ q: "new search" });
+    fireEvent.change(input, { target: { value: "discard this too" } });
+    rerender(view(undefined));
+    expect(input.value).toBe("");
+    act(() => vi.advanceTimersByTime(300));
+    expect(onFilters).toHaveBeenCalledTimes(1);
+  } finally {
+    vi.useRealTimers();
+  }
+});

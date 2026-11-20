@@ -98,7 +98,7 @@ test("a production server with no accounts explains the setup link on its bare a
   serveNewServer("needs_link");
   open(`/w/${W}/calendar`);
   expect(await screen.findByRole("heading", { name: "This Direx isn't set up yet" })).toBeTruthy();
-  expect(screen.getByText("docker compose exec direx bun run server-admin --invite")).toBeTruthy();
+  expect(screen.getByText("docker compose -f deploy/compose/compose.yml exec direx bun run server-admin --invite")).toBeTruthy();
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByRole("button")).toBeNull();
 });

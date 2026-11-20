@@ -185,9 +185,9 @@ export function NotSetUp() {
         <p className="text-sm">
           The person who installed it becomes its first Server admin by opening the one-time link the install printed. If that's you, open that link.
         </p>
-        <p className="text-sm">If the link was lost or has expired, make a new one on the server, in the folder Direx is installed in.</p>
+        <p className="text-sm">If the link was lost or has expired, make a new one on the server, from the root of the Direx checkout.</p>
         <p className="text-sm">
-          Installed with Docker Compose: <code className="break-all">docker compose exec direx bun run server-admin --invite</code>
+          Installed with Docker Compose: <code className="break-all">docker compose -f deploy/compose/compose.yml exec direx bun run server-admin --invite</code>
         </p>
         <p className="text-sm">
           Installed from the source code: <code className="break-all">bun run server-admin --invite</code>

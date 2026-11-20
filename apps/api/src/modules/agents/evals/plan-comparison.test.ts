@@ -9,6 +9,8 @@ test.each([
   "Email isn't cheap, but it worked better.",
   "We cannot delay: LinkedIn worked better.",
   "We cannot really delay: LinkedIn worked better.",
+  "LinkedIn worked better than email, but there are too few meetings to set a target.",
+  "Email worked better.",
 ])("rejects an unsupported claim: %s", (sentence) => {
   expect(unsupportedChannelComparison(sentence)).toBe(true);
 });
@@ -25,6 +27,7 @@ test.each([
   "Test if email is more effective than LinkedIn.",
   "Send email and LinkedIn messages next month.",
   "The October test worked better.",
+  "Finance leads who worked at charities and use email.",
 ])("allows uncertainty or no channel comparison: %s", (sentence) => {
   expect(unsupportedChannelComparison(sentence)).toBe(false);
 });

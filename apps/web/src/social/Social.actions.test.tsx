@@ -17,7 +17,7 @@ const reply = (status: number, body: unknown) => Promise.resolve({ ...(status < 
 const ok = () => reply(200, {});
 const refused = (error: string, detail?: string) => reply(400, { error, ...(detail ? { detail } : {}) });
 
-const net = (over: Partial<Network> = {}): Network => ({ connection: "net", label: "Net", accountTypes: ["page"], connect: "oauth", availability: "available", canConnect: true, publishes: true, app: "system", ...over });
+const net = (over: Partial<Network> = {}): Network => ({ connection: "net", label: "Net", accountTypes: ["page"], connect: "oauth", availability: "available", canConnect: true, publishes: true, app: "system", callbackProblem: null, ...over });
 const form = net({ connection: "sky", label: "Sky", connect: "form", fields: [{ name: "username", label: "Handle" }, { name: "password", label: "App password" }] } as Partial<Network>);
 const wizard = net({ connection: "tube", label: "Tube", canConnect: false, app: null, wizard: { consoleUrl: "https://dev.example", scopes: ["read", "write"], steps: ["Create an app"], callbackUrl: "https://direx.example/cb" } } as Partial<Network>);
 const account = (over: Partial<Account> = {}): Account => ({

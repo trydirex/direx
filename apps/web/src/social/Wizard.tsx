@@ -10,7 +10,13 @@ import type { Network } from "./actions";
 
 export type WizardSteps = NonNullable<Network["wizard"]>;
 
-export function Wizard({ label, title, wizard, save }: { label: string; title?: string; wizard: WizardSteps; save: (f: { clientId: string; clientSecret: string }) => Promise<void> }) {
+// The network's own rules come from the API; the line sits inside that network's wizard, so it needs no name.
+const CALLBACK_PROBLEM: Record<NonNullable<Network["callbackProblem"]>, string> = {
+  needs_https: "This network accepts only an https callback URL, and Direx's address here starts with http. Give Direx an https address and set DIREX_BASE_URL to it before you connect.",
+  no_localhost: "This network refuses localhost in a callback URL. Open Direx at 127.0.0.1 instead, with DIREX_BASE_URL set to match.",
+};
+
+export function Wizard({ label, title, wizard, callbackProblem, save }: { label: string; title?: string; wizard: WizardSteps; callbackProblem?: Network["callbackProblem"]; save: (f: { clientId: string; clientSecret: string }) => Promise<void> }) {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [pending, setPending] = useState(false);
@@ -21,7 +27,7 @@ export function Wizard({ label, title, wizard, save }: { label: string; title?: 
         <p>
           Open the{" "}
           <a href={wizard.consoleUrl} className="underline underline-offset-4">
-            {label} developer console
+            {wizard.consoleName ?? label} developer console
           </a>
           .
         </p>
@@ -30,6 +36,7 @@ export function Wizard({ label, title, wizard, save }: { label: string; title?: 
             <li key={s}>{s}</li>
           ))}
         </ol>
+        {callbackProblem && <p className="font-medium">{CALLBACK_PROBLEM[callbackProblem]}</p>}
         <p>
           Callback URL: <code className="break-all">{wizard.callbackUrl}</code>
         </p>

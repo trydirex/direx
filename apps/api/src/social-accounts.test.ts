@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A network core has never heard of: it connects through the vault, offers its targets, reports its
 // health and says what it can do, over HTTP with real sessions, the real vault and the real host.
-import type { SocialNetworkInfo } from "@direx/extensions";
+import { socialNetworks, type SocialNetworkInfo } from "@direx/extensions";
 import { afterAll, expect, test, vi } from "vitest";
 import { createBoss } from "./jobs/boss";
 import { createVault, rootKeyFromEnv, type AppProvider } from "./modules/credentials/index";
@@ -288,6 +288,18 @@ test("networks: with no app, self-host offers the wizard and cloud says not avai
   expect(onCloud).toMatchObject({ availability: "not_available", canConnect: false });
   expect(onCloud!.wizard).toBeUndefined();
   expect((await cloud.call(`/api/w/${w.ws}/connections/testnet/start`, w.owner.cookie, { method: "POST" })).status).toBe(404);
+});
+
+test("networks: the wizard warns when the network would refuse this install's callback URL, and connecting stays as it was", async () => {
+  const tiktok = { ...info, callback: socialNetworks().find((n) => n.connection === "tiktok")!.callback };
+  const s = setup({ deployment: "self_host", systemApp: false, networks: [tiktok, { ...unbuilt, callback: tiktok.callback }] });
+  const { ws, owner } = await s.workspace();
+  const [net, later] = (await body<{ networks: { canConnect: boolean; callbackProblem: string | null }[] }>(await s.call(`/api/w/${ws}/social/networks`, owner.cookie))).networks;
+  expect(net).toMatchObject({ canConnect: false, callbackProblem: "needs_https" });
+  expect(later!.callbackProblem).toBeNull();
+  const onHttps = createSocial({ plugins: () => s.plugins, vault: () => s.vault, networks: () => [tiktok], deployment: () => "self_host", callbackUrl: () => "https://direx.example/cb" });
+  const [secure] = await onHttps.networks(ws);
+  expect(secure).toMatchObject({ canConnect: false, callbackProblem: null });
 });
 
 test("a network the plugin doesn't describe fully isn't a network", async () => {

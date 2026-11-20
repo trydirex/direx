@@ -12,7 +12,7 @@ import { withQueries } from "../testing";
 const W = "00000000-0000-4000-8000-0000000000aa";
 const ME = "00000000-0000-4000-8000-000000000001";
 const ws = (role: "owner" | "marketer" | "viewer") => ({ id: W, name: "Shop", role, organization: { id: "o", name: "Acme" } }) as never;
-const net = (over: Partial<Network> = {}): Network => ({ connection: "net", label: "Net", accountTypes: ["page"], connect: "oauth", availability: "awaiting_approval", canConnect: true, publishes: false, app: "system", ...over });
+const net = (over: Partial<Network> = {}): Network => ({ connection: "net", label: "Net", accountTypes: ["page"], connect: "oauth", availability: "awaiting_approval", canConnect: true, publishes: false, app: "system", callbackProblem: null, ...over });
 const account: Account = {
   id: "a",
   credentialId: "c",
@@ -74,6 +74,19 @@ test("the wizard shows the callback URL and scopes, and takes the secret in a pa
   const marketer = page("marketer", { networks });
   expect(marketer).not.toContain("Client secret");
   expect(marketer).toContain("An Owner or Admin can set this up");
+});
+
+test("a network waiting on the person's own app says so, and its wizard names the console and warns about the callback URL", () => {
+  const plain = text(page("owner", { networks: [net({ canConnect: false, app: null, wizard })] }));
+  expect(plain).toMatch(/Net\s+Set up your own app to connect/);
+  expect(plain).not.toContain("Waiting for the network to approve Direx");
+  expect(plain).toMatch(/Open the\s+Net developer console/);
+  expect(plain).not.toContain("https callback URL");
+  const https = text(page("owner", { networks: [net({ canConnect: false, app: null, wizard: { ...wizard, consoleName: "Big Co" }, callbackProblem: "needs_https" })] }));
+  expect(https).toMatch(/Open the\s+Big Co developer console/);
+  expect(https).toContain("This network accepts only an https callback URL");
+  expect(https).toContain("Give Direx an https address and set DIREX_BASE_URL to it before you connect.");
+  expect(text(page("owner", { networks: [net({ canConnect: false, app: null, wizard, callbackProblem: "no_localhost" })] }))).toContain("This network refuses localhost in a callback URL. Open Direx at 127.0.0.1 instead");
 });
 
 test("a login with several accounts offers a choice", () => {

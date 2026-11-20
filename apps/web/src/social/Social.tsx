@@ -67,8 +67,8 @@ const AVAILABILITY: Record<Network["availability"], string> = {
   not_built: "Coming later",
   not_available: "Not available",
 };
-/** A network connected by a form or through the Workspace's own app needs no platform to approve Direx's app, so it reads as open. */
-const availabilityWords = (n: Network) => (n.canConnect && n.availability === "awaiting_approval" && (n.connect === "form" || n.app === "own") ? (n.app === "own" ? "Through your own app" : "Available") : AVAILABILITY[n.availability]);
+/** A network connected by a form or through the Workspace's own app needs no platform to approve Direx's app, so it reads as open. One with a wizard waits on the person's own app, not the network. */
+const availabilityWords = (n: Network) => (n.wizard ? "Set up your own app to connect" : n.canConnect && n.availability === "awaiting_approval" && (n.connect === "form" || n.app === "own") ? (n.app === "own" ? "Through your own app" : "Available") : AVAILABILITY[n.availability]);
 const STATUS: Record<string, string> = { active: "Working", needs_reauth: "Reconnect needed", revoked: "Revoked" };
 const SUMMARY = "cursor-pointer font-medium";
 const FEATURE: Record<string, string> = { publish: "posts", links: "links", follow_ups: "follow-up comments", video: "video", image: "images", analytics: "stats", comments: "comments" };
@@ -276,7 +276,7 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
                   <details>
                     <summary className={SUMMARY}>Advanced: use your own app (self-hosted)</summary>
                     <div className="mt-3 flex flex-col gap-3">
-                      {manage ? own.map((n) => <Wizard key={n.connection} label={n.label} wizard={n.wizard!} save={async (f) => void (await settle(await saveApp(workspace.id, n, f)))} />) : <p className="text-sm text-muted-foreground">An Owner or Admin can set this up.</p>}
+                      {manage ? own.map((n) => <Wizard key={n.connection} label={n.label} wizard={n.wizard!} callbackProblem={n.callbackProblem} save={async (f) => void (await settle(await saveApp(workspace.id, n, f)))} />) : <p className="text-sm text-muted-foreground">An Owner or Admin can set this up.</p>}
                     </div>
                   </details>
                 )}

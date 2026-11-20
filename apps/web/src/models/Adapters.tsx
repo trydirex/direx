@@ -14,6 +14,8 @@ import { adaptersQuery, AGENT_NAMES, chooseAdapter, chooseForAgent, finishSignIn
 type Settle = (code: string | null, done?: string) => Promise<unknown>;
 
 function statusOf(a: AdapterRow): string {
+  // Codex comes with Direx (ADR 0036), so a Codex installed by hand would never be used.
+  if (a.blocked === "not_installed" && a.id === "codex") return "Not installed. Codex comes with Direx: run bun install on the machine running Direx, then restart it.";
   if (a.blocked === "not_installed") return `Not installed. Install ${a.label} on the machine running Direx, then reload this page.`;
   if (a.blocked) return a.blocked;
   if (a.signedOut) return "Signed out. Direx can't use this sign-in until you sign in again.";

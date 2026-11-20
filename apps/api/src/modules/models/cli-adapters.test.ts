@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The CLI adapters against fake CLIs on PATH and the real sandbox, and through generate as the app role.
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect, test } from "vitest";
@@ -9,7 +9,7 @@ import { appClient, insertAuthUser } from "../../../../../test/db";
 import { withBudget } from "../ledger/index";
 import type { Keys } from "./adapters/keys";
 import { claudeArgs, claudeCode } from "./adapters/runtime/claude-code";
-import { codex, codexArgs } from "./adapters/runtime/codex";
+import { codex, codexArgs, codexBinary, packagedCodex, useCodexBinaryForTests } from "./adapters/runtime/codex";
 import { ENVELOPE_SCHEMA, envelopeSchema, instructions } from "./adapters/runtime/envelope";
 import { ADAPTERS, oneAtATime, withCliAdapters } from "./adapters/runtime/registry";
 import { runSandboxed, sandboxStatus } from "./adapters/runtime/sandbox";
@@ -20,11 +20,15 @@ import { createModels } from "./index";
 
 const PATH = pathWithoutRealClis(process.env.PATH);
 process.env.PATH = PATH;
+useCodexBinaryForTests(null);
 afterEach(() => {
   process.env.PATH = PATH;
+  useCodexBinaryForTests(null);
 });
+// Claude Code is found on PATH. Codex is found through its test parameter, never PATH (DX-R-0036-003).
 const onPath = (dir: string) => {
   process.env.PATH = `${dir}:${PATH}`;
+  useCodexBinaryForTests(existsSync(join(dir, "codex")) ? join(dir, "codex") : null);
 };
 
 const TOKEN = "marker-token-7421";
@@ -87,12 +91,42 @@ test("with tools and no typed output, the CLI isn't offered a plain text answer"
   expect(JSON.parse(args[args.indexOf("--json-schema") + 1]!)).toEqual(shape);
 });
 
-test("a CLI that isn't on PATH is a configuration failure, and says it isn't installed", async () => {
+test("a CLI that isn't installed is a configuration failure, and says it isn't installed", async () => {
   process.env.PATH = mkdtempSync(join(tmpdir(), "direx-empty-"));
+  useCodexBinaryForTests(null);
   expect(await claudeCode.installed()).toBe(false);
   expect(await codex.installed()).toBe(false);
   expect(await claudeCode.call(request("claude_code"))).toMatchObject({ ok: false, family: "configuration" });
   expect(await codex.call(request("codex"))).toMatchObject({ ok: false, family: "configuration" });
+});
+
+test("Codex runs the binary from the platform package its pinned wrapper names, and nothing else", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "direx-codex-package-")));
+  const wrapper = join(root, "@openai", "codex");
+  const platform = join(root, "@openai", "codex-linux-x64");
+  const bin = join(platform, "vendor", "x86_64-unknown-linux-musl", "bin");
+  mkdirSync(wrapper, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(wrapper, "package.json"), JSON.stringify({ name: "@openai/codex", version: "1.0.0", optionalDependencies: { "@openai/codex-linux-x64": "npm:@openai/codex@1.0.0-linux-x64" } }));
+  const platformVersion = (version: string) => writeFileSync(join(platform, "package.json"), JSON.stringify({ name: "@openai/codex", version }));
+  platformVersion("1.0.0-linux-x64");
+  writeFileSync(join(bin, "codex"), "");
+  expect(packagedCodex(wrapper, "linux-x64")).toBe(join(bin, "codex"));
+  // Windows has no sandbox, and no package is installed for another CPU or a missing wrapper.
+  expect(packagedCodex(wrapper, "win32-x64")).toBeNull();
+  expect(packagedCodex(wrapper, "linux-arm64")).toBeNull();
+  expect(packagedCodex(join(root, "missing"), "linux-x64")).toBeNull();
+  // A platform package left over from another version is refused, and so is one with no binary.
+  platformVersion("0.9.0-linux-x64");
+  expect(packagedCodex(wrapper, "linux-x64")).toBeNull();
+  platformVersion("1.0.0-linux-x64");
+  rmSync(join(bin, "codex"));
+  expect(packagedCodex(wrapper, "linux-x64")).toBeNull();
+});
+
+test("the shipped Codex is found in its platform package, and is only located here, never run", () => {
+  useCodexBinaryForTests(undefined);
+  expect(codexBinary()).toMatch(/\/@openai\/codex(-[a-z0-9]+)*\/vendor\/[a-z0-9_-]+\/bin\/codex$/);
 });
 
 if (status.ok) {

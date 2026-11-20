@@ -56,6 +56,9 @@ test("each AI shows where it's signed in", async () => {
   expect(await screen.findByText("Not installed. Install Claude Code on the machine running Direx, then reload this page.")).toBeTruthy();
   expect(screen.getByText("This machine can't run Codex.")).toBeTruthy();
   cleanup();
+  serve({ choice: null, agents: [], adapters: [claude, { ...codex, blocked: "not_installed" }] }, () => reply(200, {}));
+  expect(await screen.findByText("Not installed. Codex comes with Direx: run bun install on the machine running Direx, then restart it.")).toBeTruthy();
+  cleanup();
   serve({ choice: null, agents: [], adapters: [{ ...claude, signedOut: true }, { ...codex, mine: false }] }, () => reply(200, {}));
   expect(await screen.findByText(/^Signed out\. Direx can't use this sign-in/)).toBeTruthy();
   expect(screen.getByText("Signed in for this Workspace")).toBeTruthy();

@@ -44,14 +44,14 @@ const listRoute = createRoute({
 const rewriteRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/lessons/{id}/rewrite",
-  middleware: [requirePermission("rule.grant"), requireStepUp()],
+  middleware: [requirePermission("rule.grant"), requireStepUp("long")],
   request: { params: one, ...body(z.strictObject({ version: z.number().int().positive(), text: Text })) },
   responses: { 200: Ok, ...errors },
 });
 const retireRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/lessons/{id}/retire",
-  middleware: [requirePermission("rule.grant"), requireStepUp()],
+  middleware: [requirePermission("rule.grant"), requireStepUp("long")],
   request: { params: one, ...body(z.strictObject({ version: z.number().int().positive() })) },
   responses: { 200: Ok, ...errors },
 });

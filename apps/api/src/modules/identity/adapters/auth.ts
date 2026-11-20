@@ -31,6 +31,15 @@ const DAY_S = 86_400;
 export const SESSION_CAP_MS = 90 * DAY_S * 1000;
 
 /**
+ * How recent a sign-in step-up asks for (ADR 0037 rule 004). `short` for an action that creates,
+ * shows, replaces or removes a secret or credential, sets a password, changes a role or Server admin
+ * standing, installs or removes a plugin, deletes a Workspace or ends sessions; `long` for every
+ * other action behind step-up.
+ */
+export const STEP_UP_WINDOWS = { short: 10 * 60_000, long: 60 * 60_000 } as const;
+export type StepUpWindow = keyof typeof STEP_UP_WINDOWS;
+
+/**
  * DIREX_SESSION_DAYS, read once at start (ADR 0037 rule 001). Cloud runs the default, so the
  * variable there is a mistake. From 2 days, as with 1 a day-old renewal would come only once the
  * session had already ended.
@@ -138,8 +147,9 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     advanced: { database: { generateId: "uuid" }, ipAddress: { trustedProxies: cfg.trustedProxies ?? [] } },
     rateLimit: { enabled: !cfg.devMode },
     // Each day of use pushes the end out (ADR 0037 rule 001). No cookie cache: it would let a
-    // revoked session, or one past SESSION_CAP_MS, keep working until the cache expired.
-    session: { expiresIn: (cfg.sessionDays ?? 30) * DAY_S, updateAge: DAY_S, cookieCache: { enabled: false } },
+    // revoked session, or one past SESSION_CAP_MS, keep working until the cache expired. Better Auth's
+    // own fresh-session routes ask for the short step-up window.
+    session: { expiresIn: (cfg.sessionDays ?? 30) * DAY_S, updateAge: DAY_S, cookieCache: { enabled: false }, freshAge: STEP_UP_WINDOWS.short / 1000 },
     emailAndPassword: {
       enabled: true,
       minPasswordLength: 12,

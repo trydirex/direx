@@ -2,7 +2,7 @@
 // Sign-in (I1 to I3), the SMTP adapter and the startup refusal.
 import { expect, test } from "vitest";
 import { authConfigFromEnv, createIdentity, logMailer, selfHostAdmission, smtpMailer, type Admission } from "./index";
-import { sessionDaysFromEnv, trustedProxiesFromEnv } from "./adapters/auth";
+import { sessionDaysFromEnv, STEP_UP_WINDOWS, trustedProxiesFromEnv } from "./adapters/auth";
 import { TEST_SECRET, testIdentity } from "./test-auth";
 
 const { routes, auth, signIn } = testIdentity();
@@ -152,4 +152,8 @@ test("DIREX_SESSION_DAYS is 30 unless set, a whole number from 2 to 90, and refu
     expect(() => sessionDaysFromEnv({ DIREX_SESSION_DAYS: bad })).toThrow(`DIREX_SESSION_DAYS must be a whole number of days from 2 to 90, not ${bad}`);
   }
   expect(() => sessionDaysFromEnv({ DIREX_SESSION_DAYS: "30", DIREX_DEPLOYMENT: "cloud" })).toThrow(/self-hosted Direx only/);
+});
+
+test("Better Auth's own fresh-session routes ask for the short step-up window (ADR 0037 rule 004)", () => {
+  expect(auth().options.session?.freshAge! * 1000).toBe(STEP_UP_WINDOWS.short);
 });

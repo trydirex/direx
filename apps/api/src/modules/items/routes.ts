@@ -214,7 +214,8 @@ const refused = (r: Exclude<Decided, { ok: true }>) => ({ error: r.reason, ...de
 const toResults = (rs: { id: string; result: Decided }[]) => ({
   results: rs.map(({ id, result: r }) => (r.ok ? { id, ok: true } : { id, ok: false, reason: r.reason, ...detail(r) })),
 });
-const whoFrom = (m: Member) => ({ approverId: approverFromMember(m), may: (p: string) => can(m.role, p as Permission), steppedUp: steppedUp(m) });
+// Every Item kind with `stepUp` is an everyday approval (lessons, keys lost, late sends), so the long window (ADR 0037 rule 004).
+const whoFrom = (m: Member) => ({ approverId: approverFromMember(m), may: (p: string) => can(m.role, p as Permission), steppedUp: steppedUp(m, "long") });
 
 export function itemRoutes({ items }: { items: () => Items }) {
   const app = new OpenAPIHono<MemberEnv>({

@@ -3,7 +3,7 @@
 // which role. A Workspace the caller is not a member of is 404, so its existence does not leak.
 import type { Context } from "hono";
 import { createMiddleware } from "hono/factory";
-import { SESSION_CAP_MS, type Auth } from "./adapters/auth";
+import { SESSION_CAP_MS, STEP_UP_WINDOWS, type Auth, type StepUpWindow } from "./adapters/auth";
 import { memberRole } from "./adapters/repo";
 import { can, type Permission, type Role } from "./domain/roles";
 
@@ -37,9 +37,9 @@ async function withinCap(auth: () => Auth, s: Session): Promise<Session> {
   return null;
 }
 
-/** Ends a session past the cap before one of Better Auth's own routes sees it. Copies no cookie onto that route's answer. */
-export async function endSessionPastCap(auth: () => Auth, headers: Headers): Promise<void> {
-  await withinCap(auth, await auth().api.getSession({ headers }));
+/** The session for one of Better Auth's own routes, ended first if past the cap. Copies no cookie onto that route's answer. */
+export async function sessionWithinCap(auth: () => Auth, headers: Headers): Promise<Session> {
+  return withinCap(auth, await auth().api.getSession({ headers }));
 }
 
 export type Member = {
@@ -100,15 +100,17 @@ export function requirePermission(p: Permission) {
   });
 }
 
-/** Step-up: elevated actions need a sign-in in the last 10 minutes. */
-export const STEP_UP_MS = 10 * 60_000;
+/**
+ * Step-up: whether this sign-in is recent enough for `window` (STEP_UP_WINDOWS). Every check names
+ * its window (ADR 0037 rule 004).
+ */
+// ponytail: the "short" defaults here and on requireStepUp keep today's 10 minutes for checks outside
+// identity, items and lessons until they name a window; then drop both so no check can leave it out.
+export const steppedUp = (m: { signedInAt: Date }, window: StepUpWindow = "short", now = new Date()) => now.getTime() - m.signedInAt.getTime() <= STEP_UP_WINDOWS[window];
 
-/** For routes whose step-up depends on what the request touches. */
-export const steppedUp = (m: Member, now = new Date()) => now.getTime() - m.signedInAt.getTime() <= STEP_UP_MS;
-
-export function requireStepUp(now: () => Date = () => new Date()) {
+export function requireStepUp(window: StepUpWindow = "short", now: () => Date = () => new Date()) {
   return createMiddleware<MemberEnv>(async (c, next) => {
-    if (!steppedUp(c.get("member"), now())) return c.json({ error: "step_up_required" }, 403);
+    if (!steppedUp(c.get("member"), window, now())) return c.json({ error: "step_up_required" }, 403);
     await next();
   });
 }

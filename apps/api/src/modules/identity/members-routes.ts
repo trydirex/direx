@@ -58,7 +58,7 @@ const STATUS = {
 
 const route = <R extends Parameters<typeof createRoute>[0]>(r: R) => createRoute(r);
 const members = (p: Parameters<typeof requirePermission>[0], stepUp = false) =>
-  stepUp ? [requirePermission(p), requireStepUp()] : [requirePermission(p)];
+  stepUp ? [requirePermission(p), requireStepUp("short")] : [requirePermission(p)];
 
 const listMembersRoute = route({
   method: "get",

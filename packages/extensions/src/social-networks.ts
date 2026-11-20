@@ -142,7 +142,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
       consoleUrl: "https://developers.facebook.com/apps",
       consoleName: "Meta",
       scopes: FACEBOOK_SCOPES,
-      steps: ["Create a Business type app and add Facebook Login. Instagram and Threads can be added to the same app later.", "Add the callback URL below as a valid OAuth redirect URI.", "Copy the app ID and app secret into the fields below."],
+      steps: ["Create a Business type app and add Facebook Login.", "Add the callback URL below as a valid OAuth redirect URI.", "Copy the app ID and app secret into the fields below."],
     },
   },
   {
@@ -173,7 +173,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
       consoleUrl: "https://developers.facebook.com/apps",
       consoleName: "Meta",
       scopes: THREADS_SCOPES,
-      steps: ["Create a Business type app, or open the one you made for Facebook or Instagram, and add Threads.", "Add the callback URL below. Meta may add a trailing slash, which must match exactly.", "Invite your Threads account as a tester, then accept in Threads settings.", "Copy the Threads app ID and secret into the fields below."],
+      steps: ["Create a separate Meta app and select the Access the Threads API use case.", "Add the callback URL below. Meta may add a trailing slash, which must match exactly.", "Invite your Threads account as a tester, then accept in Threads settings.", "Copy the Threads app ID and secret into the fields below."],
     },
   },
   {

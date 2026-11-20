@@ -7,7 +7,7 @@ import { claimServer, isServerAdmin } from "./application/admission";
 import { createOrganization, listDeletedWorkspaces, listMyWorkspaces } from "./application/orgs";
 import { INVITE_COOKIE, type Admission } from "./domain/admission";
 import { ROLES } from "./domain/roles";
-import { endSessionPastCap, readSession, requireMember, STEP_UP_MS, type MemberEnv } from "./middleware";
+import { readSession, requireMember, sessionWithinCap, steppedUp, type MemberEnv } from "./middleware";
 
 const ErrorBody = z.object({ error: z.string() }).openapi("Error");
 const json = <T extends z.ZodType>(schema: T, description: string) => ({
@@ -145,6 +145,9 @@ const setPasswordRoute = createRoute({
   },
 });
 
+/** Better Auth's routes that end sessions. */
+const REVOKE = /^\/api\/auth\/revoke-(session|sessions|other-sessions)$/;
+
 /** `auth` is resolved on first use, so building the OpenAPI document needs no secrets. */
 export function identityRoutes(auth: () => Auth, baseURL: () => string, admission: () => Admission) {
   const app = new OpenAPIHono<MemberEnv>({
@@ -155,8 +158,10 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
     },
   });
   app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-    // The 90-day cap holds on Better Auth's own routes too (ADR 0037 rule 003).
-    if (c.req.header("cookie")) await endSessionPastCap(auth, c.req.raw.headers);
+    // The 90-day cap holds on Better Auth's own routes too (ADR 0037 rule 003), and ending sessions
+    // asks for the short step-up window (rule 004), so a stolen cookie can't sign the owner out elsewhere.
+    const s = c.req.header("cookie") ? await sessionWithinCap(auth, c.req.raw.headers) : null;
+    if (s && REVOKE.test(c.req.path) && !steppedUp({ signedInAt: new Date(s.session.createdAt) }, "short")) return c.json({ error: "step_up_required" }, 403);
     return auth().handler(c.req.raw);
   });
   app.use("/api/w/:workspaceId", requireMember(auth));
@@ -179,7 +184,7 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
       const headers = c.req.raw.headers;
       const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
-      if (Date.now() - new Date(s.session.createdAt).getTime() > STEP_UP_MS) return c.json({ error: "step_up_required" }, 403);
+      if (!steppedUp({ signedInAt: new Date(s.session.createdAt) }, "short")) return c.json({ error: "step_up_required" }, 403);
       try {
         await auth().api.setPassword({ body: { newPassword: c.req.valid("json").password }, headers });
       } catch (e) {

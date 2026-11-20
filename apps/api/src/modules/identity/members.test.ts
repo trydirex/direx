@@ -3,6 +3,7 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { createBoss } from "../../jobs/boss";
 import { testIdentity } from "./test-auth";
+import { steppedUp } from "./middleware";
 
 const { signIn, call, createOrg, inviteToken, addMember, outbox } = testIdentity();
 const MIN = 60_000;
@@ -278,4 +279,24 @@ test("a role change or removal tells onMemberChange after it commits, and a fail
   expect((await site.call(at, owner, { method: "DELETE" })).status).toBe(200);
   expect(told).toHaveBeenLastCalledWith(w, admin.userId, "marketer", null);
   expect(console.error).toHaveBeenCalledWith("after a membership change", expect.any(Error));
+});
+
+test("step-up windows: 10 minutes for credentials and power, 60 for everyday approvals (ADR 0037 rule 004)", () => {
+  const at = (minutesAgo: number) => ({ signedInAt: new Date(Date.now() - minutesAgo * MIN) });
+  expect([steppedUp(at(9.9), "short"), steppedUp(at(10.1), "short")]).toEqual([true, false]);
+  expect([steppedUp(at(59.9), "long"), steppedUp(at(60.1), "long")]).toEqual([true, false]);
+});
+
+test("ending sessions through Better Auth's routes needs a sign-in in the last 10 minutes (ADR 0037 rule 004)", async () => {
+  const owner = await signIn();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(Date.now() + 11 * MIN);
+  for (const path of ["/api/auth/revoke-other-sessions", "/api/auth/revoke-sessions", "/api/auth/revoke-session"]) {
+    const res = await call(path, owner, { method: "POST", body: path.endsWith("session") ? { token: "x" } : {} });
+    expect([res.status, await res.json()]).toEqual([403, { error: "step_up_required" }]);
+  }
+  expect((await call("/api/me", owner)).status).toBe(200);
+
+  const fresh = await signIn();
+  expect((await call("/api/auth/revoke-other-sessions", fresh, { method: "POST", body: {} })).status).toBe(200);
 });

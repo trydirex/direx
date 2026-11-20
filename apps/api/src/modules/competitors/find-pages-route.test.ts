@@ -14,10 +14,14 @@ const pages = new Map<string, Html>();
 const sitemaps = new Map<string, string[] | { index: string[] }>();
 const fetched: string[] = [];
 let gate: Promise<void> | null = null;
+let entered: (() => void) | null = null;
 
 const fetchHtml: FetchHtml = async (_base, url) => {
   fetched.push(url);
-  if (gate) await gate;
+  if (gate) {
+    entered?.();
+    await gate;
+  }
   return pages.get(url) ?? { ok: false, url, reason: "http_error", status: 404 };
 };
 const fetchSitemap: FetchSitemap = async (_base, url) => {
@@ -94,7 +98,10 @@ test("a homepage that can't be read says why, and nothing is proposed", async ()
 test("one Find pages at a time per Workspace", async () => {
   let release!: () => void;
   gate = new Promise((r) => (release = r));
+  // Both requests pass identity's middleware first; the second goes only once the first holds the run.
+  const inside = new Promise<void>((r) => (entered = r));
   const first = find("https://doublehq.com");
+  await inside;
   const second = await find("https://doublehq.com");
   expect(second).toEqual({ status: 409, body: { error: "busy" } });
   release();

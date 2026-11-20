@@ -12,7 +12,7 @@ import { PlanImpact } from "../campaigns/PlanChange";
 import { Measures } from "../campaigns/Overview";
 import { factsQuery, type Fact } from "../facts/actions";
 import { dayWords } from "../seo/actions";
-import { addReading, basisLabel, countedFrom, emptyPlan, markStep, missingWords, newKey, planQuery, savePlan, say, sayDraft, sayRebased, sourceWords, startPlanDraft, submitPlan, MEASURE_SOURCES, type MeasureSource, type Plan as Loaded, type PlanBody, type Tracking } from "./actions";
+import { addReading, basisLabel, countedFrom, emptyPlan, markStep, MEASURE_SOURCES, missingWords, newKey, planQuery, readingChanged, savePlan, say, sayDraft, sayRebased, sourceWords, startPlanDraft, submitPlan, type CitedReading, type MeasureSource, type Plan as Loaded, type PlanBody, type Tracking } from "./actions";
 import { Assumptions, BasisField, DraftProgress, FIELDSET, KeptDraft, Row, Text, useEdits, WaitingVersion } from "./Fields";
 
 const draftOf = (x: Loaded | undefined): PlanBody => ({ ...emptyPlan(), ...((x?.draft ?? x?.current ?? {}) as Partial<PlanBody>) });
@@ -30,7 +30,7 @@ const money = (cents: number | null, currency: string) => {
 };
 
 /** How an approved plan is going: its steps' status and its measures, which everyone sees. `copy` adds the budget and open questions for someone with no editor to read them in. */
-function Progress(p: { workspaceId: string; id: string; role: Role; body: PlanBody; tracking: Tracking; facts: Fact[]; copy: boolean; settle: (code: string | null) => void }) {
+function Progress(p: { workspaceId: string; id: string; role: Role; body: PlanBody; tracking: Tracking; facts: Fact[]; cited: CitedReading[]; copy: boolean; settle: (code: string | null) => void }) {
   const { workspaceId, id, tracking: t } = p;
   const edit = mayEdit(p.role);
   const factValue = (factId: string) => p.facts.find((f) => f.id === factId)?.value;
@@ -62,7 +62,7 @@ function Progress(p: { workspaceId: string; id: string; role: Role; body: PlanBo
         tracking={t}
         after={(m) => (
           <>
-            <small className="text-sm text-muted-foreground">{basisLabel(m.basis, factValue)}</small>
+            <small className="text-sm text-muted-foreground">{basisLabel(m.basis, factValue, p.cited)}</small>
             {edit && (
               <form
                 className="flex flex-wrap items-end gap-2"
@@ -120,8 +120,9 @@ function Progress(p: { workspaceId: string; id: string; role: Role; body: PlanBo
 }
 
 /** A plan not approved yet, as someone who can't edit it reads it. */
-function DraftView(p: { d: PlanBody }) {
+function DraftView(p: { d: PlanBody; facts: Fact[]; cited: CitedReading[] }) {
   const { d } = p;
+  const factValue = (factId: string) => p.facts.find((f) => f.id === factId)?.value;
   return (
     <section aria-label="Draft plan" className="flex flex-col gap-2 rounded-card border border-border bg-card p-6">
       <p className="text-muted-foreground">A draft. It isn't approved yet.</p>
@@ -144,7 +145,7 @@ function DraftView(p: { d: PlanBody }) {
         {d.measures.map((m) => (
           <li key={m.key}>
             {m.label}: {m.target}
-            {countedFrom(m.source) && `, counted by Direx from ${countedFrom(m.source)}`}
+            {countedFrom(m.source) && `, counted by Direx from ${countedFrom(m.source)}`} <small className="text-sm text-muted-foreground">{basisLabel(m.basis, factValue, p.cited)}</small>
           </li>
         ))}
       </ul>
@@ -224,7 +225,7 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
       {error && <Notice tone="error">{error}</Notice>}
       {runId && <DraftProgress workspaceId={workspaceId} runId={runId} onDone={() => void load()} />}
       {plan.notes.map((n, i) => (
-        <Notice key={i}>{n.kind === "strategy_changed" ? "The Strategy has changed since this plan was approved." : "A brand fact this plan relies on has changed."}</Notice>
+        <Notice key={i}>{n.kind === "strategy_changed" ? "The Strategy has changed since this plan was approved." : n.kind === "reading_changed" ? readingChanged("plan", n.readingId, plan.citedReadings) : "A brand fact this plan relies on has changed."}</Notice>
       ))}
       {current && (
         <>
@@ -241,7 +242,7 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
             </p>
           </div>
           )}
-          <Progress workspaceId={workspaceId} id={id} role={role} body={current} tracking={plan.tracking as Tracking} facts={facts} copy={!mayEdit(role)} settle={settle} />
+          <Progress workspaceId={workspaceId} id={id} role={role} body={current} tracking={plan.tracking as Tracking} facts={facts} cited={plan.citedReadings} copy={!mayEdit(role)} settle={settle} />
         </>
       )}
       {plan.waiting && <WaitingVersion workspaceId={workspaceId} role={role} waiting={plan.waiting} templates={draft.steps.filter((s) => s.template).length} note="Approving lets Direx write the drafts. Each draft still comes to you before it goes out." settle={settle} />}
@@ -266,7 +267,7 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
         }}
       />
 
-      {!mayEdit(role) && !current && !!plan.draft && <DraftView d={draft} />}
+      {!mayEdit(role) && !current && !!plan.draft && <DraftView d={draft} facts={facts} cited={plan.citedReadings} />}
       {mayEdit(role) && (
         <details open className="rounded-card border border-border bg-card p-6">
           <summary className="cursor-pointer font-medium">Edit plan</summary>
@@ -329,7 +330,7 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
                 <div key={m.key} className="flex flex-wrap items-center gap-2">
                   <Input aria-label="Measure" className="flex-1" value={m.label} onChange={(e) => setLine("measures", i, { label: e.target.value })} />
                   <Input aria-label="Target" className="w-48 max-w-full" value={m.target} onChange={(e) => setLine("measures", i, { target: e.target.value })} />
-                  <BasisField value={m.basis} facts={facts} onChange={(basis) => setLine("measures", i, { basis })} />
+                  <BasisField value={m.basis} facts={facts} cited={plan.citedReadings} onChange={(basis) => setLine("measures", i, { basis })} />
                   {/* A different source starts a new reading history; old readings stay with the old key. */}
                   <Select aria-label={`Where measure ${i + 1}'s number comes from`} value={m.source ?? "external"} onChange={(e) => setLine("measures", i, { source: e.target.value as MeasureSource, key: newKey() })}>
                     {MEASURE_SOURCES.map((s) => (

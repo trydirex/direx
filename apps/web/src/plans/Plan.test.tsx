@@ -105,6 +105,25 @@ test("a marketer edits every line, saves the draft and submits it, and a refusal
   expect(await screen.findByText(/Still needed: dates up to 45 days apart/)).toBeTruthy();
 });
 
+test("the basis field keeps a reading basis and names it, until the person picks another kind", async () => {
+  const READING = "00000000-0000-4000-8000-0000000000dd";
+  const draft = { ...body, measures: [{ ...body.measures[0], basis: { kind: "reading", readingId: READING } }] };
+  const citedReadings = [{ id: READING, found: true, measureLabel: "Interested replies", value: "3", source: "person", observedOn: "2026-11-12", newer: false }];
+  serve(() => reply(200, plan({ current: null, currentVersion: null, draft, citedReadings })));
+  const put = vi.spyOn(api, "PUT").mockImplementation((() => reply(200, { revision: 6, missing: [] })) as never);
+  show();
+  const words = "From an earlier Campaign: Interested replies 3, entered by a person, 12 November 2026";
+  const field = await screen.findByRole("combobox", { name: "Comes from" });
+  expect(field.textContent).toContain(words);
+  expect(screen.getByText(`Where does this number come from? (${words})`)).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  const sent = () => (put.mock.lastCall![1] as { body: { body: { measures: { basis: unknown }[] } } }).body.body.measures[0]!.basis;
+  expect(sent()).toEqual({ kind: "reading", readingId: READING });
+  await pick(field, "An assumption");
+  await userEvent.click(screen.getByRole("button", { name: "Save draft" }));
+  expect(sent()).toEqual({ kind: "assumption" });
+});
+
 test.each([
   ["replies", "Counted by Direx from meetings marked on People", "meetings"],
   ["meetings", "Entered by a person", "external"],

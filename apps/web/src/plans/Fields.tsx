@@ -10,7 +10,7 @@ import { Field, Notice } from "../components/layout";
 import { Button } from "@/components/Button";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
 import { Input, Select, Textarea } from "@/components/Input";
-import { basisLabel, dismissOffer, draftOutcome, measureWords, offerQuery, takeOffer, type Basis, type DraftOffer, type OfferTarget } from "./actions";
+import { basisLabel, dismissOffer, draftOutcome, measureWords, offerQuery, takeOffer, type Basis, type CitedReading, type DraftOffer, type OfferTarget } from "./actions";
 
 const POLL_MS = 2000;
 
@@ -150,13 +150,17 @@ export function Text(p: { label: string; value: string; onChange: (v: string) =>
 }
 
 
-/** Nothing can go unlabelled: every reason and target says what it rests on, and it starts as an assumption. */
-export function BasisField(p: { value: Basis; facts: Fact[]; onChange: (b: Basis) => void }) {
+/**
+ * Nothing can go unlabelled: every reason and target says what it rests on, and it starts as an assumption.
+ * A reading basis comes only from a draft Direx wrote, so it shows as the one option until another kind is picked.
+ */
+export function BasisField(p: { value: Basis; facts: Fact[]; cited?: CitedReading[]; onChange: (b: Basis) => void }) {
   const selected = p.value.kind === "fact" ? `fact:${p.value.factId}` : p.value.kind;
+  const label = basisLabel(p.value, (id) => p.facts.find((f) => f.id === id)?.value, p.cited);
   // Collapsed, it still says what the number rests on.
   return (
     <details className="max-w-full text-sm">
-      <summary className="cursor-pointer text-muted-foreground">Where does this number come from? ({basisLabel(p.value, (id) => p.facts.find((f) => f.id === id)?.value)})</summary>
+      <summary className="cursor-pointer text-muted-foreground">Where does this number come from? ({label})</summary>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <Select
           label="Comes from"
@@ -169,6 +173,7 @@ export function BasisField(p: { value: Basis; facts: Fact[]; onChange: (b: Basis
             p.onChange({ kind: "fact", factId: f.id, version: f.version });
           }}
         >
+          {p.value.kind === "reading" && <option value="reading">{label}</option>}
           <option value="assumption">An assumption</option>
           <option value="source">A named source</option>
           {p.facts

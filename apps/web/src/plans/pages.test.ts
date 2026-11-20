@@ -8,7 +8,7 @@ import { expect, test, vi } from "vitest";
 import { api } from "../client";
 import { buttons, withQueries, withoutButtons } from "../testing";
 import type { Role } from "../items/actions";
-import { addReading, basisLabel, createPlan, dismissOffer, draftOutcome, getOffer, takeOffer, markStep, missingWords, savePlan, saveStrategy, say, sayDraft, startPlanDraft, startStrategyDraft, submitPlan, submitStrategy, type Plan as Loaded, type PlanBody, type Strategy as LoadedStrategy, type StrategyBody, type Tracking } from "./actions";
+import { addReading, basisLabel, createPlan, readingChanged, dismissOffer, draftOutcome, getOffer, takeOffer, markStep, missingWords, savePlan, saveStrategy, say, sayDraft, startPlanDraft, startStrategyDraft, submitPlan, submitStrategy, type CitedReading, type Plan as Loaded, type PlanBody, type Strategy as LoadedStrategy, type StrategyBody, type Tracking } from "./actions";
 import { KeptDraft } from "./Fields";
 import { NewCampaign } from "./NewCampaign";
 import { Plan } from "./Plan";
@@ -36,7 +36,7 @@ const tracking: Tracking = {
 };
 const waiting = { id: ID, revision: 1, version: 2, warnings: ["Read this before approving"] };
 const plan = (o: Partial<Loaded> = {}): Loaded =>
-  ({ id: ID, title: "Q4", request: "Book 4 meetings", currentVersion: 1, archived: false, current: body, draft: body, draftRevision: 1, strategyVersion: 1, missing: [], waiting: null, tracking, notes: [], ...o }) as Loaded;
+  ({ id: ID, title: "Q4", request: "Book 4 meetings", currentVersion: 1, archived: false, current: body, draft: body, draftRevision: 1, strategyVersion: 1, missing: [], waiting: null, tracking, notes: [], citedReadings: [], ...o }) as Loaded;
 const strategyBody: StrategyBody = {
   schemaVersion: 1,
   whoFor: "Heads of ecommerce ops",
@@ -45,7 +45,7 @@ const strategyBody: StrategyBody = {
   channels: [{ key: "email", label: "Cold email", timing: "now", reason: "Ops leads read email", basis: { kind: "assumption" } }],
   assumptions: [],
 };
-const strategy = (o: Partial<LoadedStrategy> = {}): LoadedStrategy => ({ id: ID, currentVersion: 1, current: strategyBody, draft: strategyBody, draftRevision: 1, missing: [], waiting: null, ...o }) as LoadedStrategy;
+const strategy = (o: Partial<LoadedStrategy> = {}): LoadedStrategy => ({ id: ID, currentVersion: 1, current: strategyBody, draft: strategyBody, draftRevision: 1, missing: [], waiting: null, notes: [], citedReadings: [], ...o }) as LoadedStrategy;
 // Screens link with the router and load through the query layer, so each render gets both.
 const router = createRouter({ routeTree: createRootRoute(), history: createMemoryHistory() });
 const html = (el: Parameters<typeof renderToString>[0]) =>
@@ -96,7 +96,11 @@ test("a Marketer may approve, a Contributor may write but not approve, a Viewer 
 test("what moved under a plan shows as a note", () => {
   const page = planPage("viewer", { notes: [{ kind: "strategy_changed" }, { kind: "fact_changed", factId: ID }] });
   expect(page).toContain("The Strategy has changed");
-  expect(page).toContain("A brand fact this plan relies on has changed");
+  expect(page).toContain("A brand fact this plan relies on has changed.<");
+  const cited = [reading({ newer: true })];
+  const changed = planPage("viewer", { notes: [{ kind: "reading_changed", readingId: READING }], citedReadings: cited });
+  expect(changed).toContain("An earlier Campaign reading this plan relies on has changed. It said Interested replies 3, counted by Direx, 12 November 2026.");
+  expect(changed).not.toContain("A brand fact");
 });
 
 test("the Strategy shows its channels with what they rest on, and its roles", () => {
@@ -156,8 +160,37 @@ test("a refusal reads as words", () => {
   expect(missingWords([{ path: "goal", message: "Invalid" }, { path: "endsOn", message: "plan_dates_out_of_range" }])).toBe("goal, dates up to 45 days apart, ending after they start");
 });
 
-test("a reading basis reads as words, never its id", () => {
-  expect(basisLabel({ kind: "reading", readingId: ID })).toBe("Earlier Campaign reading");
+const READING = "00000000-0000-4000-8000-0000000000dd";
+const reading = (o: Partial<CitedReading> = {}): CitedReading => ({ id: READING, found: true, measureLabel: "Interested replies", value: "3", source: "system", observedOn: "2026-11-12", newer: false, ...o });
+const byReading = { kind: "reading", readingId: READING } as const;
+
+test("a reading basis reads as words naming the Measure, value, who counted it and the day, never its id", () => {
+  expect(basisLabel(byReading, undefined, [reading()])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026");
+  expect(basisLabel(byReading, undefined, [reading({ source: "person", value: "5" })])).toBe("From an earlier Campaign: Interested replies 5, entered by a person, 12 November 2026");
+  expect(basisLabel(byReading, undefined, [reading({ newer: true })])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026 (since changed)");
+  for (const cited of [[reading({ found: false, measureLabel: null, value: null, source: null, observedOn: null })], []]) {
+    expect(basisLabel(byReading, undefined, cited)).toBe("From a Campaign reading that isn't in this Workspace");
+  }
+  expect(readingChanged("plan", "typed-by-hand", [reading()])).toBe("An earlier Campaign reading this plan relies on has changed.");
+});
+
+test("a plan names its reading basis in the draft view and once approved", () => {
+  const measures = [{ ...body.measures[0]!, basis: byReading }];
+  const words = "From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026";
+  const draft = planPage("viewer", { current: null, currentVersion: null, draft: { ...body, measures }, citedReadings: [reading()] });
+  expect(draft).toContain("A draft. It isn't approved yet.");
+  expect(draft).toContain(words);
+  const approved = planPage("viewer", { current: { ...body, measures }, tracking: { ...tracking, measures: [{ ...tracking.measures[0]!, basis: byReading }] }, citedReadings: [reading()] });
+  expect(approved).toContain(words);
+  expect(approved).not.toContain(READING);
+});
+
+test("the Strategy names its reading basis and says when the reading changed", () => {
+  const current = { ...strategyBody, channels: [{ ...strategyBody.channels[0]!, basis: byReading }] };
+  const page = strategyPage("marketer", { current, draft: current, notes: [{ kind: "reading_changed", readingId: READING }], citedReadings: [reading({ newer: true })] });
+  expect(page).toContain("An earlier Campaign reading this Strategy relies on has changed. It said Interested replies 3, counted by Direx, 12 November 2026.");
+  expect(page).toContain("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026 (since changed)");
+  expect(page).not.toContain(READING);
 });
 
 test("each action calls its endpoint", async () => {

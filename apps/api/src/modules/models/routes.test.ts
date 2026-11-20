@@ -187,8 +187,14 @@ test("a Marketer reads usage but cannot touch settings or keys; a stale sign-in 
   ];
   for (const r of await Promise.all(denied)) expect(r.status).toBe(403);
 
+  // A key asks for a sign-in in the last 10 minutes; a setting, the last 60 (ADR 0037 rule 004).
   vi.useFakeTimers({ toFake: ["Date"] });
-  vi.setSystemTime(Date.now() + 11 * 60_000);
+  const start = Date.now();
+  vi.setSystemTime(start + 11 * 60_000);
+  const key = await selfHost.call(`${base}/models/connections/anthropic`, cookie, { method: "PUT", body: { credentialId: crypto.randomUUID() } });
+  expect([key.status, await key.json()]).toEqual([403, { error: "step_up_required" }]);
+  expect((await selfHost.call(`${base}/models/settings`, cookie, { method: "PUT", body: { monthlyBudgetMicros: "1", allowUnpriced: false } })).status).toBe(200);
+  vi.setSystemTime(start + 61 * 60_000);
   const stale = await selfHost.call(`${base}/models/settings`, cookie, { method: "PUT", body: { monthlyBudgetMicros: "1", allowUnpriced: false } });
   expect(stale.status).toBe(403);
   expect(await stale.json()).toEqual({ error: "step_up_required" });

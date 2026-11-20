@@ -68,11 +68,11 @@ const agentOfferRoute = createRoute({
 const grantRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/standing-rules",
-  middleware: [requirePermission("rule.grant"), requireStepUp()],
+  middleware: [requirePermission("rule.grant"), requireStepUp("long")],
   request: { params: ws, body: { content: { "application/json": { schema: GrantBody } } } },
   responses: { 200: Changed, ...errors },
 });
-const reconfirmRoute = createRoute({ method: "post", path: "/api/w/{workspaceId}/standing-rules/{id}/reconfirm", middleware: [requirePermission("rule.grant"), requireStepUp()], request: { params: one }, responses: { 200: Changed, ...errors } });
+const reconfirmRoute = createRoute({ method: "post", path: "/api/w/{workspaceId}/standing-rules/{id}/reconfirm", middleware: [requirePermission("rule.grant"), requireStepUp("long")], request: { params: one }, responses: { 200: Changed, ...errors } });
 // Any Member may stop a rule, with no step-up: stopping must never be harder than starting.
 const revokeRoute = createRoute({
   method: "post",

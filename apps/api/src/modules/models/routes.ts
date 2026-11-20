@@ -4,7 +4,7 @@
 // bigints. No response carries a key, a prompt or a reply.
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import type { Vault } from "../credentials/index";
-import { requirePermission, requireStepUp, type MemberEnv, type Permission } from "../identity/index";
+import { requirePermission, requireStepUp, type MemberEnv, type Permission, type StepUpWindow } from "../identity/index";
 import type { Models } from "./application/generate";
 import { changeSettings, connect, disconnect, listProviders, readSettings, recentCalls, usage, type SettingsRefusal } from "./application/settings";
 import type { Deployment } from "./domain/budget";
@@ -24,7 +24,8 @@ const errors = {
   404: json(ErrorBody, "Not found"),
   409: json(ErrorBody, "Refused by a rule"),
 };
-const guard = (p: Permission, stepUp = false) => (stepUp ? [requirePermission(p), requireStepUp()] : [requirePermission(p)]);
+// A window for each step-up check (ADR 0037 rule 004): short for keys and sign-ins, long for settings and choices.
+const guard = (p: Permission, stepUp?: StepUpWindow) => (stepUp ? [requirePermission(p), requireStepUp(stepUp)] : [requirePermission(p)]);
 
 const Provider = z.enum(PROVIDERS).openapi("ModelProvider");
 const ws = z.object({ workspaceId: z.uuid() });
@@ -75,14 +76,14 @@ const putRoute = createRoute({
   method: "put",
   path: "/api/w/{workspaceId}/models/connections/{provider}",
   request: { params: one, ...body(z.object({ credentialId: z.uuid() })) },
-  middleware: guard("workspace.settings", true),
+  middleware: guard("workspace.settings", "short"),
   responses: { 200: json(Ok, "Connected"), ...errors },
 });
 const deleteRoute = createRoute({
   method: "delete",
   path: "/api/w/{workspaceId}/models/connections/{provider}",
   request: { params: one },
-  middleware: guard("workspace.settings", true),
+  middleware: guard("workspace.settings", "short"),
   responses: { 200: json(Ok, "Disconnected"), ...errors },
 });
 const testRoute = createRoute({
@@ -103,7 +104,7 @@ const putSettingsRoute = createRoute({
   method: "put",
   path: "/api/w/{workspaceId}/models/settings",
   request: { params: ws, ...body(Settings) },
-  middleware: guard("workspace.settings", true),
+  middleware: guard("workspace.settings", "long"),
   responses: { 200: json(Settings, "Saved as a new revision"), ...errors },
 });
 const usageRoute = createRoute({
@@ -148,7 +149,7 @@ const signInStart = (scope: (typeof scopes)[number]) =>
     method: "post",
     path: `/api/w/{workspaceId}/models/adapters/{adapter}/sign-in/${scope}`,
     request: { params: forAdapter },
-    middleware: scope === "shared" ? guard("workspace.settings", true) : guard("workspace.read", true),
+    middleware: scope === "shared" ? guard("workspace.settings", "short") : guard("workspace.read", "short"),
     responses: { 200: json(SignInStart, "The link to open, shown once"), ...errors },
   });
 const signInEnd = (scope: (typeof scopes)[number]) =>
@@ -156,7 +157,7 @@ const signInEnd = (scope: (typeof scopes)[number]) =>
     method: "delete",
     path: `/api/w/{workspaceId}/models/adapters/{adapter}/sign-in/${scope}`,
     request: { params: forAdapter },
-    middleware: scope === "shared" ? guard("workspace.settings", true) : guard("workspace.read", true),
+    middleware: scope === "shared" ? guard("workspace.settings", "short") : guard("workspace.read", "short"),
     responses: { 200: json(Ok, "Signed out"), ...errors },
   });
 const adaptersRoute = createRoute({
@@ -180,21 +181,21 @@ const chooseRoute = createRoute({
   method: "put",
   path: "/api/w/{workspaceId}/models/adapter",
   request: { params: ws, ...body(Choice) },
-  middleware: guard("workspace.settings", true),
+  middleware: guard("workspace.settings", "long"),
   responses: { 200: json(Saved, "Saved, with how many standing rules were paused until a person re-confirms them"), ...errors },
 });
 const chooseAgentRoute = createRoute({
   method: "put",
   path: "/api/w/{workspaceId}/models/agents/{agent}/adapter",
   request: { params: ws.extend({ agent: z.string().min(1).max(100) }), ...body(AgentChoice) },
-  middleware: guard("workspace.settings", true),
+  middleware: guard("workspace.settings", "long"),
   responses: { 200: json(Saved, "Saved; a null adapter goes back to the default and resumes nothing"), ...errors },
 });
 const finishRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/models/sign-ins/{id}/finish",
   request: { params: ws.extend({ id: z.uuid() }), ...body(z.strictObject({ code: z.string().min(1).max(2048).nullable() })) },
-  middleware: guard("workspace.read", true),
+  middleware: guard("workspace.read", "short"),
   responses: { 200: json(Ok, "Stored in the vault"), ...errors },
 });
 const testAdapterRoute = createRoute({

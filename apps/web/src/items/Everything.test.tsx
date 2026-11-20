@@ -400,3 +400,33 @@ test("a route search change cancels the abandoned draft and typing still debounc
     vi.useRealTimers();
   }
 });
+
+test("an error answer to Approve says the approvals couldn't be confirmed", async () => {
+  const rows = [item({ id: "a", state: "needs_approval", title: "First" })];
+  serve([{ items: rows, nextCursor: null }, { items: rows, nextCursor: null }]);
+  vi.spyOn(api, "POST").mockImplementation((() => reply(500, { error: "failed" })) as never);
+  show();
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Select First" }));
+  await userEvent.click(screen.getByRole("button", { name: "Approve 1" }));
+  await userEvent.click(within(openDialog("Approve 1?")!).getByRole("button", { name: "Approve 1" }));
+  expect((await screen.findByRole("alert")).textContent).toBe("Couldn't confirm the approvals. Check the refreshed list before trying again.");
+  expect(screen.queryByText(/^Approved/)).toBeNull();
+});
+
+test("a confirm can't be closed while its request runs, so a newer selection isn't cleared by it", async () => {
+  const rows = [item({ id: "a", state: "draft", title: "Draft one" })];
+  serve([{ items: rows, nextCursor: null }, { items: rows, nextCursor: null }]);
+  let finish = () => {};
+  vi.spyOn(api, "POST").mockImplementation((() => new Promise((done) => (finish = () => done({ data: { item: item({ id: "a", state: "cancelled" }) }, response: new Response(null, { status: 200 }) })))) as never);
+  show();
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Select Draft one" }));
+  await userEvent.click(screen.getByRole("button", { name: "Withdraw 1" }));
+  const dialog = within(openDialog("Withdraw 1?")!);
+  await userEvent.click(dialog.getByRole("button", { name: "Withdraw 1" }));
+  expect((dialog.getByRole("button", { name: "Keep them" }) as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.keyboard("{Escape}");
+  expect(openDialog("Withdraw 1?")).not.toBeNull();
+  finish();
+  expect(await screen.findByText("Withdrew 1.")).toBeTruthy();
+  await waitFor(() => expect(openDialog("Withdraw 1?")).toBeNull());
+});

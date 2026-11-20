@@ -84,6 +84,7 @@ export function Everything(p: {
   const firstShown = items.slice(0, BULK).map((i) => i.id);
   const allShown = firstShown.length > 0 && firstShown.every((id) => chosen.includes(id));
   const tick = (id: string, on: boolean) => setChosen(on ? (chosen.length < BULK ? [...chosen, id] : chosen) : chosen.filter((c) => c !== id));
+  // While a confirm's request runs, its dialog can't be closed, so the cleanup after it can't clear a newer selection.
   const [confirming, setConfirming] = useState<"approve" | "withdraw">();
   const [pending, setPending] = useState(false);
   const [refused, setRefused] = useState<string>();
@@ -94,6 +95,8 @@ export function Everything(p: {
       if (confirming === "approve") {
         try {
           const r = await approveClean(p.workspaceId, approvable);
+          // An error answer comes back as no results at all, rather than as a throw.
+          if (r.ids.length === 0 && r.refused.length === 0) throw new Error("no results");
           approvedToast(p.workspaceId, r.ids, editor, refresh);
           setRefused(r.refused.length > 0 ? `${r.refused.length} didn't go through: ${message(r.refused[0]!.reason)}` : undefined);
         } catch {
@@ -143,17 +146,17 @@ export function Everything(p: {
           </Button>
         )}
       </fieldset>
-      <Dialog isOpen={confirming === "approve"} onOpenChange={(open) => !open && setConfirming(undefined)} purpose="form" width={448}>
+      <Dialog isOpen={confirming === "approve"} onOpenChange={(open) => !open && !pending && setConfirming(undefined)} purpose="form" width={448}>
         <DialogHeader title={`Approve ${approvable.length}?`} />
         <ApproveList items={approvable} />
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={() => setConfirming(undefined)}>
+          <Button variant="outline" disabled={pending} onClick={() => setConfirming(undefined)}>
             Cancel
           </Button>
           <Button pending={pending} onClick={() => void act()}>{`Approve ${approvable.length}`}</Button>
         </div>
       </Dialog>
-      <Dialog isOpen={confirming === "withdraw"} onOpenChange={(open) => !open && setConfirming(undefined)} purpose="form" width={448}>
+      <Dialog isOpen={confirming === "withdraw"} onOpenChange={(open) => !open && !pending && setConfirming(undefined)} purpose="form" width={448}>
         <DialogHeader title={`Withdraw ${withdrawable.length}?`} />
         <p className="pt-2 text-sm">They won't go out, and they show as Cancelled.</p>
         <ul aria-label="To withdraw" className="flex max-h-80 flex-col gap-1 overflow-y-auto pt-2 text-sm">
@@ -164,7 +167,7 @@ export function Everything(p: {
           ))}
         </ul>
         <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={() => setConfirming(undefined)}>
+          <Button variant="outline" disabled={pending} onClick={() => setConfirming(undefined)}>
             Keep them
           </Button>
           <Button pending={pending} onClick={() => void act()}>{`Withdraw ${withdrawable.length}`}</Button>

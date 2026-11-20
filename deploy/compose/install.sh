@@ -7,6 +7,10 @@
 #   sh install.sh --version v0.1.0                          private: Direx on 127.0.0.1:3000
 #   sh install.sh --version v0.1.0 --public direx.example.com   Caddy with HTTPS on that domain
 #   sh install.sh --mail                                    set up mail again, then restart Direx
+#   sh install.sh --tracking track.example.com              tracked links on customers' domains
+#
+# --tracking names the host customers point their tracking domains at by CNAME; its DNS must reach
+# this server. It can be added to an installed server, with or without --public.
 #
 # It asks for the public address, the From address of mail, the service that sends it and its
 # sign-in. Mail is stored only after it logs in and a test email goes out. In CI (CI=true) it reads
@@ -27,11 +31,13 @@ fail() {
 VERSION=""
 DOMAIN=""
 MAIL_AGAIN=""
+TRACKING=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --version) VERSION="${2:-}"; shift 2 ;;
     --public) DOMAIN="${2:-}"; shift 2 ;;
     --mail) MAIL_AGAIN=1; shift ;;
+    --tracking) TRACKING="${2:-}"; shift 2 ;;
     *) fail "unknown option $1" "run: sh install.sh --version <release tag>" ;;
   esac
 done
@@ -181,6 +187,11 @@ mail_step() {
   fail "mail still isn't working after 3 tries, and nothing was stored" "check the service's SMTP settings, then run: sh install.sh --mail"
 }
 
+# Sets KEY=value, adding the line to an .env written before the key existed.
+putkey() { # putkey <key> <value>
+  if grep -q "^$1=" .env; then setkey "$1" "$2"; else printf '%s=%s\n' "$1" "$2" >>.env; fi
+}
+
 say "checking Docker and Compose"
 command -v docker >/dev/null 2>&1 || fail "Docker is not installed" "install Docker Engine: https://docs.docker.com/engine/install/"
 $DC version >/dev/null 2>&1 || fail "Docker Compose is not installed" "install the Compose plugin: https://docs.docker.com/compose/install/linux/"
@@ -220,6 +231,23 @@ elif [ -n "$DOMAIN" ] && [ "$DOMAIN" != "$(envget DIREX_DOMAIN)" ]; then
   fail ".env was written without this domain" "to change how Direx is reached, edit DIREX_DOMAIN, COMPOSE_PROFILES and DIREX_BASE_URL in .env yourself"
 fi
 
+# Tracked links (ADR 0035): the CNAME target, the Compose profile and the Caddy sites.
+if [ -n "$TRACKING" ]; then
+  current=$(envget DIREX_TRACKING_TARGET)
+  if [ -n "$current" ] && [ "$current" != "$TRACKING" ]; then
+    fail ".env already names tracking target $current" "to change it, edit DIREX_TRACKING_TARGET in .env yourself; customers' CNAMEs point at the old one"
+  fi
+  case "$TRACKING" in *[!a-z0-9.-]* | "" | .* | *.) fail "--tracking needs a hostname such as track.example.com" "run install.sh again with a lowercase hostname" ;; esac
+  putkey DIREX_TRACKING_TARGET "$TRACKING"
+  profiles=$(envget COMPOSE_PROFILES)
+  case ",$profiles," in *,tracking,*) ;; *) putkey COMPOSE_PROFILES "${profiles:+$profiles,}tracking" ;; esac
+fi
+if [ -n "$(envget DIREX_DOMAIN)" ] && [ -n "$(envget DIREX_TRACKING_TARGET)" ]; then
+  putkey DIREX_CADDY_SITES '*.caddy'
+elif [ -n "$(envget DIREX_TRACKING_TARGET)" ]; then
+  putkey DIREX_CADDY_SITES tracking.caddy
+fi
+
 image="ghcr.io/trydirex/direx:$(envget DIREX_VERSION)"
 if docker image inspect "$image" >/dev/null 2>&1; then
   say "using the image already on this server"
@@ -255,9 +283,9 @@ fi
 
 say "starting Direx"
 $DC up -d --wait direx || fail "Direx didn't start" "see: $DC logs direx"
-if [ -n "$(envget DIREX_DOMAIN)" ]; then
-  say "starting Caddy for $(envget DIREX_DOMAIN)"
-  $DC up -d caddy || fail "Caddy didn't start" "check that ports 80 and 443 are free and the domain points here, then see: $DC logs caddy"
+if [ -n "$(envget DIREX_DOMAIN)" ] || [ -n "$(envget DIREX_TRACKING_TARGET)" ]; then
+  say "starting Caddy"
+  $DC up -d --force-recreate caddy || fail "Caddy didn't start" "check that ports 80 and 443 are free and the domain points here, then see: $DC logs caddy"
 fi
 
 # Until someone opens the link below, doctor reports that there is no Server admin. That one

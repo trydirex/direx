@@ -3,7 +3,7 @@
 // every call. This records the moment: one audit row per live token, and one email to the Owners and
 // Admins left, naming them. identity calls it after a role change or removal commits, through a
 // function handed in where it is built, since identity can't import this module.
-import { can, type Mailer, type Role } from "../../identity/index";
+import { can, named, workspaceName, type Mailer, type Role } from "../../identity/index";
 import * as repo from "../adapters/repo";
 
 export type Stopped = (workspaceId: string, userId: string, from: Role, to: Role | null) => Promise<void>;
@@ -27,7 +27,7 @@ export function createStops(d: { mailer: Mailer; adminEmails: (workspaceId: stri
     if (!holds(from) || holds(to)) return;
     const live = await repo.inWorkspace(workspaceId, (tx) => repo.recordStops(tx, workspaceId, userId, now()));
     if (!live.length) return;
-    const mail = notice(live.map((t) => t.name));
+    const mail = named(await workspaceName(workspaceId))(notice(live.map((t) => t.name)));
     for (const address of await d.adminEmails(workspaceId)) await d.mailer({ to: address, ...mail });
   };
 }

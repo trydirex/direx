@@ -438,6 +438,11 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "GET /api/w/:workspaceId/review-feed": { path: `/api/w/${w2}/review-feed` },
   "PUT /api/w/:workspaceId/review-feed": { path: `/api/w/${w2}/review-feed`, body: { weekdays: [2], startMinute: 600, lengthMinutes: 30, timeZone: "UTC" } },
   "DELETE /api/w/:workspaceId/review-feed": { path: `/api/w/${w2}/review-feed` },
+  "GET /api/w/:workspaceId/tracking/domains": { path: `/api/w/${w2}/tracking/domains` },
+  "POST /api/w/:workspaceId/tracking/domains": { path: `/api/w/${w2}/tracking/domains`, body: { hostname: "links.example.com" } },
+  "POST /api/w/:workspaceId/tracking/domains/:id/check": { path: `/api/w/${w2}/tracking/domains/${crypto.randomUUID()}/check` },
+  "POST /api/w/:workspaceId/tracking/domains/:id/stop": { path: `/api/w/${w2}/tracking/domains/${crypto.randomUUID()}/stop` },
+  "DELETE /api/w/:workspaceId/tracking/domains/:id": { path: `/api/w/${w2}/tracking/domains/${crypto.randomUUID()}` },
   "GET /api/w/:workspaceId/mailbox-days": { path: `/api/w/${w2}/mailbox-days?from=2026-11-02T00:00:00.000Z&to=2026-11-09T00:00:00.000Z` },
   // A Workspace's export sits outside /api/w/ so its Owner reaches it after deleting it (ADR 0030 rule 008).
   "GET /api/exports/:workspaceId": { path: `/api/exports/${w2}` },
@@ -492,6 +497,8 @@ test("a member of W1 gets 404 on every W2 route; W2's Owner does not", async () 
     if (key === "POST /api/w/:workspaceId/plugin-webhooks" || key.includes("/plugin-webhooks/:hookId")) continue;
     // An export W2 never made is its own 404; starting one needs the worker's queue, which this test doesn't start.
     if (key.startsWith("POST /api/exports/") || key === "GET /api/exports/:workspaceId/:id") continue;
+    // A tracking domain W2 never added is its own 404 (ADR 0035).
+    if (key.includes("/tracking/domains/:id")) continue;
     const reply = await send(key, b);
     expect([401, 404], key).not.toContain(reply.status);
     if (key === "DELETE /api/w/:workspaceId/external-tokens/:tokenId") {

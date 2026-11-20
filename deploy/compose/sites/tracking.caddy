@@ -1,0 +1,18 @@
+# The tracking edge (ADR 0035): any customer hostname Direx has checked, with a certificate Caddy gets
+# on the first visit, after asking Direx whether the host may have one. It serves only tracked links;
+# every other path, the app and the API included, is a 404 here (rule 006). No access log is written
+# (rule 009).
+https:// {
+	tls {
+		on_demand
+	}
+	log {
+		output discard
+	}
+	handle /t/* {
+		reverse_proxy direx:3000
+	}
+	handle {
+		respond 404
+	}
+}

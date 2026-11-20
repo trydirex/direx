@@ -118,8 +118,8 @@ test("the list has 21 networks, without Skool, Reddit closed, and nothing marked
   expect(networks.map((n) => n.connection)).not.toContain("skool");
   expect(networks.find((n) => n.connection === "reddit")?.availability).toEqual({ cloud: "not_available", self_host: "not_available" });
   for (const n of networks) expect([n.availability.cloud, n.availability.self_host]).not.toContain("available");
-  // LinkedIn Pages need a registered legal organisation first.
-  expect(networks.find((n) => n.connection === "linkedin_page")?.availability.cloud).toBe("not_built");
+  // LinkedIn Pages need a registered organisation, so they wait on LinkedIn's review like the rest.
+  expect(networks.find((n) => n.connection === "linkedin_page")?.availability.cloud).toBe("awaiting_approval");
 });
 
 test("a built network says how to set it up, except Bluesky, which needs no app", () => {

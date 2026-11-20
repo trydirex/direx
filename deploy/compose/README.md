@@ -19,6 +19,9 @@ docker compose logs -f direx
 docker compose exec direx bun run doctor
 ```
 
+To change the service that sends sign-in mail, run `sh install.sh --mail`. It logs in and sends a
+test email before it stores anything, then restarts Direx.
+
 Keys and other secrets go into the vault, typed by a person, with the value on stdin:
 
 ```

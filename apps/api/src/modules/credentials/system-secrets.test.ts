@@ -31,9 +31,16 @@ async function asWorkspace(ws: string, text: string, params: unknown[] = []) {
   }
 }
 
-const run = async (args: string[], stdin = "") => {
+type Checked = { url: string; from: string; testTo?: string };
+/** The mail check, offline: records each call and logs in when `ok`. */
+const fakeCheck = (ok = true, calls: Checked[] = []) => async (url: string, from: string, testTo?: string) => {
+  calls.push({ url, from, testTo });
+  return ok ? { ok: true as const } : { ok: false as const, line: "mail.example.com refused the login for user" };
+};
+
+const run = async (args: string[], stdin = "", deps: Parameters<typeof runSecretsCommand>[4] = { checkSmtp: fakeCheck(), env: {} }) => {
   const lines: string[] = [];
-  const code = await runSecretsCommand(args, async () => stdin, vault, (l) => lines.push(l));
+  const code = await runSecretsCommand(args, async () => stdin, vault, (l) => lines.push(l), deps);
   return { code, text: lines.join("\n") };
 };
 
@@ -45,6 +52,80 @@ test("the command stores a value from stdin and never prints it", async () => {
   expect(list.text).toMatch(/smtp\.url: set, last changed/);
   expect(list.text).toContain("provider.openai: not set");
   expect(list.text).not.toContain("do-not-print");
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(VALUE);
+});
+
+test("smtp.url is stored only when the mail check passes; other names skip it", async () => {
+  const calls: Checked[] = [];
+  const refused = await run(["set", "smtp.url"], "smtp://user:do-not-print@other.example.com\n", { checkSmtp: fakeCheck(false, calls), env: {} });
+  expect(refused).toEqual({ code: 1, text: "mail.example.com refused the login for user" });
+  expect(calls).toEqual([{ url: "smtp://user:do-not-print@other.example.com", from: "", testTo: undefined }]);
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(VALUE);
+  expect((await run(["set", "social_app.checktest"], "id:sk-m", { checkSmtp: fakeCheck(false, calls), env: {} })).code).toBe(0);
+  expect(await readSystemSecret(vault, "social_app.checktest", "startup")).toBe("id:sk-m");
+  expect(calls).toHaveLength(1);
+  expect((await run(["set", "social_app.checktest", "--parts"], "x")).code).toBe(2);
+});
+
+test("--parts encodes the user name and password into the URL it checks and stores", async () => {
+  const pass = "a b@c/d%e:f";
+  const calls: Checked[] = [];
+  const set = await run(["set", "smtp.url", "--parts"], `smtp.example.com\n587\nme@example.com\n${pass}\ntls\n`, { checkSmtp: fakeCheck(true, calls), env: {} });
+  expect(set.code).toBe(0);
+  expect(set.text).not.toContain(pass);
+  const stored = (await readSystemSecret(vault, "smtp.url", "startup"))!;
+  expect(calls[0]!.url).toBe(stored);
+  const url = new URL(stored);
+  expect([url.protocol, url.hostname, url.port, url.search]).toEqual(["smtp:", "smtp.example.com", "587", "?requireTLS=true"]);
+  expect(decodeURIComponent(url.username)).toBe("me@example.com");
+  expect(decodeURIComponent(url.password)).toBe(pass);
+  await run(["set", "smtp.url", "--parts"], `smtp.resend.com\n465\nresend\nre_key\nany\n`, { checkSmtp: fakeCheck(true, calls), env: {} });
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe("smtps://resend:re_key@smtp.resend.com:465");
+  for (const bad of ["smtp.example.com\n587\nu\np\n", "smtp.example.com\nport\nu\np\nany", "a.com/x\n25\nu\np\nany", "h\n25\nu\np\nany\nextra"]) {
+    const r = await run(["set", "smtp.url", "--parts"], bad);
+    expect(r).toEqual({ code: 2, text: expect.stringMatching(/^--parts reads five lines/) });
+  }
+  await run(["set", "smtp.url"], VALUE);
+});
+
+test("--parts checks and stores IPv6 hosts with exactly one pair of brackets", async () => {
+  const calls: Checked[] = [];
+  const deps = { checkSmtp: fakeCheck(true, calls), env: {} };
+  const args = ["set", "smtp.url", "--parts"];
+  const expected = "smtp://u:p@[::1]:587";
+  for (const host of ["::1", "[::1]"]) {
+    expect((await run(args, `${host}\n587\nu\np\nany`, deps)).code).toBe(0);
+    expect(calls.at(-1)?.url).toBe(expected);
+    expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(expected);
+  }
+  for (const host of ["[::1]/path", "[::1]@evil.example", "[::1]:25", "[::1", "[::g]", "fe80::1%eth0"]) {
+    expect((await run(args, `${host}\n587\nu\np\nany`, deps)).code).toBe(2);
+  }
+  expect(calls).toHaveLength(2);
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(expected);
+  await run(["set", "smtp.url"], VALUE);
+});
+
+test("--test-to reaches the check with DIREX_MAIL_FROM, and is refused without it", async () => {
+  const calls: Checked[] = [];
+  const env = { DIREX_MAIL_FROM: "Direx <signin@example.com>" };
+  expect((await run(["set", "smtp.url", "--test-to", "me@example.com"], VALUE, { checkSmtp: fakeCheck(true, calls), env })).code).toBe(0);
+  expect(calls).toEqual([{ url: VALUE, from: env.DIREX_MAIL_FROM, testTo: "me@example.com" }]);
+  const noFrom = await run(["set", "smtp.url", "--test-to", "me@example.com"], VALUE, { checkSmtp: fakeCheck(true, calls), env: {} });
+  expect(noFrom.code).toBe(2);
+  expect(noFrom.text).toMatch(/DIREX_MAIL_FROM, which isn't set/);
+  expect(calls).toHaveLength(1);
+  expect((await run(["set", "smtp.url", "--test-to"], VALUE)).code).toBe(2);
+});
+
+test("--check-only checks and sends the test email but stores nothing", async () => {
+  const calls: Checked[] = [];
+  const env = { DIREX_MAIL_FROM: "Direx <signin@example.com>" };
+  const checked = await run(["set", "smtp.url", "--test-to", "me@example.com", "--check-only"], "smtp://user:do-not-print@new.example.com", { checkSmtp: fakeCheck(true, calls), env });
+  expect(checked).toEqual({ code: 0, text: "smtp.url works; nothing was stored." });
+  expect(calls).toEqual([{ url: "smtp://user:do-not-print@new.example.com", from: env.DIREX_MAIL_FROM, testTo: "me@example.com" }]);
+  expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(VALUE);
+  expect((await run(["set", "smtp.url", "--check-only"], "smtp://x@new.example.com", { checkSmtp: fakeCheck(false), env })).code).toBe(1);
   expect(await readSystemSecret(vault, "smtp.url", "startup")).toBe(VALUE);
 });
 

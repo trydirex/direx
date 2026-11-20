@@ -1,10 +1,18 @@
-# CI only: a mail server on the install's Compose network, so doctor's mail check has a real SMTP
-# login to make. Added with COMPOSE_FILE=compose.yml:ci.compose.yml (.github/workflows/install.yml).
+# CI only: a mail server on the install's Compose network, so the installer's mail check and doctor's
+# have a real SMTP login to make, and a test email somewhere to go. Added with
+# COMPOSE_FILE=compose.yml:ci.compose.yml (.github/workflows/install.yml).
 services:
   greenmail:
     image: greenmail/standalone:2.1.14
     environment:
       GREENMAIL_OPTS: -Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.users=alice:secret@example.com -Dgreenmail.users.login=email
+    # The mail check runs as soon as greenmail's container exists, so wait until SMTP answers.
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/3025"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
   direx:
     depends_on:
-      - greenmail
+      greenmail:
+        condition: service_healthy

@@ -3,16 +3,61 @@
 // stays out of shell history and process lists. Needs the root key and the database.
 //
 //   bun apps/api/src/secrets.ts list
-//   printf %s "$VALUE" | bun apps/api/src/secrets.ts set smtp.url
+//   printf %s "$VALUE" | bun apps/api/src/secrets.ts set smtp.url [--test-to <address>] [--check-only]
+//   printf '%s\n' host port user password tls | bun apps/api/src/secrets.ts set smtp.url --parts
 //   bun apps/api/src/secrets.ts replace-root-key /path/to/new.key
 import { existsSync } from "node:fs";
+import { isIPv6 } from "node:net";
 import { createVault, ensureRootKey, generateKeyFile, replaceRootKey, rootKeyFromEnv, type Vault } from "./modules/credentials/index";
+import { checkSmtp, type SmtpCheck } from "./modules/identity/index";
 import { isSystemSecretName, listSystemSecrets, setSystemSecret, SYSTEM_SECRET_NAMES } from "./modules/credentials/system-secrets";
 
 const USAGE = `usage: secrets list | secrets set <name>, with the value on stdin. Names: ${SYSTEM_SECRET_NAMES.join(", ")}`;
 
-/** Returns the exit code. Nothing it prints ever holds a value. */
-export async function runSecretsCommand(args: string[], stdin: () => Promise<string>, vault: Vault, out: (line: string) => void): Promise<number> {
+const PARTS_USAGE = "--parts reads five lines on stdin: host, port, user name, password, and tls or any. Nothing changed.";
+
+type SmtpFlags = { parts: boolean; testTo?: string; checkOnly?: boolean };
+type Deps = { checkSmtp?: (url: string, from: string, testTo?: string) => Promise<SmtpCheck>; env?: Record<string, string | undefined> };
+
+/**
+ * `--parts`, `--test-to <address>` and `--check-only`, which only smtp.url takes. Null on anything
+ * else. `--check-only` checks and sends but stores nothing, so the installer can store only once a
+ * person has seen the test email arrive.
+ */
+function smtpFlags(rest: string[]): SmtpFlags | null {
+  const flags: SmtpFlags = { parts: false };
+  for (let i = 0; i < rest.length; i++) {
+    if (rest[i] === "--parts") flags.parts = true;
+    else if (rest[i] === "--check-only") flags.checkOnly = true;
+    else if (rest[i] === "--test-to" && rest[i + 1]) flags.testTo = rest[++i];
+    else return null;
+  }
+  return flags;
+}
+
+/** Builds the URL from its parts, so a password holding `@`, `/` or `:` needs no encoding in shell. */
+function urlFromParts(text: string): string | null {
+  const [host = "", port = "", user = "", pass = "", tls, ...extra] = text.split(/\r?\n/);
+  if (!/^\d+$/.test(port) || (tls !== "tls" && tls !== "any") || extra.length > 0) return null;
+  let hostname = host;
+  if (!/^[\w.-]+$/.test(host)) {
+    const address = host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
+    // URL host syntax doesn't accept IPv6 zone identifiers.
+    if (address.includes("%") || !isIPv6(address)) return null;
+    hostname = `[${address}]`;
+  }
+  // Port 465 is TLS from the start; elsewhere `tls` makes nodemailer insist on STARTTLS.
+  return `${port === "465" ? "smtps" : "smtp"}://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${hostname}:${port}${tls === "tls" ? "?requireTLS=true" : ""}`;
+}
+
+/** Returns the exit code. Nothing it prints ever holds a value. smtp.url is stored only after it logs in. */
+export async function runSecretsCommand(
+  args: string[],
+  stdin: () => Promise<string>,
+  vault: Vault,
+  out: (line: string) => void,
+  { checkSmtp: check = checkSmtp, env = process.env }: Deps = {},
+): Promise<number> {
   const [command, name, ...rest] = args;
   if (command === "list" && !name) {
     const rows = await listSystemSecrets(vault);
@@ -22,7 +67,8 @@ export async function runSecretsCommand(args: string[], stdin: () => Promise<str
     }
     return 0;
   }
-  if (command !== "set" || !name || rest.length > 0 || !isSystemSecretName(name)) {
+  const flags = name === "smtp.url" ? smtpFlags(rest) : rest.length > 0 ? null : { parts: false };
+  if (command !== "set" || !name || !flags || !isSystemSecretName(name)) {
     out(USAGE);
     return 2;
   }
@@ -30,10 +76,31 @@ export async function runSecretsCommand(args: string[], stdin: () => Promise<str
     out("suppression.key is made by the first Workspace purge and never changes: a new key would lose every opt-out kept with the old one.");
     return 2;
   }
-  const value = (await stdin()).replace(/\r?\n$/, "");
+  const raw = (await stdin()).replace(/\r?\n$/, "");
+  const value = flags.parts ? urlFromParts(raw) : raw;
+  if (value === null) {
+    out(PARTS_USAGE);
+    return 2;
+  }
   if (!value) {
     out(`no value on stdin; nothing changed. ${USAGE}`);
     return 2;
+  }
+  if (name === "smtp.url") {
+    if (flags.testTo && !env.DIREX_MAIL_FROM) {
+      out("--test-to sends from DIREX_MAIL_FROM, which isn't set. Set it, then run this again. Nothing changed.");
+      return 2;
+    }
+    // Without --test-to the check only logs in, so the From is never used.
+    const checked = await check(value, env.DIREX_MAIL_FROM ?? "", flags.testTo);
+    if (!checked.ok) {
+      out(checked.line);
+      return 1;
+    }
+  }
+  if (flags.checkOnly) {
+    out(`${name} works; nothing was stored.`);
+    return 0;
   }
   await setSystemSecret(vault, name, value);
   out(`${name} saved. A running server reads auth.secret, smtp.url, media.s3 and the signin secrets only when it starts.`);

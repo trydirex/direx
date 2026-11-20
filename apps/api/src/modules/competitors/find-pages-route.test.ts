@@ -2,7 +2,7 @@
 // Find pages over HTTP with real sessions and roles, and pages and sitemaps answered from maps.
 import type { OpenAPIHono } from "@hono/zod-openapi";
 import { expect, test } from "vitest";
-import type { FetchHtml, FetchSitemap } from "../agents/index";
+import { createFetchHtml, type FetchHtml, type FetchSitemap } from "../agents/index";
 import { TEST_SECRET, testIdentity } from "../identity/test-auth";
 import { createFindPages } from "./application/find-pages";
 import { competitorRoutes, createCompetitors, createSnapshots, type ReadPage } from "./index";
@@ -13,11 +13,14 @@ const html = (url: string, body: string): Html => ({ ok: true, url, status: 200,
 const pages = new Map<string, Html>();
 const sitemaps = new Map<string, string[] | { index: string[] }>();
 const fetched: string[] = [];
-let gate: Promise<void> | null = null;
+let gate: { entered: () => void; released: Promise<void> } | null = null;
 
 const fetchHtml: FetchHtml = async (_base, url) => {
   fetched.push(url);
-  if (gate) await gate;
+  if (gate) {
+    gate.entered();
+    await gate.released;
+  }
   return pages.get(url) ?? { ok: false, url, reason: "http_error", status: 404 };
 };
 const fetchSitemap: FetchSitemap = async (_base, url) => {
@@ -62,9 +65,13 @@ test("the homepage and sitemap give the pricing and changelog pages, each with w
   expect(fetched).not.toContain("https://doublehq.canny.io/changelog");
 });
 
-test("with no changelog found, the roadmap page the homepage links is read once, under its own robots.txt", async () => {
-  pages.set("https://www.xenett.com/robots.txt", html("https://www.xenett.com/robots.txt", "User-agent: *\nAllow: /"));
+function linkToRoadmap(robots = "User-agent: *\nAllow: /") {
+  pages.set("https://www.xenett.com/robots.txt", html("https://www.xenett.com/robots.txt", robots));
   pages.set("https://www.xenett.com", html("https://www.xenett.com/", `<a href="/pricing">Pricing</a><a href="https://roadmap.xenett.com/roadmap">Roadmap</a>`));
+}
+
+test("with no changelog found, the roadmap page the homepage links is read once, under its own robots.txt", async () => {
+  linkToRoadmap();
   pages.set("https://roadmap.xenett.com/robots.txt", html("https://roadmap.xenett.com/robots.txt", "User-agent: *\nDisallow: /graphql"));
   pages.set("https://roadmap.xenett.com/roadmap", html("https://roadmap.xenett.com/roadmap", `<a href="/announcements">Announcements</a>`));
   fetched.length = 0;
@@ -76,6 +83,7 @@ test("with no changelog found, the roadmap page the homepage links is read once,
 });
 
 test("a roadmap page its robots.txt keeps us out of is not read", async () => {
+  linkToRoadmap();
   pages.set("https://roadmap.xenett.com/robots.txt", html("https://roadmap.xenett.com/robots.txt", "User-agent: *\nDisallow: /"));
   fetched.length = 0;
   const r = await find("https://www.xenett.com");
@@ -92,13 +100,18 @@ test("a homepage that can't be read says why, and nothing is proposed", async ()
 });
 
 test("one Find pages at a time per Workspace", async () => {
-  let release!: () => void;
-  gate = new Promise((r) => (release = r));
+  const entered = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  gate = { entered: entered.resolve, released: released.promise };
   const first = find("https://doublehq.com");
-  const second = await find("https://doublehq.com");
-  expect(second).toEqual({ status: 409, body: { error: "busy" } });
-  release();
-  gate = null;
+  try {
+    await entered.promise;
+    const second = await find("https://doublehq.com");
+    expect(second).toEqual({ status: 409, body: { error: "busy" } });
+  } finally {
+    released.resolve();
+    gate = null;
+  }
   expect((await first).status).toBe(200);
 });
 
@@ -114,4 +127,69 @@ test("only people who may change competitors can look, and the address must be a
   // Someone outside the Workspace isn't told it exists.
   const outsider = await signIn();
   expect((await find("https://doublehq.com", outsider)).status).toBe(404);
+});
+
+test("a roadmap cannot propose a changelog URL disallowed on the homepage host", async () => {
+  linkToRoadmap("User-agent: *\nDisallow: /private/");
+  pages.set("https://roadmap.xenett.com/robots.txt", html("https://roadmap.xenett.com/robots.txt", "User-agent: *\nAllow: /"));
+  pages.set("https://roadmap.xenett.com/roadmap", html("https://roadmap.xenett.com/roadmap", `<a href="https://www.xenett.com/private/changelog">Changelog</a>`));
+  expect((await find("https://www.xenett.com")).body).toMatchObject({ ok: true, changelog: null });
+});
+
+test("an allowed roadmap consults the destination robots.txt before following a redirect", async () => {
+  const home = "https://www.xenett.com/";
+  const roadmap = "https://roadmap.xenett.com/roadmap";
+  const destination = "https://updates.xenett.com/roadmap";
+  const requests: string[] = [];
+  let rules = "User-agent: *\nDisallow: /";
+  const reader = createFetchHtml({
+    resolve: async () => [{ address: "93.184.216.34" }],
+    request: async (url) => {
+      requests.push(url.href);
+      if (url.href === roadmap) return new Response(null, { status: 302, headers: { location: destination } });
+      if (url.href === home) return new Response(`<a href="${roadmap}">Roadmap</a>`, { headers: { "content-type": "text/html" } });
+      if (url.href === destination) return new Response('<a href="/announcements">Announcements</a>', { headers: { "content-type": "text/html" } });
+      if (url.origin === new URL(destination).origin) return new Response(rules, { headers: { "content-type": "text/plain" } });
+      return new Response(null, { status: 404 });
+    },
+  });
+  const discover = createFindPages({ fetchHtml: reader, fetchSitemap });
+  expect(await discover(W, home)).toMatchObject({ ok: true, changelog: null });
+  expect(requests.slice(-2)).toEqual([roadmap, "https://updates.xenett.com/robots.txt"]);
+  expect(requests).not.toContain(destination);
+  requests.length = 0;
+  rules = "User-agent: *\nAllow: /";
+  expect(await discover(W, home)).toMatchObject({ ok: true, changelog: { url: "https://updates.xenett.com/announcements", via: "roadmap" } });
+  expect(requests.slice(-3)).toEqual([roadmap, "https://updates.xenett.com/robots.txt", destination]);
+});
+
+test("a timed out DNS lookup releases the workspace without making a late request", async () => {
+  const home = "https://doublehq.com/";
+  const lookup = Promise.withResolvers<{ address: string }[]>();
+  const requests: string[] = [];
+  const reader = createFetchHtml({
+    resolve: (host) => host === "doublehq.com" ? lookup.promise : Promise.resolve([{ address: "93.184.216.34" }]),
+    request: async (url) => {
+      requests.push(url.href);
+      return new Response("ok", { headers: { "content-type": "text/html" } });
+    },
+  });
+  const discover = createFindPages({ fetchHtml: reader, fetchSitemap, timeoutMs: 50 });
+  expect(await discover(W, home)).toEqual({ ok: false, reason: "unreadable", detail: "timed_out" });
+  lookup.resolve([{ address: "93.184.216.34" }]);
+  expect(await discover(W, "https://retry.example/")).toMatchObject({ ok: true });
+  expect(requests).toEqual(["https://retry.example/robots.txt", "https://retry.example/"]);
+});
+
+test("an overall deadline reported as a sitemap failure stops optional discovery", async () => {
+  const home = "https://doublehq.com";
+  const maps: string[] = [];
+  const discover = createFindPages({ fetchHtml, timeoutMs: 100, fetchSitemap: async (_base, url, signal) => {
+    maps.push(url);
+    if (maps.length === 1) return { ok: true, url, index: true, locs: [home + "/first.xml", home + "/unused.xml"] };
+    await new Promise<void>((resolve) => signal!.addEventListener("abort", () => resolve(), { once: true }));
+    return { ok: false, url, reason: "timed_out" };
+  } });
+  expect(await discover(W, home)).toEqual({ ok: false, reason: "unreadable", detail: "timed_out" });
+  expect(maps).toEqual([home + "/sitemap_index.xml", home + "/first.xml"]);
 });

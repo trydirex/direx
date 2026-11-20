@@ -23,25 +23,39 @@ export const sameSite = (base: URL, target: URL) => onDomain(site(target.hostnam
 export const hosted = (u: URL) => HOSTED_CHANGELOGS.some((d) => onDomain(u.hostname.toLowerCase(), d));
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", "#39": "'", nbsp: " " };
-const textOf = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/&(amp|lt|gt|quot|apos|#39|nbsp);/g, (_, e: string) => ENTITIES[e]!).replace(/\s+/g, " ").trim();
+const textOf = (text: string) => text.replace(/&(amp|lt|gt|quot|apos|#39|nbsp);/g, (_, e: string) => ENTITIES[e]!).replace(/\s+/g, " ").trim();
 
 /** Every http(s) link on a page with its text, without query or fragment, each address once. */
 export function linksIn(html: string, pageUrl: string): Link[] {
   const out = new Map<string, Link>();
-  for (const [, href, inner] of html.matchAll(/<a\b[^>]*?\bhref\s*=\s*["']?([^"'\s>]+)["']?[^>]*>([\s\S]*?)<\/a\s*>/gi)) {
-    let u: URL;
-    try {
-      u = new URL(href!.replace(/&amp;/g, "&"), pageUrl);
-    } catch {
-      continue;
-    }
-    if ((u.protocol !== "http:" && u.protocol !== "https:") || u.username || u.password) continue;
-    u.search = "";
-    u.hash = "";
-    const text = textOf(inner!);
-    const seen = out.get(u.href);
-    if (!seen || (!seen.text && text)) out.set(u.href, { url: u.href, text });
-  }
+  let chunks: string[] = [];
+  // Tokenize once. Looking ahead for a closing tag from each opening tag rescans malformed pages.
+  new HTMLRewriter().on("a", {
+    element(anchor) {
+      chunks = [];
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+      let u: URL;
+      try {
+        u = new URL(href.replace(/&amp;/g, "&"), pageUrl);
+      } catch {
+        return;
+      }
+      if ((u.protocol !== "http:" && u.protocol !== "https:") || u.username || u.password) return;
+      u.search = "";
+      u.hash = "";
+      const label = chunks;
+      anchor.onEndTag(() => {
+        const text = textOf(label.join(""));
+        const seen = out.get(u.href);
+        if (!seen || (!seen.text && text)) out.set(u.href, { url: u.href, text });
+      });
+    },
+    text(chunk) {
+      chunks.push(chunk.text);
+      if (chunk.lastInTextNode) chunks.push(" ");
+    },
+  }).transform(html);
   return [...out.values()];
 }
 
@@ -80,7 +94,7 @@ function isChangelog(c: Candidate) {
   const u = new URL(c.url);
   const seg = last(u);
   if (seg === "roadmap" || path(u).length > 2) return false;
-  if (hosted(u)) return /changelog|announcement|update/i.test(u.pathname);
+  if (hosted(u)) return /changelog|announcement|update/i.test(u.pathname) || CHANGELOG_TEXT.test(c.text);
   return CHANGELOG.test(seg) || CHANGELOG_TEXT.test(c.text);
 }
 

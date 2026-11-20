@@ -87,3 +87,14 @@ test("robots.txt names its sitemaps", () => {
   expect(sitemapsIn("User-agent: *\nDisallow: /a\nSitemap: https://acme.com/s1.xml\n  sitemap:https://acme.com/s2.xml")).toEqual(["https://acme.com/s1.xml", "https://acme.com/s2.xml"]);
   expect(sitemapsIn("User-agent: *")).toEqual([]);
 });
+
+test("an explicit changelog label identifies a hosted newspage root", () => {
+  expect(changelogOf([cand("https://acme.noticeable.news/", "Changelog")])?.url).toBe("https://acme.noticeable.news/");
+  expect(changelogOf([cand("https://acme.noticeable.news/")])).toBeNull();
+  expect(changelogOf([cand("https://acme.noticeable.news/roadmap", "Changelog")])).toBeNull();
+});
+
+test("unclosed anchors do not swallow a later labelled link", () => {
+  const html = '<a href="/ignored">'.repeat(20_000) + '<a href="/changelog"><span>Change</span> log</a>';
+  expect(linksIn(html, "https://acme.com/")).toEqual([{ url: "https://acme.com/changelog", text: "Change log" }]);
+});

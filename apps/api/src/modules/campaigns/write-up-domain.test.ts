@@ -1,0 +1,66 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// The write-up's pure checks: when one is due, and what a model's write-up may not say.
+import { expect, test } from "vitest";
+import { claimsWinner, creditPhrase, dueForWriteUp, numbersOutsideBrief, settled, wentOut, writeUpProblem, type Brief, type WriteUpOutput } from "./domain/write-up";
+
+test("settled: every state but held and the open ones is final", () => {
+  for (const s of ["sent", "blocked", "cancelled", "applied"]) expect(settled([s]), s).toBe(true);
+  for (const s of ["held", "draft", "needs_approval", "scheduled", "claimed", "dispatching"]) expect(settled(["sent", s]), s).toBe(false);
+  expect(settled([])).toBe(true);
+});
+
+test("wentOut: a sent email or post, or a DM a person marked sent", () => {
+  expect(wentOut(["cancelled", "blocked"], 0)).toBe(false);
+  expect(wentOut(["cancelled", "sent"], 0)).toBe(true);
+  expect(wentOut(["cancelled"], 1)).toBe(true);
+});
+
+test("dueForWriteUp: ended, something went out, and settled or 14 days past the end", () => {
+  const ended = { status: "ended" as const, endsOn: "2026-11-01", states: ["sent", "blocked"], sentDms: 0 };
+  expect(dueForWriteUp(ended, "2026-11-02")).toBe(true);
+  expect(dueForWriteUp({ ...ended, status: "running" }, "2026-11-02")).toBe(false);
+  expect(dueForWriteUp({ ...ended, states: ["cancelled"] }, "2026-11-30")).toBe(false);
+  const held = { ...ended, states: ["sent", "held"] };
+  expect(dueForWriteUp(held, "2026-11-14")).toBe(false);
+  expect(dueForWriteUp(held, "2026-11-15")).toBe(true);
+});
+
+test("numbersOutsideBrief: numbers the brief holds pass, in any of its forms; invented ones are caught", () => {
+  const brief = "reading r1: Reply rate 12%, counted by Direx, 2026-11-20\nreading r2: Revenue £1,200, entered by a person\n40 reached, 3 with the outcome";
+  expect(numbersOutsideBrief("Replies came in at 12% by 2026-11-20, with £1200 entered and 3 of 40 interested.", brief)).toEqual([]);
+  expect(numbersOutsideBrief("Revenue reached £1,250 and 12% replied.", brief)).toEqual(["1250"]);
+  expect(numbersOutsideBrief("No numbers here.", brief)).toEqual([]);
+});
+
+test("creditPhrase and claimsWinner catch credit and a winner without a comparison", () => {
+  expect(creditPhrase("Meetings came thanks to the DM step.")).toBe("thanks to");
+  expect(creditPhrase("People reached by email and LinkedIn DM: 3 interested.")).toBeNull();
+  expect(claimsWinner("LinkedIn DM worked better than email.", false)).toBe(true);
+  expect(claimsWinner("LinkedIn DM worked better than email.", true)).toBe(false);
+  expect(claimsWinner("Both channels reached 40 People.", false)).toBe(false);
+});
+
+const brief: Brief = {
+  text: "reading r1: Replies 12, counted by Direx, 2026-11-20\nemail: 40 reached, 3 with the outcome, too few to compare",
+  readingIds: new Set(["r1"]),
+  comparable: false,
+  assumptions: ["Founders answer cold email within a week"],
+};
+const ok: WriteUpOutput = {
+  schemaVersion: 1,
+  paragraph: "The Campaign sent its email steps and got 12 replies by 2026-11-20. Of 40 People reached by email, 3 were interested, too few to compare.",
+  cites: ["r1"],
+  suggestions: [{ assumption: "A second email step gets more replies than one", because: "12 replies came after the second step.", readingIds: ["r1"] }],
+};
+
+test("writeUpProblem passes a write-up that keeps to its brief and names the first problem otherwise", () => {
+  expect(writeUpProblem(ok, brief)).toBeNull();
+  expect(writeUpProblem({ ...ok, paragraph: `${ok.paragraph} About 15 meetings followed.` }, brief)).toBe("number_not_in_brief:15");
+  expect(writeUpProblem({ ...ok, paragraph: "Replies came because of the subject line." }, brief)).toBe("credit:because of");
+  expect(writeUpProblem({ ...ok, paragraph: "Email was the best channel." }, brief)).toBe("winner_without_comparison");
+  expect(writeUpProblem({ ...ok, cites: ["r9"] }, brief)).toBe("unknown_reading:r9");
+  expect(writeUpProblem({ ...ok, suggestions: [{ ...ok.suggestions[0]!, readingIds: [] }] }, brief)).toBe("suggestion_without_reading");
+  expect(writeUpProblem({ ...ok, suggestions: [{ ...ok.suggestions[0]!, assumption: " founders answer cold email  within a week " }] }, brief)).toBe("repeats_assumption");
+  expect(writeUpProblem({ ...ok, suggestions: [ok.suggestions[0]!, ok.suggestions[0]!, ok.suggestions[0]!, ok.suggestions[0]!] }, brief)).toBe("too_many_suggestions:4");
+  expect(writeUpProblem({ ...ok, paragraph: "word ".repeat(121) }, brief)).toBe("too_long:121");
+});

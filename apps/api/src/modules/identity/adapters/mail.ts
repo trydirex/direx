@@ -74,10 +74,21 @@ export async function checkSmtp(url: string, from: string, testTo?: string): Pro
       p,
       new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error("timed out"), { code: "ETIMEDOUT" })), MAIL_CHECK_MS).unref?.()),
     ]);
-  const transport = createTransport(url);
+  let transport: ReturnType<typeof createTransport> | undefined;
   let step: "login" | "send" = "login";
   try {
-    await within(transport.verify());
+    // Nodemailer gives URL options precedence over defaults. Keep protocol replies off the console.
+    const diagnostics = ["logger", "debug", "transactionLog"].filter((key) => u.searchParams.has(key));
+    for (const key of diagnostics) u.searchParams.delete(key);
+    const probeUrl = diagnostics.length ? u.href : url;
+    if (diagnostics.length) secrets.push(probeUrl);
+    transport = createTransport(probeUrl);
+    if (transport.transporter.name !== "SMTP" && transport.transporter.name !== "SMTP (pool)") {
+      return { ok: false, line: "that URL doesn't select an SMTP transport" };
+    }
+    if ((await within(transport.verify())) !== true) {
+      return { ok: false, line: "SMTP verification did not succeed" };
+    }
     if (testTo) {
       step = "send";
       const base = process.env.DIREX_BASE_URL;
@@ -88,7 +99,7 @@ export async function checkSmtp(url: string, from: string, testTo?: string): Pro
   } catch (e) {
     return { ok: false, line: clean(smtpFailure(e as SmtpError, step, at, decode(u.username))) };
   } finally {
-    transport.close();
+    transport?.close();
   }
 }
 

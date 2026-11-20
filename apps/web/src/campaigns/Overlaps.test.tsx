@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Who it reached: counts per channel mix, a rate only where the API gives one, each outcome Person's
 // Touches, and never a word that ranks a row or gives a channel credit.
+import { useState } from "react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { api } from "../client";
@@ -101,4 +103,23 @@ test("no word ranks a row or gives a channel credit", async () => {
   const text = (await screen.findByRole("region", { name: "Who it reached" })).textContent ?? "";
   expect(s.getAllByRole("table")).toHaveLength(2);
   expect(text).not.toMatch(/\b(best|top|winner|caused|drove)\b|from this Campaign/i);
+});
+
+
+test("returning to Overview refreshes reached counts even while the cached read is fresh", async () => {
+  let data: Data = { kinds: [], hasPosts: false };
+  const get = vi.spyOn(api, "GET").mockImplementation((() =>
+    Promise.resolve({ data, response: new Response(null, { status: 200 }) })) as never);
+  function OverviewVisit() {
+    const [overview, setOverview] = useState(true);
+    return <><button onClick={() => setOverview(!overview)}>Switch tab</button>{overview && <Overlaps workspaceId={W} id={ID} />}</>;
+  }
+  render(withQueries(<OverviewVisit />));
+  expect(await screen.findByText("Nothing to count yet. This fills in once an email goes out or a DM is marked sent.")).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Switch tab" }));
+  // A DM marked sent in Content changes the server's counts while Overview is unmounted.
+  data = full;
+  await userEvent.click(screen.getByRole("button", { name: "Switch tab" }));
+  expect(await screen.findByRole("table", { name: "Interested replies from People this Campaign reached" })).toBeTruthy();
+  expect(get).toHaveBeenCalledTimes(2);
 });

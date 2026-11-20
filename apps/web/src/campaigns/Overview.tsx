@@ -6,13 +6,14 @@ import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ProgressBar } from "@astryxdesign/core/ProgressBar";
+import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } from "@astryxdesign/core/Table";
 import { inWorkspace } from "../api/query";
 import { Button } from "@/components/Button";
 import { Confirm } from "@/components/Confirm";
 import { toast } from "@/components/toast";
 import { Notice } from "../components/layout";
 import { ChannelMark, channelOf } from "../components/ChannelMark";
-import { planQuery, type Tracking } from "../plans/actions";
+import { countedFrom, planQuery, type Tracking } from "../plans/actions";
 import { approveClean, mayApprove, message, needsYouQuery, STATE_LABEL, toApprove, type Item, type ItemState, type Role } from "../items/actions";
 import { ItemDialog } from "../items/ItemPanel";
 import { CampaignChip, StateChip } from "../items/StateChip";
@@ -52,7 +53,10 @@ const useTracking = (workspaceId: string, planId: string) => useQuery(planQuery(
  * Each measure against its target, "142 / 200" in the serif with a bar when both are numbers. Silent when the plan can't be read.
  * The one way measures are drawn: Overview leads with it, and the Plan tab adds each measure's basis and reading form through `after`.
  */
-export function Measures(p: { tracking: Tracking | undefined; after?: (m: Tracking["measures"][number]) => ReactNode }) {
+export function Measures(p: { tracking: Tracking | undefined; emailSent?: boolean | undefined; after?: (m: Tracking["measures"][number]) => ReactNode }) {
+  // Direx counts each morning, so a count can lag a send or a mark by up to a day; the words say so.
+  const waitsOn = (source: Tracking["measures"][number]["source"]) =>
+    source === "meetings" ? "Mark a meeting on a Person. Direx counts marks each morning." : source === "deals" ? "Mark a deal on a Person. Direx counts marks each morning." : p.emailSent === false ? "Waiting for the first email to go out." : p.emailSent ? "Direx counts each morning, so the first count comes with the next one." : "Direx counts each morning.";
   const measures = p.tracking?.measures ?? [];
   if (!measures.length) return null;
   return (
@@ -62,6 +66,21 @@ export function Measures(p: { tracking: Tracking | undefined; after?: (m: Tracki
       </h2>
       <ul className="flex flex-col gap-5">
         {measures.map((m) => {
+          const from = countedFrom(m.source);
+          if (!m.latest && from)
+            // Counted, but nothing to count from yet: a dash, never a zero, and what it waits on.
+            return (
+              <li key={m.key} className="flex flex-col gap-1.5">
+                <span className="font-display text-xl tabular-nums">
+                  <Missing label="No count yet" /> <span className="text-base text-muted-foreground">/ {m.target}</span>
+                </span>
+                <span className="text-sm">{m.label}</span>
+                <small className="text-xs text-muted-foreground">
+                  Counted by Direx from {from}. {waitsOn(m.source)}
+                </small>
+                {p.after?.(m)}
+              </li>
+            );
           if (!m.latest)
             return (
               <li key={m.key} className="flex flex-col gap-1">
@@ -72,6 +91,8 @@ export function Measures(p: { tracking: Tracking | undefined; after?: (m: Tracki
                 {p.after?.(m)}
               </li>
             );
+          // A person's reading on a counted Measure is a correction: the newest count shows beside it.
+          const count = from && m.latest.source === "person" ? m.readings?.filter((r) => r.source === "system").sort((a, b) => `${a.observedOn}${a.at ?? ""}`.localeCompare(`${b.observedOn}${b.at ?? ""}`)).at(-1) : undefined;
           // parseFloat, so a target with its unit ("200 signups") still gets a bar.
           const value = Number.parseFloat(m.latest.value);
           const target = Number.parseFloat(m.target);
@@ -87,8 +108,13 @@ export function Measures(p: { tracking: Tracking | undefined; after?: (m: Tracki
               </span>
               {counted && <ProgressBar label={`${m.label} against its target`} isLabelHidden value={Math.min(value, target)} max={target} />}
               <small className="text-xs text-muted-foreground">
-                As of {dayWords(m.latest.observedOn)}, {m.latest.source === "person" ? "entered by a person" : "from Direx"}
+                As of {dayWords(m.latest.observedOn)}, {m.latest.source === "person" ? "entered by a person" : from ? `counted by Direx from ${from}` : "from Direx"}
               </small>
+              {count && (
+                <small className="text-xs text-muted-foreground">
+                  Counted by Direx from {from}: {count.value} as of {dayWords(count.observedOn)}
+                </small>
+              )}
               {p.after?.(m)}
             </li>
           );
@@ -98,13 +124,70 @@ export function Measures(p: { tracking: Tracking | undefined; after?: (m: Tracki
   );
 }
 
+/** A number Direx can't give: a dash with an accessible label, optionally shown as a note. */
+const Missing = (p: { label: string; visible?: boolean }) => (
+  <>
+    <span aria-hidden>-</span>
+    <span className={p.visible ? "block text-xs text-muted-foreground" : "sr-only"}>{p.label}</span>
+  </>
+);
+
 /** The numbers Direx records for a Campaign: sends per channel, then what came back on email. A number it doesn't record has none. */
 export function resultTiles(r: Results | undefined): [string | number, string][] {
   if (!r) return [];
   const sent = r.sent.map((s): [number, string] => [s.n, s.kind === "email" ? "Emails sent" : s.kind === "post" ? `${networkWords(s.channel)} posts` : `${networkWords(s.channel)} DMs sent`]);
-  const email: [number, string][] = r.email ? [[r.email.replied, "Replied"], [r.email.bounced, "Bounced"], [r.email.optedOut, "Opted out by reply"]] : [];
+  const email: [number, string][] = r.email ? [[r.email.replied, "Stopped after a reply"], [r.email.bounced, "Bounced"], [r.email.optedOut, "Opted out by reply"]] : [];
   return [...sent, ...email];
 }
+/** Each step's People sent, replied and interested. A dash where Direx can't count, never a zero. Silent with no steps. */
+function ByStep(p: { steps: Results["steps"] | undefined }) {
+  if (!p.steps?.length) return null;
+  const cell = (row: Results["steps"][number], c: Results["steps"][number]["sent"]) => (
+    <TableCell className="text-right tabular-nums">
+      {c ? (
+        <>
+          {c.n}
+          {c.source === "person" && <span className="block text-xs text-muted-foreground">marked sent by a person</span>}
+        </>
+      ) : (
+        // An email step has replies to count once one email on it goes out; other steps never do.
+        <Missing visible label={row.kind === "email" ? "Not counted until an email on this step goes out" : "Direx can't count this on this step"} />
+      )}
+    </TableCell>
+  );
+  return (
+    <section aria-labelledby="by-step" className="flex flex-col gap-3">
+      <h2 id="by-step" className="font-sans text-sm font-semibold">
+        By step
+      </h2>
+      <p className="text-sm text-muted-foreground">Counted by Direx, unless a number says otherwise.</p>
+      {/* Tables are 14px, and this one scrolls sideways on a phone rather than squeezing its columns. */}
+      <div className="overflow-x-auto text-sm">
+        <Table aria-labelledby="by-step" textOverflow="wrap">
+          <TableHeader>
+            <TableRow>
+              <TableHeaderCell scope="col">Step</TableHeaderCell>
+              <TableHeaderCell scope="col" className="text-right">Sent</TableHeaderCell>
+              <TableHeaderCell scope="col" className="text-right">Replied</TableHeaderCell>
+              <TableHeaderCell scope="col" className="text-right">Interested</TableHeaderCell>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {p.steps.map((row) => (
+              <TableRow key={row.stepKey}>
+                <TableHeaderCell scope="row">{row.title ?? row.stepKey}</TableHeaderCell>
+                {cell(row, row.sent)}
+                {cell(row, row.replied)}
+                {cell(row, row.interested)}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </section>
+  );
+}
+
 /** What came back badly reads smaller than what came back well. */
 const QUIET = new Set(["Bounced", "Opted out by reply"]);
 
@@ -279,10 +362,12 @@ export function Overview(p: { workspaceId: string; campaign: Loaded; edit: boole
             ))}
           </ol>
         </section>
+        {/* In the wide column, so its four columns keep their words. */}
+        <ByStep steps={results?.steps} />
       </div>
       <div className="flex min-w-0 flex-col gap-8">
         {/* The goal comes first, above what was sent (marketer UX pass, D1). */}
-        <Measures tracking={tracking} />
+        <Measures tracking={tracking} emailSent={results?.sent.some((s) => s.kind === "email" && s.n > 0)} />
         <dl className="grid grid-cols-2 gap-x-4 gap-y-5">
           {[...resultTiles(results), [`${c.done} of ${c.planned}`, "Steps done"] as const].map(([value, label]) => (
             <div key={label} className="flex flex-col-reverse gap-1">

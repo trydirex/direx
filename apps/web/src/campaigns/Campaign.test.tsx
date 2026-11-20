@@ -391,7 +391,13 @@ function serveOverview(c: unknown = campaign) {
             : read(path, o)) as never);
 }
 // Sends on three channels and what came back on email. No opens or clicks: Direx doesn't record them.
-const results = { sent: [{ kind: "email", channel: "email", n: 3 }, { kind: "post", channel: "linkedin", n: 2 }, { kind: "dm", channel: "x", n: 1 }], email: { replied: 1, bounced: 0, optedOut: 2 }, measures: [] };
+// Each step's funnel: null where Direx can't count, and a DM's sends as a person marked them.
+const funnel = [
+  { stepKey: "first", title: "First email", kind: "email", channel: "email", sent: { n: 3, source: "direx" }, replied: { n: 1, source: "direx" }, interested: { n: 0, source: "direx" } },
+  { stepKey: "later", title: null, kind: "email", channel: "email", sent: { n: 0, source: "direx" }, replied: null, interested: null },
+  { stepKey: "second", title: "Follow-up", kind: "dm", channel: "x", sent: { n: 1, source: "person" }, replied: null, interested: null },
+];
+const results = { sent: [{ kind: "email", channel: "email", n: 3 }, { kind: "post", channel: "linkedin", n: 2 }, { kind: "dm", channel: "x", n: 1 }], email: { replied: 1, bounced: 0, optedOut: 2 }, measures: [], steps: funnel };
 
 test("a Campaign opens on its Overview: status, numbers, measures against target, steps by date and the latest of what Direx did", async () => {
   const later = { ...step, key: "second", on: "2026-11-20", title: "Follow-up", type: "dm", dmChannel: "x", touchClass: null };
@@ -403,7 +409,7 @@ test("a Campaign opens on its Overview: status, numbers, measures against target
   expect(screen.getAllByText("Running").some((e) => !e.closest("nav"))).toBe(true);
   await screen.findByText("Emails sent");
   const numbers = [...screen.getAllByRole("definition")].map((d) => `${d.previousElementSibling?.textContent ?? d.nextElementSibling?.textContent}: ${d.textContent}`);
-  expect(numbers).toEqual(["Emails sent: 3", "LinkedIn posts: 2", "X DMs sent: 1", "Replied: 1", "Bounced: 0", "Opted out by reply: 2", "Steps done: 0 of 1"]);
+  expect(numbers).toEqual(["Emails sent: 3", "LinkedIn posts: 2", "X DMs sent: 1", "Stopped after a reply: 1", "Bounced: 0", "Opted out by reply: 2", "Steps done: 0 of 1"]);
   expect(await screen.findByText("signups (71%)")).toBeTruthy();
   expect(screen.getByText("142").textContent).toBe("142 / 200");
   expect(screen.getByRole("progressbar", { name: "signups against its target" }).getAttribute("aria-valuenow")).toBe("142");
@@ -411,6 +417,24 @@ test("a Campaign opens on its Overview: status, numbers, measures against target
   const timeline = within(screen.getByRole("list", { name: "Steps by date" })).getAllByRole("listitem").map((l) => l.textContent);
   expect(timeline).toEqual(["Tue 3 NovFirst email · emailDone", "Fri 20 NovXFollow-up · X DM you send yourselfNot drafted yet"]);
   expect((await screen.findByRole("link", { name: "Review 2 drafts" })).getAttribute("href")).toBe(`/w/${W}/campaigns/${ID}?tab=drafts`);
+  const byStep = within(screen.getByRole("table", { name: "By step" }));
+  // Every number names its source: Direx's own count unless the cell says a person marked it.
+  expect(screen.getByText("Counted by Direx, unless a number says otherwise.")).toBeTruthy();
+  expect(byStep.getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Step", "Sent", "Replied", "Interested"]);
+  const rows = byStep.getAllByRole("row").slice(1).map((r) => Array.from(r.children, (c) => c.textContent));
+  expect(rows).toEqual([
+    ["First email", "3", "1", "0"],
+    ["later", "0", "-Not counted until an email on this step goes out", "-Not counted until an email on this step goes out"],
+    ["Follow-up", "1marked sent by a person", "-Direx can't count this on this step", "-Direx can't count this on this step"],
+  ]);
+  for (const dash of byStep.getAllByText("-")) expect(dash.getAttribute("aria-hidden")).toBe("true");
+  for (const label of ["Not counted until an email on this step goes out", "Direx can't count this on this step"]) {
+    const explanations = byStep.getAllByText(label);
+    expect(explanations).toHaveLength(2);
+    for (const explanation of explanations) {
+      expect(explanation.closest(".sr-only, [hidden], [aria-hidden='true']")).toBeNull();
+    }
+  }
   const did = await screen.findByRole("complementary", { name: "What Direx did" });
   expect(within(did).getAllByRole("listitem")).toHaveLength(5);
   expect(within(did).getByRole("link", { name: "See all on Content" }).getAttribute("href")).toBe(`/w/${W}/campaigns/${ID}?tab=drafts`);

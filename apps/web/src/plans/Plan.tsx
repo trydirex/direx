@@ -12,7 +12,7 @@ import { PlanImpact } from "../campaigns/PlanChange";
 import { Measures } from "../campaigns/Overview";
 import { factsQuery, type Fact } from "../facts/actions";
 import { dayWords } from "../seo/actions";
-import { addReading, basisLabel, emptyPlan, markStep, missingWords, newKey, planQuery, savePlan, say, sayDraft, sayRebased, startPlanDraft, submitPlan, type Plan as Loaded, type PlanBody, type Tracking } from "./actions";
+import { addReading, basisLabel, countedFrom, emptyPlan, markStep, missingWords, newKey, planQuery, savePlan, say, sayDraft, sayRebased, startPlanDraft, submitPlan, type Plan as Loaded, type PlanBody, type Tracking } from "./actions";
 import { Assumptions, BasisField, DraftProgress, FIELDSET, KeptDraft, Row, Text, useEdits, WaitingVersion } from "./Fields";
 
 const draftOf = (x: Loaded | undefined): PlanBody => ({ ...emptyPlan(), ...((x?.draft ?? x?.current ?? {}) as Partial<PlanBody>) });
@@ -144,6 +144,7 @@ function DraftView(p: { d: PlanBody }) {
         {d.measures.map((m) => (
           <li key={m.key}>
             {m.label}: {m.target}
+            {countedFrom(m.source) && `, counted by Direx from ${countedFrom(m.source)}`}
           </li>
         ))}
       </ul>
@@ -329,6 +330,7 @@ function Loaded(p: { workspaceId: string; id: string; role: Role; runId?: string
                   <Input aria-label="Measure" className="flex-1" value={m.label} onChange={(e) => setLine("measures", i, { label: e.target.value })} />
                   <Input aria-label="Target" className="w-48 max-w-full" value={m.target} onChange={(e) => setLine("measures", i, { target: e.target.value })} />
                   <BasisField value={m.basis} facts={facts} onChange={(basis) => setLine("measures", i, { basis })} />
+                  {countedFrom(m.source) && <small className="text-xs text-muted-foreground">Counted by Direx from {countedFrom(m.source)}</small>}
                   <Button type="button" size="sm" variant="outline" aria-label={`Remove measure ${i + 1}`} onClick={() => dropLine("measures", i)}>
                     Remove
                   </Button>

@@ -69,7 +69,10 @@ const parses = (v: string) => {
 
 function pick(q: URLSearchParams, ...keys: string[]) {
   const out = new URLSearchParams();
-  for (const k of keys) if (q.has(k)) out.set(k, parses(q.get(k)!) ? JSON.stringify(q.get(k)) : q.get(k)!);
+  for (const key of keys) {
+    const value = q.get(key);
+    if (value !== null) out.set(key, key === "connect_code" && parses(value) ? JSON.stringify(value) : value);
+  }
   return out;
 }
 const withQuery = (path: string, q: URLSearchParams) => (q.size ? `${path}?${q}` : path);

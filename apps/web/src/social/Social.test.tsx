@@ -69,3 +69,13 @@ test("a code the router would read as a number reaches Social as the string the 
     expect(defaultParseSearch(new URL(path, "http://direx.test").search)).toEqual({ connect_error: "network_refused", connect_code: code });
   }
 });
+
+test.each(["check your client settings", "x".repeat(61)])("a malformed code from the address leaves only the refusal notice (%s)", async (code) => {
+  serve(() => reply(200, { networks: [network] }));
+  render(withQueries(<Social workspace={workspace} me={ME} notice="network_refused" noticeCode={code} />));
+  expect((await screen.findByText(/The network refused the connection/)).textContent).toBe("The network refused the connection. Nothing was saved.");
+});
+
+test("legacy redirects leave numeric-looking values in other search keys unchanged", () => {
+  expect(legacyPath("?page=rules&step=1", W)).toBe(`/w/${W}/settings/rules?step=1`);
+});

@@ -108,7 +108,9 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
   const [offered, setOffered] = useState(p.offered ?? []);
   const [login, setLogin] = useState(p.connected);
   const [open, setOpen] = useState<string | null>(null);
-  const notice = p.notice && (p.noticeCode ? `${message(p.notice)} ${codeHint(p.noticeCode)}` : message(p.notice));
+  // Direct navigation can bypass the API, so apply its code format before showing the value.
+  const code = p.noticeCode && /^[A-Za-z0-9_.-]{1,60}$/.test(p.noticeCode) ? p.noticeCode : undefined;
+  const notice = p.notice && (code ? `${message(p.notice)} ${codeHint(code)}` : message(p.notice));
   const [error, setError] = useState(notice);
   // A new refusal in the address on the same page replaces the notice shown.
   const [noticed, setNoticed] = useState(notice);

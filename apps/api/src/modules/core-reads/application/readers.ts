@@ -54,8 +54,8 @@ type ReadDeps = { items: () => Pick<Items, "list">; campaigns: () => Pick<Campai
 /** The rows behind the Items reads, shared by Ask's text and the door's fields, so both read the same. */
 function rowsOf(d: ReadDeps) {
   /** Up to `cap` rows and how many were left out. */
-  async function page(workspaceId: string, f: Omit<Parameters<Items["list"]>[1], "offset" | "limit">, keep: (i: ItemRow) => boolean, cap: number) {
-    const rows = (await d.items().list(workspaceId, { ...f, offset: 0, limit: 500 })).items.filter(keep);
+  async function page(workspaceId: string, f: Omit<Parameters<Items["list"]>[1], "limit">, keep: (i: ItemRow) => boolean, cap: number) {
+    const rows = (await d.items().list(workspaceId, { ...f, limit: 500 })).items.filter(keep);
     return { shown: rows.slice(0, cap), left: Math.max(0, rows.length - cap) };
   }
   return {

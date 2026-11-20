@@ -47,7 +47,7 @@ const campaign = {
 };
 const reads = doorReads({
   items: () => ({
-    list: async () => ({ items: rows as never, needsYouCount: rows.length }),
+    list: async () => ({ items: rows as never, needsYouCount: rows.length, nextCursor: null }),
     changes: async (...a: unknown[]) => {
       changesAsked.push(a);
       if (a[1] === "bad") return { ok: false as const, reason: "bad_cursor" as const };

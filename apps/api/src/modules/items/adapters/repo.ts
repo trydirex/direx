@@ -7,6 +7,7 @@ import { actions, factVersions, facts as factsTable, itemEvents, items, reviewDe
 import { agentProposals, agentRunParts, agentRuns } from "@direx/db/schema-agents";
 import { agentLessonVersions, agentRunLessons } from "@direx/db/schema-lessons";
 import type { Actor } from "../../ledger";
+import { orderOf, type ListOrder, type ListPoint } from "../domain/list-cursor";
 import type { LedgerState, OwnState, VisibleState } from "../domain/state";
 import type { Warning } from "../domain/warnings";
 
@@ -68,33 +69,82 @@ const RAW: Record<VisibleState, string[]> = {
   cancelled: ["cancelled"],
 };
 
-export type ListFilter = { needsYou?: boolean; state?: VisibleState; from?: Date; to?: Date; offset: number; limit: number; now: Date };
+/**
+ * Filters combine; a list matches any of its values. `types` are what the web names a row by: the
+ * work area of an Action, the kind of anything else. `campaign` is a Campaign id; `q` matches the
+ * title or group label as plain text. `after` is the point the last page ended at, from
+ * `parseListCursor` for this filter's order.
+ */
+export type ListFilter = {
+  needsYou?: boolean;
+  state?: VisibleState | VisibleState[];
+  channels?: string[];
+  types?: string[];
+  campaign?: string;
+  q?: string;
+  from?: Date;
+  to?: Date;
+  after?: ListPoint;
+  limit: number;
+  now: Date;
+};
+
+/** `text` for a LIKE pattern, with LIKE's own characters taken literally. */
+const literal = (text: string) => text.replace(/[\\%_]/g, (m) => `\\${m}`);
+const anyOf = (values: string[]) => sql.join(values.map((v) => sql`${v}`), sql`, `);
+
+/** A time as the list cursor keeps it: UTC, to the microsecond. */
+const exact = (t: SQL) => sql<string | null>`to_char(${t} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
+const deadline = sql`coalesce(${decideBy}, 'infinity'::timestamptz)`;
+const madeAt = sql`${items.createdAt}`;
+const ts = (k: string | null | undefined) => sql`${k ?? null}::timestamptz`;
 
 /**
- * ponytail: joins actions and pages by offset, fine for a Workspace's few thousand Items;
- * add a partial index on open states and a keyset cursor when a real Workspace is slow.
+ * Each order's sort, the key a cursor keeps (`k0`, `k1`), and the rows strictly after a point. One
+ * row comparison per order, so a row that changes state never shifts the rows behind it.
  */
-export async function listItems(tx: ItemsTx, f: ListFilter): Promise<{ rows: JoinedItem[]; needsYouCount: number }> {
+const ORDERS: Record<ListOrder, { by: SQL[]; k0: SQL; k1: SQL; after: (p: ListPoint) => SQL }> = {
+  // A missing deadline sorts last, as "nulls last" did, inside one comparison.
+  needs_you: {
+    by: [sql`${deadline} asc`, sql`${madeAt} asc`, sql`${items.id} asc`],
+    k0: exact(decideBy),
+    k1: exact(madeAt),
+    after: (p) => sql`(${deadline}, ${madeAt}, ${items.id}) > (coalesce(${ts(p.key[0])}, 'infinity'::timestamptz), ${ts(p.key[1])}, ${p.id}::uuid)`,
+  },
+  time: { by: [sql`${timeShown} asc`, sql`${items.id} asc`], k0: exact(timeShown), k1: sql`null`, after: (p) => sql`(${timeShown}, ${items.id}) > (${ts(p.key[0])}, ${p.id}::uuid)` },
+  newest: { by: [sql`${madeAt} desc`, sql`${items.id} desc`], k0: exact(madeAt), k1: sql`null`, after: (p) => sql`(${madeAt}, ${items.id}) < (${ts(p.key[0])}, ${p.id}::uuid)` },
+};
+
+/**
+ * One page of Items and the point it ended at, null on a short page.
+ * ponytail: joins actions for the state, fine for a Workspace's few thousand Items; add a partial
+ * index on open states when a real Workspace is slow.
+ */
+export async function listItems(tx: ItemsTx, f: ListFilter): Promise<{ rows: JoinedItem[]; needsYouCount: number; next: ListPoint | null }> {
+  const order = orderOf(f);
+  const o = ORDERS[order];
   const where: (SQL | undefined)[] = [];
   if (f.needsYou) where.push(needsYou(f.now));
-  if (f.state) where.push(sql`${rawState} in (${sql.join(RAW[f.state].map((s) => sql`${s}`), sql`, `)})`);
+  const states = [f.state ?? []].flat();
+  if (states.length) where.push(sql`${rawState} in (${anyOf(states.flatMap((s) => RAW[s]))})`);
+  if (f.channels?.length) where.push(sql`${items.channel} in (${anyOf(f.channels)})`);
+  if (f.types?.length) where.push(sql`(case when ${items.kind} = 'action' then ${items.workArea} else ${items.kind} end) in (${anyOf(f.types)})`);
+  if (f.campaign) where.push(or(eq(items.groupKey, `campaign:${f.campaign}`), sql`${items.groupKey} like ${`${literal(`campaign:${f.campaign}:`)}%`}`));
+  if (f.q) where.push(or(sql`${items.title} ilike ${`%${literal(f.q)}%`}`, sql`${items.groupLabel} ilike ${`%${literal(f.q)}%`}`));
   if (f.from) where.push(sql`${timeShown} >= ${f.from.toISOString()}::timestamptz`);
   if (f.to) where.push(sql`${timeShown} < ${f.to.toISOString()}::timestamptz`);
-  const order = f.needsYou
-    ? [sql`${decideBy} asc nulls last`, asc(items.createdAt), asc(items.id)]
-    : f.from || f.to
-      ? [sql`${timeShown} asc`, asc(items.id)]
-      : [desc(items.createdAt), asc(items.id)];
+  if (f.after) where.push(o.after(f.after));
   const rows = await tx
-    .select(JOINED)
+    .select({ ...JOINED, k0: sql<string | null>`${o.k0}`, k1: sql<string | null>`${o.k1}` })
     .from(items)
     .leftJoin(actions, onAction)
     .where(and(...where))
-    .orderBy(...order)
-    .limit(f.limit)
-    .offset(f.offset);
+    .orderBy(...o.by)
+    .limit(f.limit);
   const [count] = await tx.select({ n: sql<number>`count(*)::int` }).from(items).leftJoin(actions, onAction).where(needsYou(f.now));
-  return { rows: rows as JoinedItem[], needsYouCount: count!.n };
+  const last = rows.length === f.limit ? rows.at(-1) : undefined;
+  const next = last ? { order, key: order === "needs_you" ? [last.k0, last.k1] : [last.k0], id: last.item.id } : null;
+  return { rows: rows.map(({ k0: _k0, k1: _k1, ...row }) => row) as JoinedItem[], needsYouCount: count!.n, next };
 }
 
 /**

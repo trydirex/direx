@@ -109,6 +109,38 @@ test("each route follows the role table", async () => {
   expect((await post_(url(`/${scheduledFirst.id}/approve`), marketer.cookie, { revision: 1 })).status).toBe(200);
 }, 30_000);
 
+test("the list pages by its cursor, filters by the query, and refuses a bad cursor or filter", async () => {
+  type Page = { items: { id: string; state: string }[]; nextCursor: string | null };
+  const read = async (query: string) => {
+    const r = await call(url(`?${query}`), owner);
+    return { status: r.status, body: (await r.json()) as Page & { error?: string } };
+  };
+  await needsApproval();
+  await needsApproval();
+  const whole = (await read("limit=500")).body.items.map((i) => i.id);
+  const paged: string[] = [];
+  let cursor: string | null = "";
+  while (cursor !== null) {
+    const { body } = await read(`limit=1${cursor ? `&cursor=${cursor}` : ""}`);
+    paged.push(...body.items.map((i) => i.id));
+    cursor = body.nextCursor;
+  }
+  expect(paged).toEqual(whole);
+  const several = (await read("state=needs_approval,scheduled&channel=post&q=A%20post&limit=500")).body.items;
+  expect(several.length).toBeGreaterThan(0);
+  expect(several.every((i) => ["needs_approval", "scheduled"].includes(i.state))).toBe(true);
+  expect((await read("channel=email&limit=500")).body.items).toEqual([]);
+
+  const first = (await read("limit=1")).body.nextCursor!;
+  // An offset, a cursor edited by hand, and a newest-first cursor sent to Needs you.
+  for (const bad of ["500", `${first}x`, first.slice(0, -2)]) expect(await read(`cursor=${bad}`)).toEqual({ status: 400, body: { error: "bad_cursor" } });
+  expect(await read(`needsYou=true&cursor=${first}`)).toEqual({ status: 400, body: { error: "bad_cursor" } });
+  const impossible = Buffer.from(JSON.stringify(["newest", "2026-13-19T09:00:00.123456Z", "00000000-0000-4000-8000-000000000001"])).toString("base64url");
+  expect(await read(`cursor=${impossible}`)).toEqual({ status: 400, body: { error: "bad_cursor" } });
+  for (const bad of ["state=sent,nope", "state=", "channel=e%20mail", "type=Social", "campaign=c1%25", `q=${"x".repeat(101)}`, "q=%20%20"])
+    expect((await read(bad)).status, bad).toBe(400);
+});
+
 test("a member of one Workspace gets 404 on another's Items, and no session gets 401", async () => {
   const stranger = await signIn();
   await createOrg(stranger, "Other");

@@ -5,6 +5,7 @@ import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { approverFromMember, can, requirePermission, steppedUp, type Member, type MemberEnv, type Permission } from "../identity/index";
 import type { Decided } from "./application/decide";
 import type { Items } from "./application/create";
+import { orderOf, parseListCursor } from "./domain/list-cursor";
 import { MAX_REASON_NOTE, REVIEW_REASONS } from "./domain/rates";
 import { WARNING_CODES } from "./domain/warnings";
 
@@ -67,6 +68,10 @@ const ItemResult = z.object({ id: z.uuid(), ok: z.boolean(), reason: z.string().
 const Results = z.object({ results: z.array(ItemResult) });
 const One = z.object({ item: Item });
 
+/** A comma list of values matching `one`, such as "sent,held", at most 20 of them. */
+const commaList = (one: string) => z.string().regex(new RegExp(`^(${one})(,(${one})){0,19}$`));
+const split = <T extends string>(s: string | undefined) => (s ? (s.split(",") as T[]) : undefined);
+
 const listRoute = createRoute({
   method: "get",
   path: "/api/w/{workspaceId}/items",
@@ -75,10 +80,14 @@ const listRoute = createRoute({
     params: ws,
     query: z.object({
       needsYou: z.enum(["true", "false"]).optional(),
-      state: State.optional(),
+      state: commaList(State.options.join("|")).optional().openapi({ description: "One state or several, comma separated" }),
+      channel: commaList("[a-z_]{1,32}").optional(),
+      type: commaList("[a-z_]{1,32}").optional().openapi({ description: "Work areas of Actions and kinds of other Items, comma separated" }),
+      campaign: z.string().regex(/^[A-Za-z0-9-]{1,64}$/).optional(),
+      q: z.string().trim().min(1).max(100).optional().openapi({ description: "Words in the title or group label" }),
       from: z.iso.datetime().optional(),
       to: z.iso.datetime().optional(),
-      cursor: z.string().regex(/^\d{1,9}$/).optional(),
+      cursor: z.string().max(300).optional(),
       limit: z.coerce.number().int().min(1).max(MAX_PAGE).default(100),
     }),
   },
@@ -221,19 +230,11 @@ export function itemRoutes({ items }: { items: () => Items }) {
   return app
     .openapi(listRoute, async (c) => {
       const q = c.req.valid("query");
-      const offset = Number(q.cursor ?? 0);
-      const r = await items().list(c.get("member").workspaceId, {
-        needsYou: q.needsYou === "true",
-        state: q.state,
-        from: q.from ? new Date(q.from) : undefined,
-        to: q.to ? new Date(q.to) : undefined,
-        offset,
-        limit: q.limit,
-      });
-      return c.json(
-        { items: r.items.map(toJson), needsYouCount: r.needsYouCount, nextCursor: r.items.length === q.limit ? String(offset + q.limit) : null },
-        200,
-      );
+      const f = { needsYou: q.needsYou === "true", state: split<z.infer<typeof State>>(q.state), channels: split(q.channel), types: split(q.type), campaign: q.campaign, q: q.q, from: q.from ? new Date(q.from) : undefined, to: q.to ? new Date(q.to) : undefined, limit: q.limit };
+      const after = q.cursor ? parseListCursor(q.cursor, orderOf(f)) : undefined;
+      if (after === null) return c.json({ error: "bad_cursor" }, 400);
+      const r = await items().list(c.get("member").workspaceId, { ...f, after });
+      return c.json({ items: r.items.map(toJson), needsYouCount: r.needsYouCount, nextCursor: r.nextCursor }, 200);
     })
     .openapi(getRoute, async (c) => {
       const d = await items().detail(c.get("member").workspaceId, c.req.valid("param").id);

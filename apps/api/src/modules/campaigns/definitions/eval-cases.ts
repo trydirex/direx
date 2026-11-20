@@ -108,8 +108,8 @@ function transcribePost(c: ScriptedCase, known: Record<string, string>): Transcr
   };
 }
 
-// The writer's brief, as writeUpBrief renders one. Reading ids are mostly letters, so their digits add little
-// to the numbers a write-up may use.
+// The writer's brief, as writeUpBrief renders one. The number check skips reading ids, so their digits are
+// no numbers a write-up may use.
 const MEETINGS = "abcdefab-cdef-4abc-8def-abcdefabcdef";
 const SIGNUPS = "fedcbafe-dcba-4fed-8cba-fedcbafedcba";
 const READINGS = { [MEETINGS]: `- reading ${MEETINGS}: Meetings 6, counted by Direx, 2026-11-28`, [SIGNUPS]: `- reading ${SIGNUPS}: Sign-ups 40, entered by a person, 2026-11-29` };
@@ -143,6 +143,7 @@ export const WRITE_UP_CASES: readonly WriteUpCase[] = [
   { name: "gives a too-few pair's counts and no winner", brief: brief(TOO_FEW), output: writeUp("Of the 100 People reached by email, 4 were interested, and 3 of the 30 reached by email and LinkedIn DM. That is too few to compare."), problem: null },
   { name: "names a winner from a too-few pair", brief: brief(TOO_FEW), output: writeUp("Email and LinkedIn DM did better than email alone: 3 of 30 against 4 of 100."), problem: "winner_without_comparison" },
   { name: "invents a number", brief: brief(), output: writeUp("37 People booked a meeting."), problem: "number_not_in_brief:37" },
+  { name: "takes a count from a reading id", brief: brief(), output: writeUp("Direx counted 8 meetings."), problem: "number_not_in_brief:8" },
   { name: "credits the channels with the outcome", brief: brief(), output: writeUp("The 6 meetings came thanks to the LinkedIn DMs."), problem: "credit:thanks to" },
   { name: "repeats an assumption the Strategy has", brief: brief(), output: writeUp("Direx counted 6 meetings.", { suggestions: [suggestion(ASSUMPTION)] }), problem: "repeats_assumption" },
   { name: "no readings at all, and says so", brief: brief(COMPARED, {}), output: writeUp("Q4 sent 120 emails and 30 LinkedIn DMs. No Measure has a reading yet.", { cites: [] }), problem: null },

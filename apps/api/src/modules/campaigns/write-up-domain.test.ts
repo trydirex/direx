@@ -30,6 +30,7 @@ test("numbersOutsideBrief: numbers the brief holds pass, in any of its forms; in
   expect(numbersOutsideBrief("Replies came in at 12% by 2026-11-20, with £1200 entered and 3 of 40 interested.", brief)).toEqual([]);
   expect(numbersOutsideBrief("Revenue reached £1,250 and 12% replied.", brief)).toEqual(["1250"]);
   expect(numbersOutsideBrief("No numbers here.", brief)).toEqual([]);
+  expect(numbersOutsideBrief("The Campaign recorded 4790 meetings.", "reading 1e6c8a3d-f5b2-4790-a4e1-8b3d0f9c7a25: Meetings 7")).toEqual(["4790"]);
 });
 
 test("creditPhrase and claimsWinner catch credit and a winner without a comparison", () => {

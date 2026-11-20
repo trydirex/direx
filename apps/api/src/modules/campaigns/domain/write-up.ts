@@ -46,7 +46,9 @@ export type Brief = {
 // ponytail: digits only. A number spelled out ("twelve") passes; the prompt asks for digits, and
 // the evals hold it to that. Add a words-to-number pass if real write-ups spell them.
 const NUMBER = /\d[\d,]*(?:\.\d+)?/g;
-const numbersIn = (text: string) => (text.match(NUMBER) ?? []).map((n) => n.replaceAll(",", ""));
+// A reading id's digits are no count the brief gives, so ids are dropped before numbers are read.
+const UUID = /\b[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}\b/gi;
+const numbersIn = (text: string) => (text.replace(UUID, " ").match(NUMBER) ?? []).map((n) => n.replaceAll(",", ""));
 
 /** The numbers in `text` that appear nowhere in the brief. Dates, counts and readings all count. */
 export function numbersOutsideBrief(text: string, brief: string): string[] {

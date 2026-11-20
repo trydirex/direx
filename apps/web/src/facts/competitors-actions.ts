@@ -94,3 +94,31 @@ export function checkWords(c: Check): string {
       return c.detail ? `Didn't load (${c.detail})` : "Didn't load";
   }
 }
+
+export type FoundPage = S["CompetitorFoundPage"];
+export type FoundPages = S["CompetitorFindPages"];
+
+/** The pricing and changelog pages Direx found from a homepage, or why it found none; `busy` while one already runs. */
+export async function findPages(workspaceId: string, landingUrl: string): Promise<FoundPages | { ok: false; reason: string }> {
+  try {
+    const r = await api.POST("/api/w/{workspaceId}/competitors/find-pages", { params: at(workspaceId), body: { landingUrl } });
+    return r.data ?? { ok: false, reason: r.error?.error ?? "failed" };
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+}
+
+/** Where a found page came from, so the person can judge it before adding. */
+export function foundWords(f: NonNullable<FoundPage>): string {
+  if (f.via === "sitemap") return "Found in the site's sitemap.";
+  const where = f.via === "homepage" ? "the homepage" : "the roadmap page";
+  return f.text ? `Found through the link “${f.text.slice(0, 60)}” on ${where}.` : `Found through a link on ${where}.`;
+}
+
+const FIND_WORDS: Record<string, string> = {
+  other_site: "This address goes to another company's site, so Direx has nothing to suggest.",
+  robots_disallowed: "This site's robots.txt asks Direx not to read it.",
+  unreadable: "Direx couldn't read that page.",
+  busy: "Already looking. Try again in a moment.",
+};
+export const findWords = (reason: string) => FIND_WORDS[reason] ?? "Direx couldn't look just now. Try again.";

@@ -2,7 +2,7 @@
 // Brand's Competitors section: the list with each page, the no-changelog note, what a check found,
 // the sixth add refused, and a viewer who reads but can't change.
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { withQueries } from "../testing";
@@ -179,4 +179,145 @@ test("a competitor with no name is asked for one, without the length limit", asy
   render(withQueries(<Competitors workspaceId={W} role="admin" />));
   fireEvent.submit(await screen.findByRole("form", { name: "Add a competitor" }));
   expect(await screen.findByText("Give the competitor a name.")).toBeTruthy();
+});
+
+const findReply = (body: object, status = 200) => vi.spyOn(api, "POST").mockImplementation(((path: string) => (path.endsWith("/find-pages") ? reply(status, body) : reply(500, { error: "unexpected" }))) as never);
+
+test("Find pages fills only empty fields, says where each was found, and offers the rest; nothing is saved", async () => {
+  serve([]);
+  const post = findReply({
+    ok: true,
+    pricing: { url: "https://doublehq.com/pricing-plans/", via: "homepage", text: "Pricing" },
+    changelog: { url: "https://doublehq.canny.io/changelog", via: "homepage", text: "Product Releases" },
+    alsoPricing: ["https://doublehq.com/firm-pricing"],
+  });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  const find = form.getByRole("button", { name: "Find pages" });
+  expect((find as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.type(form.getByRole("textbox", { name: "Landing page" }), "https://doublehq.com");
+  await userEvent.type(form.getByRole("textbox", { name: "Changelog" }), "https://mine.example/changes");
+  await userEvent.click(find);
+
+  const pricing = form.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement;
+  await vi.waitFor(() => expect(pricing.value).toBe("https://doublehq.com/pricing-plans/"));
+  expect(form.getByText("Found through the link “Pricing” on the homepage.")).toBeTruthy();
+  expect(form.getByText("Other pricing pages: https://doublehq.com/firm-pricing")).toBeTruthy();
+  const changelog = form.getByRole("textbox", { name: "Changelog" }) as HTMLInputElement;
+  expect(changelog.value).toBe("https://mine.example/changes");
+  expect(form.getByText("Direx found https://doublehq.canny.io/changelog")).toBeTruthy();
+  await userEvent.click(form.getByRole("button", { name: "Use the found changelog" }));
+  expect(changelog.value).toBe("https://doublehq.canny.io/changelog");
+  expect(form.queryByText(/^Direx found/)).toBeNull();
+
+  // Editing a filled page makes it the person's: the note goes.
+  fireEvent.change(pricing, { target: { value: "https://doublehq.com/other" } });
+  expect(form.queryByText(/^Found through/)).toBeNull();
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/find-pages", { params: { path: { workspaceId: W } }, body: { landingUrl: "https://doublehq.com" } });
+});
+
+test("pages found in the sitemap or through the roadmap say so", async () => {
+  serve([]);
+  findReply({ ok: true, pricing: { url: "https://acme.example/plans", via: "sitemap", text: "" }, changelog: { url: "https://roadmap.acme.example/announcements", via: "roadmap", text: "" }, alsoPricing: [] });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  await userEvent.type(form.getByRole("textbox", { name: "Landing page" }), "https://acme.example");
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  expect(await form.findByText("Found in the site's sitemap.")).toBeTruthy();
+  expect(form.getByText("Found through a link on the roadmap page.")).toBeTruthy();
+});
+
+test.each([
+  [{ ok: false, reason: "other_site" }, 200, "This address goes to another company's site, so Direx has nothing to suggest."],
+  [{ ok: false, reason: "robots_disallowed" }, 200, "This site's robots.txt asks Direx not to read it."],
+  [{ ok: true, pricing: null, changelog: null, alsoPricing: [] }, 200, "No pricing page or changelog found. Add them by hand if they exist."],
+  [{ error: "busy" }, 409, "Already looking. Try again in a moment."],
+  [{ error: "boom" }, 500, "Direx couldn't look just now. Try again."],
+])("Find pages that finds nothing says why (%#)", async (body, status, words) => {
+  serve([]);
+  findReply(body, status);
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  await userEvent.type(form.getByRole("textbox", { name: "Landing page" }), "https://keeper.app");
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  expect(await form.findByText(words)).toBeTruthy();
+  expect((form.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement).value).toBe("");
+});
+
+test("a second Find pages clears the pages the first one filled, but not a page the person typed", async () => {
+  serve([]);
+  const post = findReply({ ok: true, pricing: { url: "https://doublehq.com/pricing-plans/", via: "homepage", text: "Pricing" }, changelog: null, alsoPricing: [] });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  const form = within(await screen.findByRole("form", { name: "Add a competitor" }));
+  const landing = form.getByRole("textbox", { name: "Landing page" });
+  await userEvent.type(landing, "https://doublehq.com");
+  await userEvent.type(form.getByRole("textbox", { name: "Changelog" }), "https://mine.example/changes");
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  const pricing = form.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement;
+  await vi.waitFor(() => expect(pricing.value).toBe("https://doublehq.com/pricing-plans/"));
+
+  post.mockImplementation((() => reply(200, { ok: false, reason: "other_site" })) as never);
+  fireEvent.change(landing, { target: { value: "https://keeper.app" } });
+  await userEvent.click(form.getByRole("button", { name: "Find pages" }));
+  expect(await form.findByText("This address goes to another company's site, so Direx has nothing to suggest.")).toBeTruthy();
+  expect(pricing.value).toBe("");
+  expect((form.getByRole("textbox", { name: "Changelog" }) as HTMLInputElement).value).toBe("https://mine.example/changes");
+});
+
+test("a rejected discovery request shows a retry message", async () => {
+  serve([finlens]);
+  vi.spyOn(api, "POST").mockRejectedValueOnce(new TypeError("Network error"));
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
+  const find = screen.getByRole("button", { name: "Find pages" }) as HTMLButtonElement;
+  await userEvent.click(find);
+  expect(await screen.findByText("Direx couldn't look just now. Try again.")).toBeTruthy();
+  expect(find.disabled).toBe(false);
+});
+
+const pendingFind = () => {
+  const pending = Promise.withResolvers<Awaited<ReturnType<typeof reply>>>();
+  const post = vi.spyOn(api, "POST").mockImplementation((() => pending.promise) as never);
+  const finish = () => act(async () => pending.resolve(await reply(200, {
+    ok: true,
+    pricing: { url: "https://www.finlens.app/pricing", via: "sitemap", text: "" },
+    changelog: { url: "https://www.finlens.app/changelog", via: "sitemap", text: "" },
+    alsoPricing: ["https://www.finlens.app/plans"],
+  })));
+  return { post, finish };
+};
+
+test.each(["switch competitor", "cancel", "change landing page"])("ignores a pending discovery after %s", async (change) => {
+  const other = competitor(3, { landingUrl: finlens.landingUrl });
+  serve([finlens, other]);
+  const { post, finish } = pendingFind();
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
+  await userEvent.click(screen.getByRole("button", { name: "Find pages" }));
+  expect(post).toHaveBeenCalledTimes(1);
+
+  if (change === "switch competitor") await userEvent.click(screen.getByRole("button", { name: "Edit C3" }));
+  else if (change === "cancel") await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  else fireEvent.change(screen.getByRole("textbox", { name: "Landing page" }), { target: { value: "https://other.example" } });
+  await finish();
+
+  expect((screen.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement).value).toBe("");
+  expect((screen.getByRole("textbox", { name: /^Changelog/ }) as HTMLInputElement).value).toBe("");
+  expect(screen.queryByText(/^Other pricing pages:/)).toBeNull();
+});
+
+test("discovery preserves a page entered while waiting and fills the other empty field", async () => {
+  serve([finlens]);
+  const { finish } = pendingFind();
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
+  await userEvent.click(screen.getByRole("button", { name: "Find pages" }));
+  const pricing = screen.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement;
+  fireEvent.change(pricing, { target: { value: "https://www.finlens.app/custom" } });
+  await finish();
+
+  expect(pricing.value).toBe("https://www.finlens.app/custom");
+  expect(screen.getByText("Direx found https://www.finlens.app/pricing")).toBeTruthy();
+  expect((screen.getByRole("textbox", { name: /^Changelog/ }) as HTMLInputElement).value).toBe("https://www.finlens.app/changelog");
 });

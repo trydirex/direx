@@ -254,6 +254,31 @@ test("a list cursor pages only the order that made it, and only as it was made",
     expect(parseListCursor(bad, "newest")).toBeNull();
 });
 
+test("list cursors reject impossible dates and keep valid dates to the microsecond", () => {
+  const id = "00000000-0000-4000-8000-000000000001";
+  const valid = "2026-11-19T09:00:00.123456Z";
+  const invalid = [
+    "2026-13-19T09:00:00.123456Z", "2026-00-19T09:00:00.123456Z",
+    "2026-11-00T09:00:00.123456Z", "2026-11-31T09:00:00.123456Z",
+    "2026-02-29T09:00:00.123456Z", "1900-02-29T09:00:00.123456Z",
+    "2026-11-19T24:00:00.000000Z", "2026-11-19T09:60:00.123456Z",
+    "2026-11-19T09:00:60.123456Z", "0000-11-19T09:00:00.123456Z",
+  ];
+  for (const at of invalid) {
+    for (const order of ["newest", "time", "needs_you"] as const) {
+      const key = order === "needs_you" ? [at, valid] : [at];
+      expect(parseListCursor(encodeListCursor({ order, key, id }), order), `${order}: ${at}`).toBeNull();
+    }
+    expect(parseListCursor(encodeListCursor({ order: "needs_you", key: [null, at], id }), "needs_you"), at).toBeNull();
+  }
+  for (const at of [valid, "2000-02-29T23:59:59.999999Z", "2028-02-29T00:00:00.000001Z", "0001-01-01T00:00:00.000000Z", "0099-01-01T00:00:00.000000Z", "9999-12-31T23:59:59.999999Z"]) {
+    for (const order of ["newest", "time", "needs_you"] as const) {
+      const point = { order, key: order === "needs_you" ? [at, at] : [at], id };
+      expect(parseListCursor(encodeListCursor(point), order)).toEqual(point);
+    }
+  }
+});
+
 test("creating with replace cancels the one still waiting in its group, and leaves other groups and decided ones alone", async () => {
   const make = (groupKey?: string) => items.createItem(W, { kind: "fact_edit", payload: {}, actor: person, details: { title: "Next", warnings: [], ...(groupKey && { groupKey }) }, replace: true });
   const group = `g:${crypto.randomUUID()}`;

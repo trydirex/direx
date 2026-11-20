@@ -13,6 +13,15 @@ const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const KEYS: Record<ListOrder, number> = { needs_you: 2, time: 1, newest: 1 };
 
+function validTime(key: string): boolean {
+  if (!TIME.test(key) || key.startsWith("0000-")) return false;
+  // Date can normalize impossible days. Round-trip milliseconds to reject those too, while
+  // leaving the original microseconds intact for Postgres's row comparison.
+  const milliseconds = `${key.slice(0, 23)}Z`;
+  const date = new Date(milliseconds);
+  return Number.isFinite(date.getTime()) && date.toISOString() === milliseconds;
+}
+
 /** The order a list read uses, from its filter. */
 export const orderOf = (f: { needsYou?: boolean; from?: unknown; to?: unknown }): ListOrder => (f.needsYou ? "needs_you" : f.from || f.to ? "time" : "newest");
 
@@ -30,7 +39,7 @@ export function parseListCursor(cursor: string, order: ListOrder): ListPoint | n
   const key = parts.slice(1, -1) as unknown[];
   const id = parts.at(-1);
   // Only a needs-you deadline may be missing.
-  const keyOk = key.every((k, n) => (typeof k === "string" && TIME.test(k)) || (k === null && order === "needs_you" && n === 0));
+  const keyOk = key.every((k, n) => (typeof k === "string" && validTime(k)) || (k === null && order === "needs_you" && n === 0));
   if (!keyOk || typeof id !== "string" || !UUID.test(id)) return null;
   const point = { order, key: key as (string | null)[], id };
   return encodeListCursor(point) === cursor ? point : null;

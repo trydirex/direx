@@ -6,6 +6,7 @@
 import { openState, sealState, STATE_TTL_MS } from "../adapters/cookie";
 import type { RootKey } from "../adapters/crypto";
 import {
+  clientIdParam,
   exchangeCode,
   exchangeLongToken,
   idTokenEmail,
@@ -73,7 +74,7 @@ export function connector(d: {
   function consentUrl(p: Provider, state: string, verifier: string) {
     const url = new URL(p.authorizeUrl);
     for (const [k, v] of Object.entries({
-      client_id: p.clientId,
+      [clientIdParam(p)]: p.clientId,
       redirect_uri: callbackUrl(),
       response_type: "code",
       ...(p.scopeSource === "fixed" ? {} : { scope: p.scopes.join(p.scopeSeparator ?? " ") }),

@@ -650,7 +650,7 @@
       "description": "Shift the campaign readings cutoff with the launch date, preserving the 30-day run-end window"
     },
     "0158_tracked_links.sql": {
-      "sha256": "cc7ef9383fe8399c2b8ad38d381d837112928f20112e03328a20659b393fa952",
+      "sha256": "80b4e0fbe748409be4deaec7dc07a765083936fced0f841362e00faad4527876",
       "description": "Add tracking domains, tracked links and their uses, the Campaign tracking switches, and the host and link lookups for the redirect (ADR 0035)"
     }
   }

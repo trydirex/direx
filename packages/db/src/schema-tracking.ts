@@ -4,7 +4,7 @@
 // counter come with the code that writes them. Nothing here holds a client IP address, user agent or other request
 // header (rule 009). Links never change once made (rule 004), so the app may not update or delete them.
 import { sql } from "drizzle-orm";
-import { boolean, check, foreignKey, index, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { actions, people, workspaces } from "./schema";
 import { campaignDms, campaigns } from "./schema-campaigns";
@@ -55,8 +55,10 @@ export const trackedLinks = pgTable(
   },
   (t) => [
     unique("tracked_links_workspace_id_id_key").on(t.workspaceId, t.id),
-    // A step reuses its link for the same destination.
-    unique("tracked_links_destination_key").on(t.workspaceId, t.campaignId, t.stepKey, t.domainId, t.destination, t.checkOnly),
+    // A step reuses its link for the same destination. Hash both text fields to bound the index key.
+    uniqueIndex("tracked_links_destination_key").on(
+      t.workspaceId, t.campaignId, sql`public.digest(${t.stepKey}, 'sha256')`, t.domainId, sql`public.digest(${t.destination}, 'sha256')`, t.checkOnly,
+    ),
     foreignKey({ name: "tracked_links_campaign_fk", columns: [t.workspaceId, t.campaignId], foreignColumns: [campaigns.workspaceId, campaigns.id] }),
     foreignKey({ name: "tracked_links_domain_fk", columns: [t.workspaceId, t.domainId], foreignColumns: [trackingDomains.workspaceId, trackingDomains.id] }),
     check("tracked_links_id_check", sql`${t.id} ~ '^[A-Za-z0-9_-]{22}$'`),

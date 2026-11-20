@@ -90,6 +90,20 @@ test("a link can't use another Workspace's domain", async () => {
   await expect(link(W, camp, theirs)).rejects.toThrow(/tracked_links_domain_fk/);
 });
 
+test("a long non-ASCII destination fits and still deduplicates within a step", async () => {
+  const d = await domain(W, host());
+  const camp = await campaign(W);
+  // Distinct characters keep this URL from compressing below PostgreSQL's B-tree key limit.
+  const path = Array.from({ length: 2_000 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join("");
+  const destination = `https://example.com/${path}`;
+  const id = linkId();
+  await link(W, camp, d, { id, destination });
+  const stored = await c.query("select destination from tracked_links where id = $1", [id]);
+  expect(stored.rows).toEqual([{ destination }]);
+  await expect(link(W, camp, d, { destination })).rejects.toThrow(/tracked_links_destination_key/);
+  expect((await link(W, camp, d, { destination: `${destination}a` })).rowCount).toBe(1);
+});
+
 test("a use names one message, a token comes with a Person and is a SHA-256, and a DM never carries one", async () => {
   await as(W);
   const use = (actionId: string | null, dmId: string | null, tokenHash: string | null, personId: string | null) =>
@@ -155,32 +169,56 @@ test("the lookup returns ids only, for the link's own host, and a stopped domain
   const camp = await campaign(W);
   const id = linkId();
   await link(W, camp, d, { id });
+  const otherId = linkId();
+  await link(W, camp, d, { id: otherId, destination: "https://example.com/another" });
+  const personId = crypto.randomUUID();
+  await c.query("insert into people (id, workspace_id, coordination_id, created_at) values ($1, $2, $1, now())", [personId, W]);
+  const action = await c.query<{ id: string }>(
+    `insert into actions (workspace_id, idempotency_key, capability, dedupe_class, state, spec, spec_hash, created_at, updated_at)
+     values ($1, gen_random_uuid(), 'test.send', 'blind', 'draft', '{}', 'h', now(), now()) returning id`,
+    [W],
+  );
+  const useId = crypto.randomUUID();
+  const token = "a".repeat(64);
+  await c.query(
+    `insert into tracked_link_uses (id, workspace_id, link_id, action_id, token_hash, person_id, inputs_hash, created_at)
+     values ($1, $2, $3, $4, $5, $6, 'h', now())`,
+    [useId, W, id, action.rows[0]!.id, token, personId],
+  );
   await as("");
   const lookup = async (h: string, l: string, token: string | null = null) => (await c.query("select * from system.tracking_link_lookup($1, $2, $3)", [h, l, token])).rows;
   expect(await lookup(mine, id)).toEqual([{ workspace_id: W, link_id: id, use_id: null }]);
   expect(await lookup(theirs, id)).toEqual([]);
   expect(await lookup(mine, linkId())).toEqual([]);
+  expect(await lookup(mine, id, token)).toEqual([{ workspace_id: W, link_id: id, use_id: useId }]);
+  expect(await lookup(mine, otherId)).toEqual([{ workspace_id: W, link_id: otherId, use_id: null }]);
+  expect(await lookup(mine, otherId, token)).toEqual([]);
   // A token that names no use of this link finds nothing.
   expect(await lookup(mine, id, "b".repeat(64))).toEqual([]);
   // RLS still hides the rows themselves from the app with no Workspace set.
   expect((await c.query("select count(*)::int as n from tracked_links")).rows[0].n).toBe(0);
 });
 
-test("the drizzle schema names the same checks, keys and foreign keys as migration 0158", async () => {
+test("the drizzle schema names the same checks, keys, foreign keys and indexes as migration 0158", async () => {
   const names = (t: PgTable) => {
     const cfg = getTableConfig(t);
     const fks = cfg.foreignKeys.map((f) => {
       f.reference();
       return f.getName();
     });
-    return [...cfg.checks.map((x) => x.name), ...cfg.uniqueConstraints.map((u) => u.name), ...fks].sort();
+    return [...cfg.checks.map((x) => x.name), ...cfg.uniqueConstraints.map((u) => u.name), ...fks, ...cfg.indexes.map((i) => i.config.name)].sort();
   };
   const tables = { trackingDomains, trackedLinks, trackedLinkUses };
   await as("");
   const { rows } = await c.query(
     `select conrelid::regclass::text as tbl, conname from pg_constraint
      where conrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses')
-       and contype in ('c', 'u', 'f')`,
+       and contype in ('c', 'u', 'f')
+     union all
+     select i.indrelid::regclass::text, i.indexrelid::regclass::text
+     from pg_index i
+     where i.indrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses')
+       and not exists (select 1 from pg_constraint c where c.conindid = i.indexrelid)`,
   );
   for (const [, table] of Object.entries(tables)) {
     const sqlName = getTableConfig(table).name;

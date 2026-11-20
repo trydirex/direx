@@ -18382,7 +18382,53 @@
           "notNull": true
         }
       },
-      "indexes": {},
+      "indexes": {
+        "tracked_links_destination_key": {
+          "name": "tracked_links_destination_key",
+          "columns": [
+            {
+              "expression": "workspace_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "public.digest(\"step_key\", 'sha256')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "domain_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "public.digest(\"destination\", 'sha256')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "check_only",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "tracked_links_campaign_fk": {
           "name": "tracked_links_campaign_fk",
@@ -18423,18 +18469,6 @@
           "columns": [
             "workspace_id",
             "id"
-          ]
-        },
-        "tracked_links_destination_key": {
-          "name": "tracked_links_destination_key",
-          "nullsNotDistinct": false,
-          "columns": [
-            "workspace_id",
-            "campaign_id",
-            "step_key",
-            "domain_id",
-            "destination",
-            "check_only"
           ]
         }
       },

@@ -27,7 +27,6 @@ CREATE TABLE "tracked_links" (
 	"check_only" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone NOT NULL,
 	CONSTRAINT "tracked_links_workspace_id_id_key" UNIQUE("workspace_id","id"),
-	CONSTRAINT "tracked_links_destination_key" UNIQUE("workspace_id","campaign_id","step_key","domain_id","destination","check_only"),
 	CONSTRAINT "tracked_links_id_check" CHECK ("tracked_links"."id" ~ '^[A-Za-z0-9_-]{22}$'),
 	CONSTRAINT "tracked_links_destination_check" CHECK ("tracked_links"."destination" like 'https://%' and length("tracked_links"."destination") <= 2048)
 );
@@ -66,6 +65,9 @@ ALTER TABLE "tracking_domains" ADD CONSTRAINT "tracking_domains_created_by_user_
 ALTER TABLE "tracking_domains" ADD CONSTRAINT "tracking_domains_workspace_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspaces"("workspace_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "tracked_link_uses_action_idx" ON "tracked_link_uses" USING btree ("workspace_id","action_id");--> statement-breakpoint
 CREATE INDEX "tracked_link_uses_link_idx" ON "tracked_link_uses" USING btree ("workspace_id","link_id");--> statement-breakpoint
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;--> statement-breakpoint
+-- Hash both text fields so long multi-byte URLs and step keys fit in the B-tree.
+CREATE UNIQUE INDEX "tracked_links_destination_key" ON "tracked_links" USING btree ("workspace_id","campaign_id",public.digest("step_key", 'sha256'),"domain_id",public.digest("destination", 'sha256'),"check_only");--> statement-breakpoint
 ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_tracking_set_by_user_id_fk" FOREIGN KEY ("tracking_set_by") REFERENCES "auth"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_per_person_set_by_user_id_fk" FOREIGN KEY ("per_person_set_by") REFERENCES "auth"."user"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaigns" ADD CONSTRAINT "campaigns_tracking_check" CHECK (not "campaigns"."tracking_on" or ("campaigns"."tracking_domain_id" is not null and "campaigns"."tracking_set_by" is not null and "campaigns"."tracking_wording_version" is not null));--> statement-breakpoint

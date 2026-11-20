@@ -316,3 +316,38 @@ test("a site never scanned is scanned once when the panel opens", async () => {
   await vi.waitFor(() => expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/scan", { params: { path: { workspaceId: W } } }));
   expect(post).toHaveBeenCalledTimes(1);
 });
+
+test("a paid search shows its cost first and runs at that cost; changing a term asks for the cost again", async () => {
+  const table = serve([], { found: { proposals: [], ...scanned, searchAvailable: true } });
+  const post = vi.spyOn(api, "POST").mockImplementation(((path: string) => (path.endsWith("/estimate") ? reply(200, { usd: 0.12 }) : reply(200, { proposals: [], ...scanned, searchAvailable: true }))) as never);
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByText("Search for competitors"));
+  const term = screen.getByRole("textbox", { name: "Search term" });
+  expect((screen.getByRole("button", { name: "See the cost" }) as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.type(term, "bank rec");
+  await userEvent.click(screen.getByRole("button", { name: "See the cost" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/estimate", { params: { path: { workspaceId: W } }, body: { terms: ["bank rec"] } });
+  await userEvent.type(term, " software");
+  expect(screen.queryByRole("button", { name: /^Search, up to/ })).toBeNull();
+  await userEvent.click(screen.getByRole("button", { name: "See the cost" }));
+  table.found = { proposals: [found({ source: "search", terms: ["bank rec software"], comparisonUrl: null })], ...scanned, searchAvailable: true };
+  await userEvent.click(await screen.findByRole("button", { name: "Search, up to $0.12" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/search", { params: { path: { workspaceId: W } }, body: { terms: ["bank rec software"], confirmedUsd: 0.12 } });
+  expect(await screen.findByText("Search: bank rec software")).toBeTruthy();
+  expect((term as HTMLInputElement).value).toBe("");
+});
+
+test("search is hidden without a search installed, and a refused term says why", async () => {
+  serve([], { found: { proposals: [], ...scanned, searchAvailable: false } });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await screen.findByRole("form", { name: "Add a competitor" });
+  expect(screen.queryByText("Search for competitors")).toBeNull();
+  cleanup();
+  serve([], { found: { proposals: [], ...scanned, searchAvailable: true } });
+  vi.spyOn(api, "POST").mockImplementation((() => reply(400, { error: "person_data" })) as never);
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByText("Search for competitors"));
+  await userEvent.type(screen.getByRole("textbox", { name: "Search term" }), "sam@contoso.example");
+  await userEvent.click(screen.getByRole("button", { name: "See the cost" }));
+  expect(await screen.findByText("A search term can't hold an email address, a web address or a person's name.")).toBeTruthy();
+});

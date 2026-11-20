@@ -83,34 +83,6 @@ async function seed(c: pg.Client) {
      values ($1, $2, 'pricing', $3, $4, '{}', now())`,
     [W, ids.get("watched"), ids.get("oldest"), ids.get("older")],
   );
-
-  // A per-Person click goes 12 months after its message went out (ADR 0035 rule 017).
-  const { rows: plan } = await c.query(`insert into marketing_plans (workspace_id, title, created_at, updated_at) values ($1, 't', now(), now()) returning id`, [W]);
-  const { rows: camp } = await c.query(`insert into campaigns (workspace_id, plan_id, owner_user_id, created_at, updated_at) values ($1, $2, $3, now(), now()) returning id`, [W, plan[0].id, U]);
-  const { rows: dom } = await c.query(`insert into tracking_domains (workspace_id, hostname, txt_value, created_by, created_at) values ($1, 'links.example.com', 'v', $2, now()) returning id`, [W, U]);
-  const link = "AAAAAAAAAAAAAAAAAAAAAA";
-  await c.query(`insert into tracked_links (id, workspace_id, campaign_id, step_key, domain_id, destination, created_at) values ($1, $2, $3, 's1', $4, 'https://a.example/', now())`, [link, W, camp[0].id, dom[0].id]);
-  const person = crypto.randomUUID();
-  await c.query(`insert into people (id, workspace_id, coordination_id, created_at) values ($1, $2, $1, now())`, [person, W]);
-  const click = async (name: string, days: number) => {
-    const { rows: action } = await c.query(
-      `insert into actions (workspace_id, idempotency_key, capability, dedupe_class, state, spec, spec_hash, created_at, updated_at)
-       values ($1, $2, 'test.send', 'blind', 'draft', '{}', 'h', now(), now()) returning id`,
-      [W, name],
-    );
-    const token = Buffer.from(name.padEnd(32, "-")).toString("hex").slice(0, 64);
-    const { rows: use } = await c.query(
-      `insert into tracked_link_uses (workspace_id, link_id, action_id, token_hash, person_id, inputs_hash, sent_at, created_at) values ($1, $2, $3, $4, $5, 'h', $6, now()) returning id`,
-      [W, link, action[0].id, token, person, ago(days)],
-    );
-    await c.query(
-      `insert into person_clicks (workspace_id, use_id, person_id, link_id, bucket, sent_at, first_at, last_at, count) values ($1, $2, $3, $4, 'rest', $5, now(), now(), 1)`,
-      [W, use[0].id, person, link, ago(days)],
-    );
-    ids.set(name, use[0].id);
-  };
-  await click("clicked last year", 400);
-  await click("clicked lately", 30);
 }
 
 let owner: pg.Client;
@@ -138,7 +110,6 @@ test("each table loses its old terminal rows and keeps what is in flight or stil
     "public.budget_reservations": 2,
     "public.credential_access_events": 1,
     "public.competitor_snapshots": 2,
-    "public.person_clicks": 1,
   });
   expect(await left(`select event_id from trigger_events`)).toEqual(["recent"]);
   expect((await left(`select idempotency_key from model_calls order by 1`)).sort()).toEqual(["old and in flight", "recent"]);
@@ -148,7 +119,6 @@ test("each table loses its old terminal rows and keeps what is in flight or stil
   expect((await left(`select id from competitor_snapshots`)).sort()).toEqual([ids.get("newest"), ids.get("only read")].sort());
   // The Change between two pruned reads went with them.
   expect(await left(`select count(*)::int from competitor_changes`)).toEqual([0]);
-  expect(await left(`select use_id from person_clicks`)).toEqual([ids.get("clicked lately")]);
   // A second run finds nothing.
-  expect(Object.values(await sweepRetention())).toEqual([0, 0, 0, 0, 0, 0]);
+  expect(Object.values(await sweepRetention())).toEqual([0, 0, 0, 0, 0]);
 });

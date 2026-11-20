@@ -8,7 +8,7 @@ import type pg from "pg";
 import { withWorkspace } from "../src/index";
 import { organizations, workspaces } from "../src/schema";
 import { campaigns } from "../src/schema-campaigns";
-import { clickCounts, personClickMarks, personClicks, trackedLinks, trackedLinkUses, trackingCounters, trackingDomains } from "../src/schema-tracking";
+import { trackedLinks, trackedLinkUses, trackingDomains } from "../src/schema-tracking";
 import { appClient, insertAuthUser } from "../../../test/db";
 
 let c: pg.Client;
@@ -175,11 +175,11 @@ test("the drizzle schema names the same checks, keys and foreign keys as migrati
     });
     return [...cfg.checks.map((x) => x.name), ...cfg.uniqueConstraints.map((u) => u.name), ...fks].sort();
   };
-  const tables = { trackingDomains, trackedLinks, trackedLinkUses, clickCounts, personClicks, personClickMarks, trackingCounters };
+  const tables = { trackingDomains, trackedLinks, trackedLinkUses };
   await as("");
   const { rows } = await c.query(
     `select conrelid::regclass::text as tbl, conname from pg_constraint
-     where conrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses', 'click_counts', 'person_clicks', 'person_click_marks', 'tracking_counters')
+     where conrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses')
        and contype in ('c', 'u', 'f')`,
   );
   for (const [, table] of Object.entries(tables)) {

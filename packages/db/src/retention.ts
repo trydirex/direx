@@ -113,23 +113,6 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
     sweep: "system.sweep_competitor_snapshots",
     appDeletes: true,
   },
-  // Per-Person clicks are kept 12 months after their message went out (ADR 0035 rule 017), swept by
-  // migration 0158; a "Don't count my clicks" mark also deletes a Person's rows (rule 014).
-  "public.person_clicks": {
-    class: "operational",
-    window: "sent_at < now() - interval '12 months'",
-    readers: ["apps/api/src/modules/tracking: the Campaign People list's Clicked column (ADR 0035 rule 018)"],
-    sweep: "system.sweep_person_clicks",
-    appDeletes: true,
-  },
-  // Pruned by the redirect as it counts, like door_counters (ADR 0035 rule 005).
-  "public.tracking_counters": {
-    class: "operational",
-    window: "minute < now() - interval '10 minutes'",
-    readers: ["apps/api/src/modules/tracking: the redirect's per-link limit for the current minute"],
-    sweep: "apps/api/src/modules/tracking, as it counts",
-    appDeletes: true,
-  },
   // Pruned by the app as it counts (apps/api/src/modules/door/application/requests.ts), which holds DELETE.
   "public.door_counters": {
     class: "operational",
@@ -257,12 +240,10 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "public.trigger_cursors": audit,
   "public.unsubscribe_tokens": auditDeletable,
   // Tracked links (ADR 0035): kept while the Workspace exists, so links already sent keep redirecting
-  // (rule 017). A domain may be removed while no link uses it (rule 008), and a mark may be cleared.
+  // (rule 017). A domain may be removed while no link uses it (rule 008).
   "public.tracking_domains": auditDeletable,
   "public.tracked_links": audit,
   "public.tracked_link_uses": audit,
-  "public.click_counts": audit,
-  "public.person_click_marks": auditDeletable,
   "public.voice_entries": audit,
   "public.voice_versions": audit,
   "public.workspace_audit": audit,

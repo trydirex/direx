@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Tracked links (ADR 0035): a Campaign's links rewritten onto the customer's own tracking domain, and
-// the clicks counted on them. Nothing here holds a client IP address, user agent or other request
+// which message used which link. Click counts, per-Person clicks, marks and the redirect's rate
+// counter come with the code that writes them. Nothing here holds a client IP address, user agent or other request
 // header (rule 009). Links never change once made (rule 004), so the app may not update or delete them.
 import { sql } from "drizzle-orm";
-import { boolean, check, date, foreignKey, index, integer, pgTable, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { actions, people, workspaces } from "./schema";
 import { campaignDms, campaigns } from "./schema-campaigns";
@@ -94,84 +95,5 @@ export const trackedLinkUses = pgTable(
     check("tracked_link_uses_token_hash_check", sql`${t.tokenHash} is null or ${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
     // DMs never carry a token (rule 012).
     check("tracked_link_uses_dm_token_check", sql`${t.dmId} is null or ${t.tokenHash} is null`),
-  ],
-);
-
-// Clicks per link, day (UTC), bucket and classification version (rule 010). Kept as long as the
-// Campaign's readings (rule 017).
-export const clickCounts = pgTable(
-  "click_counts",
-  {
-    workspaceId: uuid("workspace_id").notNull(),
-    linkId: text("link_id").notNull(),
-    day: date("day", { mode: "string" }).notNull(),
-    bucket: text("bucket").notNull(),
-    classifierVersion: integer("classifier_version").notNull(),
-    count: integer("count").notNull(),
-  },
-  (t) => [
-    primaryKey({ name: "click_counts_pkey", columns: [t.workspaceId, t.linkId, t.day, t.bucket, t.classifierVersion] }),
-    foreignKey({ name: "click_counts_link_fk", columns: [t.workspaceId, t.linkId], foreignColumns: [trackedLinks.workspaceId, trackedLinks.id] }),
-    check("click_counts_bucket_check", sql`${t.bucket} in ('automatic', 'rest')`),
-    check("click_counts_count_check", sql`${t.count} > 0`),
-  ],
-);
-
-// Clicks on one tokened use, for a US Person in the per-Person case (rule 012). `sent_at` is copied
-// from the use so the 12-month window reads this table's own columns (rule 017).
-export const personClicks = pgTable(
-  "person_clicks",
-  {
-    workspaceId: uuid("workspace_id").notNull(),
-    useId: uuid("use_id").notNull(),
-    personId: uuid("person_id").notNull(),
-    linkId: text("link_id").notNull(),
-    bucket: text("bucket").notNull(),
-    sentAt: tz("sent_at").notNull(),
-    firstAt: tz("first_at").notNull(),
-    lastAt: tz("last_at").notNull(),
-    count: integer("count").notNull(),
-  },
-  (t) => [
-    primaryKey({ name: "person_clicks_pkey", columns: [t.workspaceId, t.useId, t.bucket] }),
-    index("person_clicks_person_idx").on(t.workspaceId, t.personId),
-    foreignKey({ name: "person_clicks_use_fk", columns: [t.workspaceId, t.useId], foreignColumns: [trackedLinkUses.workspaceId, trackedLinkUses.id] }),
-    foreignKey({ name: "person_clicks_person_fk", columns: [t.workspaceId, t.personId], foreignColumns: [people.workspaceId, people.id] }),
-    check("person_clicks_bucket_check", sql`${t.bucket} in ('automatic', 'rest')`),
-    check("person_clicks_count_check", sql`${t.count} > 0`),
-  ],
-);
-
-// "Don't count my clicks" (rule 014): the row's presence is the mark. Any Member sets or clears it.
-export const personClickMarks = pgTable(
-  "person_click_marks",
-  {
-    workspaceId: uuid("workspace_id").notNull(),
-    personId: uuid("person_id").notNull(),
-    setBy: uuid("set_by")
-      .notNull()
-      .references(() => user.id),
-    setAt: tz("set_at").notNull(),
-  },
-  (t) => [
-    primaryKey({ name: "person_click_marks_pkey", columns: [t.workspaceId, t.personId] }),
-    foreignKey({ name: "person_click_marks_person_fk", columns: [t.workspaceId, t.personId], foreignColumns: [people.workspaceId, people.id] }),
-  ],
-);
-
-// Counted requests per link per minute, for the redirect's rate limit (rule 005), as door_counters
-// does for the door. Rows a few minutes old are deleted as requests come in.
-export const trackingCounters = pgTable(
-  "tracking_counters",
-  {
-    workspaceId: uuid("workspace_id").notNull(),
-    linkId: text("link_id").notNull(),
-    minute: tz("minute").notNull(),
-    count: integer("count").notNull(),
-  },
-  (t) => [
-    primaryKey({ name: "tracking_counters_pkey", columns: [t.workspaceId, t.linkId, t.minute] }),
-    foreignKey({ name: "tracking_counters_link_fk", columns: [t.workspaceId, t.linkId], foreignColumns: [trackedLinks.workspaceId, trackedLinks.id] }),
-    check("tracking_counters_count_check", sql`${t.count} > 0`),
   ],
 );

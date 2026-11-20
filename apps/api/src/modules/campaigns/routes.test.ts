@@ -379,3 +379,84 @@ test("a rewrite takes a preset or a person's words, not both, and starts the ema
   expect((await rewrite(owner, { reason: "rude", timeZone: "UTC" })).status).toBe(400);
   spy.mockRestore();
 });
+
+// The write-up, set up in the database as its sink would leave it.
+async function inW<T>(text: string, params: unknown[]) {
+  const db = await appClient();
+  try {
+    await db.query("select set_config('app.workspace_id', $1, false)", [W]);
+    return (await db.query(text, params)).rows as T[];
+  } finally {
+    await db.end();
+  }
+}
+
+test("anyone in the Workspace reads the write-up: null before, then its cited readings, corrected once one isn't its Measure's newest; another Workspace gets 404", async () => {
+  const id = await newCampaign();
+  const { planId } = await read<{ planId: string }>(url(`/campaigns/${id}`));
+  const writeUp = url(`/campaigns/${id}/write-up`);
+  expect(await read(writeUp, roles.viewer)).toEqual({ writeUp: null });
+
+  await send("POST", url(`/plans/${planId}/measures/m/readings`), owner, { value: "3", observedOn: "2026-11-20" });
+  const r = (await inW<{ id: string }>("select id from plan_measure_readings where plan_id = $1", [planId]))[0]!.id;
+  const suggestion = { assumption: "Ops leads answer one email.", because: "Direx counted 3 meetings.", readingIds: [r], outcome: "added" };
+  await inW("insert into campaign_write_ups (workspace_id, campaign_id, status, paragraph, cites, suggestions, created_at, written_at) values ($1, $2, 'written', 'Q4 booked 3 meetings.', $3, $4, now(), '2026-12-02T09:00:00Z')", [W, id, JSON.stringify([r]), JSON.stringify([suggestion])]);
+  const cite = { readingId: r, label: "M", value: "3", source: "person", observedOn: "2026-11-20" };
+  const written = { status: "written", paragraph: "Q4 booked 3 meetings.", cites: [cite], suggestions: [suggestion], failure: null, itemId: null, writtenAt: "2026-12-02T09:00:00.000Z", corrected: false };
+  for (const cookie of [roles.viewer, roles.contributor, roles.marketer, owner]) expect(await read(writeUp, cookie)).toEqual({ writeUp: written });
+
+  // A newer reading for the cited Measure: the cite still shows what was written from, and says it was corrected.
+  await send("POST", url(`/plans/${planId}/measures/m/readings`), owner, { value: "4", observedOn: "2026-11-25" });
+  expect(await read(writeUp)).toEqual({ writeUp: { ...written, corrected: true } });
+  // A cited reading that no longer resolves is left out, and counts as corrected too.
+  await inW("update campaign_write_ups set cites = $2 where campaign_id = $1", [id, JSON.stringify([crypto.randomUUID()])]);
+  expect(await read(writeUp)).toEqual({ writeUp: { ...written, cites: [], corrected: true } });
+
+  const other = (await createOrg(owner)).workspace.id;
+  expect((await call(`/api/w/${other}/campaigns/${id}/write-up`, owner)).status).toBe(404);
+  expect((await call(url("/campaigns/00000000-0000-4000-8000-000000000999/write-up"), owner)).status).toBe(404);
+});
+
+test("Write it again restarts a written or failed write-up of an Ended Campaign with one run, keeping the paragraph; with its refusals", async () => {
+  const id = await newCampaign();
+  const again = async (cookie = owner, path = url(`/campaigns/${id}/write-up`)) => {
+    const r = await send("POST", path, cookie);
+    return [r.status, await r.json()];
+  };
+  const row = async () => (await inW<{ status: string; paragraph: string | null; failure: string | null; run_id: string | null }>("select status, paragraph, failure, run_id from campaign_write_ups where campaign_id = $1", [id]))[0]!;
+  const runs = () => started.filter((s) => s.agent === "campaign_writer").length;
+  expect(await again()).toEqual([404, { error: "not_found" }]);
+  expect(await campaigns.startWriteUp(W, id)).toBe(true);
+  const firstRun = (await row()).run_id;
+  const before = runs();
+  // The plan ends on November 30, so the Campaign is Ended in January.
+  now.mockReturnValue(new Date("2027-01-04T12:00:00Z"));
+  try {
+    expect(await again()).toEqual([409, { error: "writing" }]);
+    await inW("update campaign_write_ups set status = 'written', paragraph = 'Q4 sent 1 email.', written_at = now() where campaign_id = $1", [id]);
+    expect(await again(roles.viewer)).toEqual([403, expect.anything()]);
+    const other = (await createOrg(owner)).workspace.id;
+    expect(await again(owner, `/api/w/${other}/campaigns/${id}/write-up`)).toEqual([404, { error: "not_found" }]);
+    expect(runs()).toBe(before);
+
+    const writing = { status: "writing", paragraph: "Q4 sent 1 email.", failure: null, cites: [], suggestions: [], itemId: null, writtenAt: expect.any(String), corrected: false };
+    expect(await again(roles.marketer)).toEqual([202, { writeUp: writing }]);
+    expect(runs()).toBe(before + 1);
+    const secondRun = (await row()).run_id;
+    expect(secondRun).not.toBeNull();
+    expect(secondRun).not.toBe(firstRun);
+
+    await inW("update campaign_write_ups set status = 'failed', failure = 'number_not_in_brief:7' where campaign_id = $1", [id]);
+    expect(await again()).toEqual([202, { writeUp: writing }]);
+    expect(await row()).toMatchObject({ status: "writing", paragraph: "Q4 sent 1 email.", failure: null });
+    expect(runs()).toBe(before + 2);
+
+    // Before the end, it isn't Ended.
+    await inW("update campaign_write_ups set status = 'failed', failure = 'number_not_in_brief:7' where campaign_id = $1", [id]);
+    now.mockReturnValue(new Date("2026-11-15T12:00:00Z"));
+    expect(await again()).toEqual([409, { error: "not_ended" }]);
+    expect(runs()).toBe(before + 2);
+  } finally {
+    now.mockImplementation(() => new Date());
+  }
+});

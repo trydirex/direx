@@ -859,6 +859,18 @@ export async function claimWriteUp(tx: CampaignsTx, a: { workspaceId: string; ca
   return rows.length > 0;
 }
 
+export const readWriteUp = async (tx: CampaignsTx, campaignId: string) => (await tx.select().from(campaignWriteUps).where(eq(campaignWriteUps.campaignId, campaignId)))[0];
+
+/** Sets a written or failed write-up back to writing, keeping its paragraph. False when it is already being written, or there is none. */
+export async function rewriteWriteUp(tx: CampaignsTx, campaignId: string): Promise<boolean> {
+  const rows = await tx
+    .update(campaignWriteUps)
+    .set({ status: "writing", failure: null })
+    .where(and(eq(campaignWriteUps.campaignId, campaignId), ne(campaignWriteUps.status, "writing")))
+    .returning({ id: campaignWriteUps.id });
+  return rows.length > 0;
+}
+
 /** False when the Campaign has no write-up row. */
 export async function setWriteUp(tx: CampaignsTx, campaignId: string, set: Partial<Omit<typeof campaignWriteUps.$inferInsert, "workspaceId" | "campaignId">>, fromRun?: string): Promise<boolean> {
   // A run's output lands only while the row still waits on that run (or on none yet), so a late

@@ -7,7 +7,7 @@ import type { ItemKind, Items } from "../../items";
 import { appendAssumptions, earlierResultsText, type PlanBody, type Plans } from "../../plans";
 import { mailboxDay, timeZoneOf } from "../../schedule";
 import { sentDms } from "../adapters/overlaps-repo";
-import { campaignsToCount, claimWriteUp, inWorkspace, readCampaign, setWriteUp, stepStateCounts, stepsOf, type CampaignsTx } from "../adapters/repo";
+import { campaignsToCount, claimWriteUp, inWorkspace, readCampaign, readWriteUp, rewriteWriteUp, setWriteUp, stepStateCounts, stepsOf, type CampaignRow, type CampaignsTx } from "../adapters/repo";
 import { campaignWriter } from "../definitions/write-up";
 import { datedSteps, stepDate } from "../domain/anchor";
 import { lifecycle } from "../domain/lifecycle";
@@ -19,6 +19,17 @@ import type { StartDraft } from "./drafting";
 export type WriteUpInput = DraftInput & { writeUp: { campaignId: string } };
 type BriefOf = (workspaceId: string, campaignId: string) => Promise<(Brief & { title: string }) | undefined>;
 type ItemPorts = Pick<Items, "settleGroupIn" | "createItemIn">;
+/** What GET and POST `…/write-up` return. `failure` stays the coded reason; the web words it. */
+export type WriteUpView = {
+  status: "writing" | "written" | "failed";
+  paragraph: string | null;
+  cites: { readingId: string; label: string; value: string; source: "person" | "system"; observedOn: string }[];
+  suggestions: (Suggestion & { outcome?: "added" | "not_added" })[];
+  failure: string | null;
+  itemId: string | null;
+  writtenAt: string | null;
+  corrected: boolean;
+};
 type Overlaps = (workspaceId: string, campaignId: string) => Promise<{ kinds: { kind: string; rows: OverlapRow[] }[] } | undefined>;
 
 /** The run's last day: the plan's end, moved with the launch like every step. */
@@ -70,15 +81,86 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
     };
   };
 
-  /** Claims the Campaign's one write-up and starts its run, with no person behind it. False when it already has one. */
-  async function startWriteUp(workspaceId: string, campaignId: string): Promise<boolean> {
-    const brief = await writeUpBrief(workspaceId, campaignId);
-    if (!brief || !(await inWorkspace(workspaceId, (tx) => claimWriteUp(tx, { workspaceId, campaignId, now: d.now() })))) return false;
-    const input: WriteUpInput = { request: "Write up this Campaign.", brief: [{ kind: "campaign_results", refId: campaignId, version: null, text: brief.text }], target: { id: null, draftRevision: 0 }, writeUp: { campaignId } };
+  /** Starts the writer on the brief, with no person behind it, for a write-up row already in writing. */
+  async function runWriteUp(workspaceId: string, campaignId: string, briefText: string): Promise<void> {
+    const input: WriteUpInput = { request: "Write up this Campaign.", brief: [{ kind: "campaign_results", refId: campaignId, version: null, text: briefText }], target: { id: null, draftRevision: 0 }, writeUp: { campaignId } };
     const run = await d.startDraft()(workspaceId, { agent: campaignWriter.id, input, schedule: true });
     // A refused start is recorded, so the row never waits in writing on a run that doesn't exist.
     await inWorkspace(workspaceId, (tx) => setWriteUp(tx, campaignId, run.ok ? { runId: run.run.id } : { status: "failed", failure: `not_started:${run.reason}` }));
+  }
+
+  /** Claims the Campaign's one write-up and starts its run. False when it already has one. */
+  async function startWriteUp(workspaceId: string, campaignId: string): Promise<boolean> {
+    const brief = await writeUpBrief(workspaceId, campaignId);
+    if (!brief || !(await inWorkspace(workspaceId, (tx) => claimWriteUp(tx, { workspaceId, campaignId, now: d.now() })))) return false;
+    await runWriteUp(workspaceId, campaignId, brief.text);
     return true;
+  }
+
+  /** The Campaign's lifecycle on the Workspace's today. Undefined with no approved plan. */
+  async function standing(workspaceId: string, row: CampaignRow) {
+    const plan = await d.plans.plan(workspaceId, row.planId);
+    const body = plan?.current;
+    if (!plan || !body) return undefined;
+    const endsOn = endOf(row.anchorOn, body);
+    const today = mailboxDay(d.now(), await timeZoneOf(workspaceId));
+    const { status } = lifecycle({ endsOn, paused: row.pausedAt !== null, approved: plan.currentVersion !== null, waiting: plan.waiting !== null, launchOn: row.anchorOn ?? body.startsOn }, today);
+    return { status, endsOn, today };
+  }
+
+  /**
+   * The write-up as the Overview shows it: each cited reading as its Measure has it now, and `corrected`
+   * once one is no longer its Measure's newest, or no longer there. Null before one exists; undefined
+   * for another Workspace's Campaign.
+   */
+  async function writeUp(workspaceId: string, campaignId: string): Promise<WriteUpView | null | undefined> {
+    const read = await inWorkspace(workspaceId, async (tx) => {
+      const row = await readCampaign(tx, campaignId);
+      return row && { row, writeUp: (await readWriteUp(tx, campaignId)) ?? null };
+    });
+    if (!read) return undefined;
+    const w = read.writeUp;
+    if (!w) return null;
+    const plan = await d.plans.plan(workspaceId, read.row.planId);
+    // readingsOf hands tracking() each row with its id, which its Reading type leaves out.
+    const found = new Map(
+      (plan?.tracking?.measures ?? []).flatMap((m) => (m.readings as (typeof m.readings[number] & { id: string })[]).map((r) => [r.id, { r, label: m.label, newest: (m.latest as { id: string } | null)?.id === r.id }] as const)),
+    );
+    const ids = w.cites as string[];
+    const cites = ids.flatMap((id) => {
+      const f = found.get(id);
+      return f ? [{ readingId: id, label: f.label, value: f.r.value, source: f.r.source, observedOn: f.r.observedOn }] : [];
+    });
+    return {
+      status: w.status as WriteUpView["status"],
+      paragraph: w.paragraph,
+      cites,
+      suggestions: w.suggestions as WriteUpView["suggestions"],
+      failure: w.failure,
+      itemId: w.itemId,
+      writtenAt: w.writtenAt?.toISOString() ?? null,
+      corrected: ids.some((id) => !found.get(id)?.newest),
+    };
+  }
+
+  /**
+   * Write it again: a written or failed write-up goes back to writing, keeping its paragraph until the
+   * new run passes, and one new run starts. Refused while one is being written, and before the Campaign is Ended.
+   */
+  async function writeAgain(workspaceId: string, campaignId: string): Promise<{ ok: true; writeUp: WriteUpView } | { ok: false; reason: "not_found" | "writing" | "not_ended" }> {
+    const read = await inWorkspace(workspaceId, async (tx) => {
+      const row = await readCampaign(tx, campaignId);
+      return row && { row, writeUp: await readWriteUp(tx, campaignId) };
+    });
+    if (!read?.writeUp) return { ok: false, reason: "not_found" };
+    if (read.writeUp.status === "writing") return { ok: false, reason: "writing" };
+    if ((await standing(workspaceId, read.row))?.status !== "ended") return { ok: false, reason: "not_ended" };
+    const brief = await writeUpBrief(workspaceId, campaignId);
+    if (!brief) return { ok: false, reason: "not_found" };
+    // Two clicks at once: only one sets it back, so only one run starts.
+    if (!(await inWorkspace(workspaceId, (tx) => rewriteWriteUp(tx, campaignId)))) return { ok: false, reason: "writing" };
+    await runWriteUp(workspaceId, campaignId, brief.text);
+    return { ok: true, writeUp: (await writeUp(workspaceId, campaignId))! };
   }
 
   /**
@@ -90,12 +172,9 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
       const row = await readCampaign(tx, campaignId);
       return row && { row, counts: await stepStateCounts(tx, campaignId), dms: (await sentDms(tx, campaignId)).length };
     });
-    const plan = read && (await d.plans.plan(workspaceId, read.row.planId));
-    const body = plan?.current;
-    if (!read || !plan || !body) return false;
-    const endsOn = endOf(read.row.anchorOn, body);
-    const today = mailboxDay(d.now(), await timeZoneOf(workspaceId));
-    const { status } = lifecycle({ endsOn, paused: read.row.pausedAt !== null, approved: plan.currentVersion !== null, waiting: plan.waiting !== null, launchOn: read.row.anchorOn ?? body.startsOn }, today);
+    const s = read && (await standing(workspaceId, read.row));
+    if (!read || !s) return false;
+    const { status, endsOn, today } = s;
     // DMs make no Items, so these are the emails and posts; a sent DM counts only as something that went out.
     const states = read.counts.filter((c) => c.n > 0).map((c) => c.state);
     return dueForWriteUp({ status, endsOn, states, sentDms: read.dms }, today) && startWriteUp(workspaceId, campaignId);
@@ -105,6 +184,8 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
     writeUpBrief,
     startWriteUp,
     maybeWriteUp,
+    writeUp,
+    writeAgain,
 
     /** After the 06:00 count: every Campaign it counted that is now due. One failing is logged and the rest go on. */
     async writeUpsDue(): Promise<void> {

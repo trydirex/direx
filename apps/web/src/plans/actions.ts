@@ -123,7 +123,7 @@ export const readingChanged = (what: "plan" | "Strategy", readingId: string | un
 
 /** What a reason or target rests on, in words. `cited` is the view's `citedReadings`, which names a reading basis. */
 export const basisLabel = (b: Basis, factValue?: (id: string) => string | undefined, cited: CitedReading[] = []) =>
-  b.kind === "assumption" ? "assumption" : b.kind === "reading" ? readingLabel(cited.find((c) => c.id === b.readingId)) : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
+  b.kind === "assumption" ? "assumption" : b.kind === "reading" ? readingLabel(cited.find((c) => c.id === b.readingId.toLowerCase())) : b.kind === "source" ? `From ${b.label}` : `From Brand: ${factValue?.(b.factId) ?? "a brand fact"}`;
 
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 const one = (workspaceId: string, id: string) => ({ path: { workspaceId, id } });

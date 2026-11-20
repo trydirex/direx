@@ -174,6 +174,12 @@ test("a reading basis reads as words naming the Measure, value, who counted it a
   expect(readingChanged("plan", "typed-by-hand", [reading()])).toBe("An earlier Campaign reading this plan relies on has changed.");
 });
 
+test("an uppercase reading basis names the cited reading and preserves its changed warning", () => {
+  const basis = { ...byReading, readingId: READING.toUpperCase() };
+  expect(basisLabel(basis, undefined, [reading()])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026");
+  expect(basisLabel(basis, undefined, [reading({ newer: true })])).toBe("From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026 (since changed)");
+});
+
 test("a plan names its reading basis in the draft view and once approved", () => {
   const measures = [{ ...body.measures[0]!, basis: byReading }];
   const words = "From an earlier Campaign: Interested replies 3, counted by Direx, 12 November 2026";

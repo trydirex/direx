@@ -198,6 +198,28 @@ test("every first-party manifest gives the providers it gave before", () => {
       },
       {
         "docs": [],
+        "id": "com.trydirex.mailchimp",
+        "mailbox": {
+          "incomplete": [],
+          "shapes": [],
+        },
+        "newsletter": {
+          "incomplete": [],
+          "shapes": [
+            {
+              "connection": "mailchimp",
+              "hasLists": true,
+              "hasStats": true,
+              "publishDedupe": "queryable",
+              "publishLeadMs": 0,
+              "sendDedupe": "queryable",
+            },
+          ],
+        },
+        "search": [],
+      },
+      {
+        "docs": [],
         "id": "com.trydirex.search-console",
         "mailbox": {
           "incomplete": [],

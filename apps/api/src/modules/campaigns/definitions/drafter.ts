@@ -6,6 +6,7 @@ import { defineAgent, type AgentDefinition } from "../../agents";
 import type { Warning } from "../../items";
 import { MERGE_FIELDS } from "../domain/merge";
 import { DETAIL_KINDS } from "../domain/quotes";
+import { campaignWriter } from "./write-up";
 
 /** The draft output keys the campaigns module takes, one sink each. */
 export const TEMPLATE_OUTPUT_KEY = "template";
@@ -148,4 +149,5 @@ export const campaignDefinitions = {
   campaign_drafter: campaignDrafter as unknown as AgentDefinition<never>,
   recipient_reader: recipientReader as unknown as AgentDefinition<never>,
   recipient_writer: recipientWriter as unknown as AgentDefinition<never>,
+  campaign_writer: campaignWriter as unknown as AgentDefinition<never>,
 };

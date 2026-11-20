@@ -19,6 +19,7 @@ import { campaignPeople } from "./people";
 import { personDrafting, type AddressLabelsFor, type RunCaps, type SignalsFor } from "./person-drafts";
 import { campaignReadings } from "./readings";
 import { stepOutputs } from "./step-links";
+import { campaignWriteUps } from "./write-up";
 
 export function createCampaigns(deps: { plans: Plans; facts: Facts; items: () => Items; outreach: () => Outreach; startDraft: () => StartDraft; posts?: () => PostPort; clips?: () => ClipPort | undefined; briefs?: () => BriefPort | undefined; now?: () => Date; signalsFor?: SignalsFor; addressLabelsFor?: AddressLabelsFor; keptEligibility?: KeptEligibility; onOutsideContentChanged?: OnOutsideContentChanged; outsideTouches?: () => Pick<OutsideTouches, "log">; onTemplateSaved?: OnTemplateSaved; onSetupChanged?: OnSetupChanged; runCaps?: RunCaps }) {
   const now = deps.now ?? (() => new Date());
@@ -62,6 +63,7 @@ export function createCampaigns(deps: { plans: Plans; facts: Facts; items: () =>
   };
   return {
     ...api,
+    ...campaignWriteUps({ plans: deps.plans, overlaps: api.overlaps, startDraft: deps.startDraft, now }),
     addPeople: refreshed(api.addPeople),
     addPeopleRows: refreshed(api.addPeopleRows),
     setupStep: refreshed(api.setupStep),

@@ -2,7 +2,7 @@
 import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
 import { actionEvents, actions, credentials, items, personKeys } from "@direx/db/schema";
 import { agentRuns } from "@direx/db/schema-agents";
-import { campaignActions, campaignDms, campaignOutcomes, campaignPeople, campaignPlanChanges, campaigns, campaignSettlements, campaignStepMailboxes, campaignStepOutputs, campaignSteps, clipStepRuns } from "@direx/db/schema-campaigns";
+import { campaignActions, campaignDms, campaignOutcomes, campaignPeople, campaignPlanChanges, campaigns, campaignSettlements, campaignStepMailboxes, campaignStepOutputs, campaignSteps, campaignWriteUps, clipStepRuns } from "@direx/db/schema-campaigns";
 import { replySignals } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
 import { socialPosts } from "@direx/db/schema-social";
@@ -847,4 +847,23 @@ export async function activityRows(tx: CampaignsTx, campaignId: string, limit: n
     .orderBy(desc(agentRuns.createdAt))
     .limit(limit);
   return { changes, notices, running };
+}
+
+/** Claims the Campaign's one write-up as `writing`. False when it already has one. */
+export async function claimWriteUp(tx: CampaignsTx, a: { workspaceId: string; campaignId: string; now: Date }): Promise<boolean> {
+  const rows = await tx
+    .insert(campaignWriteUps)
+    .values({ workspaceId: a.workspaceId, campaignId: a.campaignId, status: "writing", createdAt: a.now })
+    .onConflictDoNothing({ target: [campaignWriteUps.workspaceId, campaignWriteUps.campaignId] })
+    .returning({ id: campaignWriteUps.id });
+  return rows.length > 0;
+}
+
+/** False when the Campaign has no write-up row. */
+export async function setWriteUp(tx: CampaignsTx, campaignId: string, set: Partial<Omit<typeof campaignWriteUps.$inferInsert, "workspaceId" | "campaignId">>, fromRun?: string): Promise<boolean> {
+  // A run's output lands only while the row still waits on that run (or on none yet), so a late
+  // answer from an older run can't overwrite a newer write-up.
+  const current = fromRun ? or(eq(campaignWriteUps.runId, fromRun), isNull(campaignWriteUps.runId)) : undefined;
+  const rows = await tx.update(campaignWriteUps).set(set).where(and(eq(campaignWriteUps.campaignId, campaignId), current)).returning({ id: campaignWriteUps.id });
+  return rows.length > 0;
 }

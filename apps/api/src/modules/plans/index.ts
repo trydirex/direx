@@ -4,7 +4,8 @@
 export { planKinds, type OnPlanApproved } from "./application/kinds";
 export { createPlans, type Plans } from "./application/create";
 export type { OnPlanCreated } from "./application/plans";
-export { planSinks } from "./application/drafting";
+// earlierResultsText renders readings and overlaps the same way in a Campaign's write-up brief.
+export { earlierResultsText, planSinks } from "./application/drafting";
 export { PLAN_KIND } from "./application/submit";
 export { planDefinitions, planDrafter, strategyDrafter } from "./definitions/drafters";
 export { planRoutes } from "./routes";

@@ -102,9 +102,9 @@ export async function progressOf(tx: PlansTx, planId: string): Promise<Progress[
   const rows = await tx.select().from(planStepProgress).where(eq(planStepProgress.planId, planId)).orderBy(asc(planStepProgress.at));
   return rows.map((r) => ({ stepKey: r.stepKey, status: r.status as Progress["status"], at: r.at }));
 }
-export async function readingsOf(tx: PlansTx, planId?: string): Promise<(Reading & { planId: string })[]> {
+export async function readingsOf(tx: PlansTx, planId?: string): Promise<(Reading & { id: string; planId: string })[]> {
   const rows = await tx.select().from(planMeasureReadings).where(planId === undefined ? undefined : eq(planMeasureReadings.planId, planId)).orderBy(asc(planMeasureReadings.at));
-  return rows.map((r) => ({ planId: r.planId, measureKey: r.measureKey, value: r.value, observedOn: r.observedOn, source: r.source as Reading["source"], note: r.note, actorUserId: r.actorUserId, at: r.at }));
+  return rows.map((r) => ({ id: r.id, planId: r.planId, measureKey: r.measureKey, value: r.value, observedOn: r.observedOn, source: r.source as Reading["source"], note: r.note, actorUserId: r.actorUserId, at: r.at }));
 }
 /**
  * A reading by id, under RLS so only this Workspace's, and whether it is still the newest for its plan

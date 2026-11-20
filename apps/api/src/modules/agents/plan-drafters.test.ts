@@ -92,7 +92,7 @@ test("a Strategy run fills the draft, with no Item and no version, and is record
   expect(s.waiting).toBeNull();
   expect(await plans.strategyVersions(W)).toEqual([]);
   expect(r.proposals).toMatchObject([{ kind: "strategy_proposal", itemId: null, rejectionCode: null }]);
-  expect(r.parts.map((p) => p.kind)).toEqual(["definition", "date", "citable_facts", "request"]);
+  expect(r.parts.map((p) => p.kind)).toEqual(["definition", "date", "citable_facts", "earlier_results", "request"]);
   // A person's words don't stay on the run once it ends, and neither they nor the brief are in the record.
   expect(JSON.stringify(r.run.input)).not.toContain("audits to Shopify");
   expect(JSON.stringify([r.parts, r.events])).not.toContain("audits to Shopify");

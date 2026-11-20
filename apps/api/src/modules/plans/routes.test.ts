@@ -114,7 +114,7 @@ test("starting a draft: the plan's own request and the session's person, by role
   expect((await send("POST", url("/strategy/draft-run"), roles.viewer, { request: "x" })).status).toBe(403);
   expect((await send("POST", url(`/plans/${id}/draft-run`), roles.contributor)).status).toBe(200);
   expect(started.at(-1)).toMatchObject({ agent: "plan_drafter", input: { request: "Book 4 demos", target: { id, draftRevision: 0 } } });
-  expect(started.at(-1)!.input.brief.map((b) => b.kind)).toEqual(["date", "citable_facts", "strategy"]);
+  expect(started.at(-1)!.input.brief.map((b) => b.kind)).toEqual(["date", "citable_facts", "earlier_results", "strategy"]);
 
   expect((await send("POST", url("/strategy/draft-run"), owner, { request: "Sell audits" })).status).toBe(200);
   expect(started.at(-1)).toMatchObject({ agent: "strategy_drafter", input: { request: "Sell audits" } });

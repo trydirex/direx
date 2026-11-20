@@ -222,6 +222,16 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
     items,
     facts,
     onPlanCreated: campaignOnPlanCreated,
+    // The drafters' earlier results read campaigns' overlaps, which plans can't import. A draft starts after both exist.
+    campaignResults: async (workspaceId, planIds) =>
+      new Map(
+        await Promise.all(
+          planIds.map(async (planId) => {
+            const id = await campaigns.campaignIdOfPlan(workspaceId, planId);
+            return [planId, (id && (await campaigns.overlaps(workspaceId, id))) || null] as const;
+          }),
+        ),
+      ),
   });
   app.route("/", planRoutes({ plans: () => plans, startDraft: startAgent }));
 

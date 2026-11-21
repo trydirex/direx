@@ -15,7 +15,7 @@ export { createFetchHtml, createFetchImage, createFetchJson, htmlToText, linksIn
 export { createFetchSitemap, type FetchSitemap } from "./adapters/fetch-page";
 export { allowed, robotsFrom } from "./domain/robots";
 export { capped } from "./domain/snapshot";
-export { sinkByOutputKey, type Producer, type Sink } from "./application/proposals";
+export { sinkByOutputKey, type DroppedCitation, type Producer, type Sink, type SinkResult } from "./application/proposals";
 export type { DraftInput } from "./application/runs";
 export type { Transcript } from "./domain/invariants";
 export { agentRoutes } from "./routes";

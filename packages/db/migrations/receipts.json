@@ -676,6 +676,14 @@
     "0164_drift_workspaces.sql": {
       "sha256": "de35d25d6e894d203693384889a933f63a15a7a9c3d89885ea460ee8ef66bb59",
       "description": "Adds system.drift_workspaces(): the live Workspaces with an agent proposal whose route is known, ids only, for the daily agent drift check (ADR 0008 rule 026)"
+    },
+    "0165_agent_run_events_citation.sql": {
+      "sha256": "75e908ad5274bf278ca0cb80afeb6d1f2861b42be32ebcd88d47a0e11e0dd30c",
+      "description": "Allow 'citation' in the agent_run_events kind check, for a citation a sink dropped; added NOT VALID because agent_run_events is on the large list, and validated by 0166"
+    },
+    "0166_agent_run_events_validate_kind.sql": {
+      "sha256": "40eb3e7bafb4ce2415700d974236612fd198d53952ab9920ba5b196105a24a5f",
+      "description": "Validate the wider agent_run_events kind check after migration 0165 releases its table lock, allowing event writes during the scan"
     }
   }
 }

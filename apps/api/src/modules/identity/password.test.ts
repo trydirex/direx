@@ -152,6 +152,45 @@ test("outside dev, repeated sign-in attempts from one address are rate limited",
   expect(statuses).toContain(429);
 });
 
+test("the sign-in rate limit counts in the database, so every API process sees the same attempts", async () => {
+  const ip = `203.0.113.${Math.floor(Math.random() * 250) + 1}`;
+  const key = `${ip}|/sign-in/email`;
+  const owner = await ownerClient();
+  try {
+    expect((await signIn(prod, newEmail(), "wrong password here", ip)).status).toBe(401);
+    const { rows } = await owner.query<{ count: number; last_request: string }>("select count, last_request from auth.rate_limit where key = $1", [key]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.count).toBe(1);
+    expect(Date.now() - Number(rows[0]!.last_request)).toBeLessThan(10_000);
+
+    // Another process used up this address's attempts: a second identity, as after a restart, refuses the next.
+    await owner.query("update auth.rate_limit set count = 3, last_request = $2 where key = $1", [key, Date.now()]);
+    const other = testIdentity({ devMode: false });
+    const refused = await signIn(other, newEmail(), "wrong password here", ip);
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("x-retry-after"))).toBeGreaterThan(0);
+
+    // Once the window has passed, the count starts again.
+    await owner.query("update auth.rate_limit set last_request = $2 where key = $1", [key, Date.now() - 11_000]);
+    expect((await signIn(other, newEmail(), "wrong password here", ip)).status).toBe(401);
+    expect((await owner.query("select count from auth.rate_limit where key = $1", [key])).rows[0].count).toBe(1);
+  } finally {
+    await owner.query("delete from auth.rate_limit where key = $1", [key]);
+    await owner.end();
+  }
+});
+
+test("in dev nothing is rate limited, so the table stays empty for that address", async () => {
+  const ip = `192.0.2.${Math.floor(Math.random() * 250) + 1}`;
+  for (let i = 0; i < 4; i++) expect((await signIn(dev, newEmail(), "wrong password here", ip)).status).toBe(401);
+  const owner = await ownerClient();
+  try {
+    expect((await owner.query("select 1 from auth.rate_limit where key like $1", [`${ip}|%`])).rowCount).toBe(0);
+  } finally {
+    await owner.end();
+  }
+});
+
 test("behind a trusted proxy, the limit follows the address the proxy saw, whatever the client put in front of it", async () => {
   const proxied = testIdentity({ devMode: false, trustedProxies: ["10.0.0.0/8"] });
   const email = newEmail();

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { boolean, index, pgSchema, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, index, integer, pgSchema, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 // Better Auth's own tables, in their own schema and outside tenancy: no workspace_id,
 // no RLS. Only the identity module's adapters reach them, through authDb.
@@ -71,4 +71,18 @@ export const verification = auth.table(
     updatedAt: tz("updated_at").notNull().defaultNow(),
   },
   (t) => [index("verification_identifier_idx").on(t.identifier)],
+);
+
+// Better Auth's rate limit counters (rateLimit.storage "database"), so every API process counts
+// the same sign-in attempts and a restart doesn't clear them. `key` is the client address and path;
+// `last_request` is epoch milliseconds, and Better Auth prunes old rows on that index.
+export const rateLimit = auth.table(
+  "rate_limit",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    key: text("key").notNull().unique(),
+    count: integer("count").notNull(),
+    lastRequest: bigint("last_request", { mode: "number" }).notNull(),
+  },
+  (t) => [index("rate_limit_last_request_idx").on(t.lastRequest)],
 );

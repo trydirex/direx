@@ -32,6 +32,7 @@ import {
   updateLive,
   useLinkByState,
   withWorkspace,
+  type WorkspaceTx,
 } from "../adapters/repo";
 import { isLinkToken, isWorkspaceId, LINK_TTL_MS, linkState, linkStatus, linkWorkspace, MAX_OPEN_LINKS } from "../domain/connect-link";
 import { effectiveExpiry } from "../domain/refresh";
@@ -58,11 +59,14 @@ export type CallbackRefusal =
 export type Identity = { accountId: string; accountLabel: string; scopes?: string[]; grantExpiresAt?: string };
 export type Identify = (workspaceId: string, connection: string, accessToken: string) => Promise<Identity>;
 
+export type ConnectProvider = Provider & { ownAppVersion?: string };
+
 export function connector(d: {
   rootKey: RootKey;
   now: () => Date;
   keys: Keyring;
-  providerFor: (workspaceId: string, connection: string | null) => Promise<Provider | undefined>;
+  providerFor: (workspaceId: string, connection: string | null) => Promise<ConnectProvider | undefined>;
+  persistGrant: <T>(workspaceId: string, provider: ConnectProvider, save: (tx: WorkspaceTx) => Promise<T>) => Promise<T | null>;
   identify?: Identify;
   callbackUrl?: string;
   timeoutMs: number;
@@ -214,7 +218,7 @@ export function connector(d: {
     const name = email ?? identity!.accountLabel;
 
     const key = `${p.connection}:${email ?? accountId}`;
-    return withWorkspace(workspaceId, async (tx) => {
+    const saved = await d.persistGrant(workspaceId, p, async (tx) => {
       const existing = await findLiveUserKey(tx, workspaceId, userId, key);
       const id = existing?.id ?? crypto.randomUUID();
       const sealed = await keys.seal(tx, workspaceId, id, parsed.value);
@@ -246,6 +250,7 @@ export function connector(d: {
       await insertEvent(tx, { workspaceId, credentialId: id, consumer: "connect", actorUserId: userId, outcome: "ok", at });
       return { ok: true as const, workspaceId, credential: metadata(row) };
     });
+    return saved ?? refuse("denied", accountId);
   }
 
   /**

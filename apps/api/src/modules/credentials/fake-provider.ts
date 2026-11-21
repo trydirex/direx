@@ -6,7 +6,7 @@ import { pkceChallenge, type Provider } from "./adapters/provider";
 export type RefreshMode = "normal" | "rotating" | "invalid_grant" | "hang";
 const MAIL = "https://mail.example/send";
 
-export function startFakeProvider(opts: { email?: string; grant?: string[] } = {}) {
+export function startFakeProvider(opts: { email?: string; grant?: string[]; beforeExchange?: () => Promise<void> } = {}) {
   const clientId = "client-fake";
   const clientSecret = "secret-fake";
   const codes = new Map<string, { challenge: string; redirectUri: string }>();
@@ -66,6 +66,7 @@ export function startFakeProvider(opts: { email?: string; grant?: string[] } = {
         codes.delete(form.get("code")!);
         if (!c || c.redirectUri !== form.get("redirect_uri") || c.challenge !== pkceChallenge(form.get("code_verifier") ?? ""))
           return json({ error: "invalid_grant" }, 400);
+        await opts.beforeExchange?.();
         const refresh = `rt-${++n}`;
         live.add(refresh);
         return json({ access_token: `at-${++n}`, refresh_token: refresh, expires_in: fake.expiresIn, scope: fake.grant.join(" "), id_token: idToken() });

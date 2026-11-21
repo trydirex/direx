@@ -14,6 +14,7 @@ import {
   isUniqueViolation,
   listEvents,
   listLive,
+  lockWorkspaceApp,
   markConnectionNeedsReauth,
   touchUsed,
   updateLive,
@@ -23,7 +24,7 @@ import {
 import { dueForRenewal, effectiveExpiry } from "../domain/refresh";
 import type { Scope } from "../domain/status";
 import { notReady } from "./check";
-import { connector, type Identify } from "./connect";
+import { connector, type ConnectProvider, type Identify } from "./connect";
 import { approvalKeyStore } from "./approval-keys";
 import { memberKeyStore } from "./member-keys";
 import { keyring } from "./keys";
@@ -107,17 +108,19 @@ export function createVault(deps: VaultDeps) {
   const appProviders = deps.appProviders ?? [];
   const templateFor = (connection: string | null) => providers.find((p) => p.connection === connection) ?? appProviders.find((p) => p.connection === connection);
 
+  type WorkspaceApp = ClientPair & { ownAppVersion: string };
+
   /** A Workspace's own app is a workspace-scoped basic credential: the client id as username, the secret as password. */
-  async function workspaceApp(tx: WorkspaceTx, workspaceId: string, connection: string): Promise<ClientPair | null> {
+  async function workspaceApp(tx: WorkspaceTx, workspaceId: string, connection: string): Promise<WorkspaceApp | null> {
     const row = (await listLive(tx, workspaceId)).find((c) => c.scope === "workspace" && c.kind === "basic" && c.key === `oauth_app:${connection}`);
     if (!row) return null;
     const value = (await keys.open(tx, row)) as SecretValue<"basic"> | null;
     const clientId = (row.meta as { username?: string }).username;
-    return value && clientId ? { clientId, clientSecret: value.password } : null;
+    return value && clientId ? { clientId, clientSecret: value.password, ownAppVersion: `${row.id}:${row.version}` } : null;
   }
 
-  type ProviderFor = (connection: string | null) => Promise<Provider | undefined>;
-  async function resolveProvider(connection: string | null, ownApp: (connection: string) => Promise<ClientPair | null>, systemApp: VaultDeps["systemApp"]): Promise<Provider | undefined> {
+  type ProviderFor = (connection: string | null) => Promise<ConnectProvider | undefined>;
+  async function resolveProvider(connection: string | null, ownApp: (connection: string) => Promise<WorkspaceApp | null>, systemApp: VaultDeps["systemApp"]): Promise<ConnectProvider | undefined> {
     const fixed = providers.find((p) => p.connection === connection);
     if (fixed || !connection) return fixed;
     const template = appProviders.find((p) => p.connection === connection);
@@ -156,6 +159,28 @@ export function createVault(deps: VaultDeps) {
     }
   }
 
+  // Take the app lock before its row lock, in the same order as callback completion.
+  async function findForWrite(tx: WorkspaceTx, workspaceId: string, id: string) {
+    const row = await findCredential(tx, workspaceId, id);
+    if (!row || row.deletedAt) return null;
+    const app = appConnection(row);
+    if (app) await lockWorkspaceApp(tx, workspaceId, app);
+    return findCredential(tx, workspaceId, id, true);
+  }
+
+  async function persistGrant<T>(workspaceId: string, selected: ConnectProvider, save: (tx: WorkspaceTx) => Promise<T>): Promise<T | null> {
+    if (!appProviders.some((p) => p.connection === selected.connection) || providers.some((p) => p.connection === selected.connection)) {
+      return withWorkspace(workspaceId, save);
+    }
+    return withProviderWorkspace(workspaceId, async (tx, provider) => {
+      await lockWorkspaceApp(tx, workspaceId, selected.connection);
+      const current = await provider(selected.connection);
+      if (!current || current.ownAppVersion !== selected.ownAppVersion
+        || current.clientId !== selected.clientId || current.clientSecret !== selected.clientSecret) return null;
+      return save(tx);
+    });
+  }
+
   async function create(
     input: CreateInput,
   ): Promise<Done<{ credential: CredentialMeta }> | Refusal<KindRefusal | "oauth2_needs_connect" | "duplicate_key">> {
@@ -167,6 +192,8 @@ export function createVault(deps: VaultDeps) {
     const id = crypto.randomUUID();
     try {
       return await withWorkspace(workspaceId, async (tx) => {
+        const app = appConnection(input);
+        if (app) await lockWorkspaceApp(tx, workspaceId, app);
         const sealed = await keys.seal(tx, workspaceId, id, parsed.value);
         const at = now();
         const row = await insertCredential(tx, {
@@ -187,7 +214,6 @@ export function createVault(deps: VaultDeps) {
         });
         await insertEvent(tx, { workspaceId, credentialId: id, consumer: "create", actorUserId, outcome: "ok", at });
         // A refresh token works only for the client it was issued to, so a new app means reconnecting.
-        const app = appConnection(row);
         if (app) await markConnectionNeedsReauth(tx, workspaceId, app, at);
         return { ok: true as const, credential: metadata(row) };
       });
@@ -208,7 +234,7 @@ export function createVault(deps: VaultDeps) {
     const r = await withWorkspace(workspaceId, async (tx): Promise<
       Done<{ credential: CredentialMeta }> | Refusal<"missing" | "oauth2_needs_connect" | "stale_version" | KindRefusal>
     > => {
-      const row = await findCredential(tx, workspaceId, id);
+      const row = await findForWrite(tx, workspaceId, id);
       if (!row || row.deletedAt) return { ok: false, reason: "missing" };
       // A mailbox gets a new token by reconnecting, not by pasting one.
       if (row.kind === "oauth2") return { ok: false, reason: "oauth2_needs_connect" };
@@ -242,7 +268,7 @@ export function createVault(deps: VaultDeps) {
   }): Promise<Done<object> | Refusal<"missing">> {
     const { workspaceId, id, actorUserId } = input;
     return withProviderWorkspace(workspaceId, async (tx, provider) => {
-      const row = await findCredential(tx, workspaceId, id, true);
+      const row = await findForWrite(tx, workspaceId, id);
       if (!row || row.deletedAt) return { ok: false, reason: "missing" };
       let revoked = true;
       if (row.kind === "oauth2") {
@@ -390,7 +416,7 @@ export function createVault(deps: VaultDeps) {
     return r && toPlugin(r);
   }
 
-  const connect = connector({ ...deps, timeoutMs, keys, providerFor });
+  const connect = connector({ ...deps, timeoutMs, keys, providerFor, persistGrant });
 
   // resolve is not a property: only use-secret.ts and the plugin seam reach it.
   // A reconnect resumes the mailbox's held work.
@@ -426,7 +452,7 @@ export function createVault(deps: VaultDeps) {
    */
   const setMeta = (workspaceId: string, id: string, name: string, value: string): Promise<Done<{ credential: CredentialMeta }> | Refusal<"missing" | KindRefusal>> =>
     withWorkspace(workspaceId, async (tx) => {
-      const row = await findCredential(tx, workspaceId, id, true);
+      const row = await findForWrite(tx, workspaceId, id);
       if (!row || row.deletedAt) return { ok: false, reason: "missing" };
       const parsed = parseMeta(row.kind as Kind, { ...(row.meta as object), [name]: value });
       if (!parsed.ok) return parsed;

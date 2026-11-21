@@ -410,8 +410,9 @@ test("Search Console uses the Workspace's own Google app, else the sign-in pair,
  * token and refresh: a connect or refresh that works went through that app. `signIn: "fake"` makes
  * the fake's client the sign-in pair.
  */
-function gmailVault(signIn?: ClientPair | "fake") {
-  const fake = startFakeProvider();
+function gmailVault(signIn?: ClientPair | "fake", beforeExchange?: () => Promise<void>) {
+  const fake = startFakeProvider({ beforeExchange });
+  const ready: string[] = [];
   fakes.push(fake);
   // Inside the refresh window, so every resolve refreshes.
   fake.expiresIn = 60;
@@ -419,16 +420,19 @@ function gmailVault(signIn?: ClientPair | "fake") {
   const accepted = { clientId, clientSecret };
   process.env.DIREX_MASTER_KEY = "11".repeat(32);
   const google = signIn === "fake" ? accepted : signIn;
-  const vault = vaultFromEnv({ baseURL: "http://direx.test", ...(google && { google }) }, undefined, { googleAppProviders: [gmail] });
+  const vault = vaultFromEnv({ baseURL: "http://direx.test", ...(google && { google }) }, async (_ws, id) => { ready.push(id); }, { googleAppProviders: [gmail] });
   const clientOf = async (ws: string, owner: string) => {
     const r = await vault.start({ workspaceId: ws, userId: owner, connection: "google" });
     return r.ok ? new URL(r.url).searchParams.get("client_id") : r.reason;
   };
-  const connectGmail = async (ws: string, owner: string) => {
+  const completeGmail = async (ws: string, owner: string) => {
     const started = await vault.start({ workspaceId: ws, userId: owner, connection: "google" });
     if (!started.ok) throw new Error(started.reason);
     const back = new URL((await fetch(started.url, { redirect: "manual" })).headers.get("location")!);
-    const r = await vault.callback({ cookie: started.cookie, state: back.searchParams.get("state")!, code: back.searchParams.get("code")!, sessionUserId: owner });
+    return vault.callback({ cookie: started.cookie, state: back.searchParams.get("state")!, code: back.searchParams.get("code")!, sessionUserId: owner });
+  };
+  const connectGmail = async (ws: string, owner: string) => {
+    const r = await completeGmail(ws, owner);
     if (!r.ok) throw new Error(r.reason);
     return r.credential;
   };
@@ -440,7 +444,7 @@ function gmailVault(signIn?: ClientPair | "fake") {
     const r = await resolverOf(vault)(ws, id, "poll");
     return { token: r?.value, calls: fake.calls.refresh - before };
   };
-  return { fake, vault, accepted, clientOf, connectGmail, saveOwnApp, refreshed };
+  return { fake, vault, accepted, clientOf, connectGmail, completeGmail, saveOwnApp, refreshed, ready };
 }
 
 test("with only its own Google app and no sign-in pair, a Workspace connects Gmail and refreshes it through that app", async () => {
@@ -455,6 +459,39 @@ test("with only its own Google app and no sign-in pair, a Workspace connects Gma
   const mailbox = await g.connectGmail(ws, owner);
   expect(mailbox).toMatchObject({ kind: "oauth2", scope: "user", status: "active", connection: "google", ownerUserId: owner });
   expect(await g.refreshed(ws, mailbox.id)).toEqual({ token: { accessToken: expect.stringMatching(/^at-/), expiresAt: expect.any(String) }, calls: 1 });
+});
+
+test.each(["first connect", "reconnect"] as const)("Gmail %s refuses a callback whose app was removed during exchange", async (mode) => {
+  const entered = Promise.withResolvers<void>();
+  const released = Promise.withResolvers<void>();
+  let pause = false;
+  const g = gmailVault(undefined, async () => {
+    if (!pause) return;
+    entered.resolve();
+    await released.promise;
+  });
+  const { ws, owner } = await newWorkspace();
+  const app = await g.saveOwnApp(ws, owner, g.accepted);
+  if (!app.ok) throw new Error(app.reason);
+  const existing = mode === "reconnect" ? await g.connectGmail(ws, owner) : null;
+  pause = true;
+
+  const pending = g.completeGmail(ws, owner);
+  try {
+    await Promise.race([entered.promise, pending.then(() => { throw new Error("Callback finished before app removal"); })]);
+    expect(await g.vault.remove({ workspaceId: ws, id: app.credential.id, actorUserId: owner })).toEqual({ ok: true });
+    // A new row with the same client pair does not make the old app current again.
+    if (existing) expect((await g.saveOwnApp(ws, owner, g.accepted)).ok).toBe(true);
+  } finally {
+    released.resolve();
+  }
+
+  expect(await pending).toEqual({ ok: false, reason: "denied" });
+  expect(g.fake.calls.revoked).toEqual([expect.stringMatching(/^rt-/)]);
+  expect(g.ready).toEqual(existing ? [existing.id] : []);
+  expect((await g.vault.list(ws)).filter((c) => c.kind === "oauth2")).toEqual(
+    existing ? [expect.objectContaining({ id: existing.id, status: "needs_reauth" })] : [],
+  );
 });
 
 test("disconnect revokes Gmail after the Workspace removes its only Google app", async () => {

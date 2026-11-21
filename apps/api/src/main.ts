@@ -18,7 +18,7 @@ import { CHECK_CANDIDATES, deploymentFromEnv, modelRoutes, signInNeeds } from ".
 import { connectedMailboxes, createHeaderCheck, createHoldHooks, createHolds, createMailboxPauses, createOutreach, createOutsideTouches, isPublicHttps, outreachRoutes, PROBE_WORDING_VERSION } from "./modules/outreach/index";
 import { createExports, exportRoutes } from "./modules/retention/index";
 import { createReviewFeeds, reviewFeedRoutes } from "./modules/review-feed/index";
-import { createTrackingDomains, systemDns, trackingAskApp, trackingRoutes } from "./modules/tracking/index";
+import { createRedirect, createTrackingDomains, systemDns, trackingAskApp, trackingRedirectApp, trackingRoutes } from "./modules/tracking/index";
 import { createPlans, draftRuns, planAskStarts, planRoutes } from "./modules/plans/index";
 import { createPluginWebhooks, docsProviders, HOST_VERSION, keyConnections, newsletterLists, pluginRoutes, searchProviders, type Plugins } from "./modules/plugins/index";
 import { createNewsletter, issueDesk, newsletterRoutes } from "./modules/newsletter/index";
@@ -275,6 +275,8 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
   // Tracked links' domains (ADR 0035). The edge's ask is its own app, served on an internal port below.
   const trackingDomains = createTrackingDomains({ dns: systemDns, target: () => process.env.DIREX_TRACKING_TARGET || null });
   app.route("/", trackingRoutes({ domains: () => trackingDomains }));
+  const trackingRedirect = createRedirect();
+  app.route("/", trackingRedirectApp({ redirect: () => trackingRedirect }));
   const trackingAsk = trackingAskApp({ domains: () => trackingDomains });
   const setMeta: Vault["setMeta"] = (workspaceId, credentialId, name, value) => getVault().setMeta(workspaceId, credentialId, name, value);
   const newsletter = createNewsletter({

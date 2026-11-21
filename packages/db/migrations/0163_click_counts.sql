@@ -40,3 +40,21 @@ CREATE POLICY workspace_isolation ON tracking_counters
 --> statement-breakpoint
 -- Daily counts only grow, and go with the Workspace (ADR 0035 rule 017).
 REVOKE DELETE ON click_counts FROM direx_app;
+--> statement-breakpoint
+CREATE FUNCTION public.click_counts_keep_growth()
+RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog
+AS $$
+BEGIN
+  RAISE EXCEPTION 'click_counts: count cannot decrease and the key cannot change' USING ERRCODE = 'check_violation';
+END
+$$;
+--> statement-breakpoint
+CREATE TRIGGER click_counts_keep_growth
+  BEFORE UPDATE ON public.click_counts
+  FOR EACH ROW WHEN (
+    NEW.count < OLD.count OR
+    (NEW.workspace_id, NEW.link_id, NEW.day, NEW.bucket, NEW.classifier_version)
+      IS DISTINCT FROM (OLD.workspace_id, OLD.link_id, OLD.day, OLD.bucket, OLD.classifier_version)
+  )
+  EXECUTE FUNCTION public.click_counts_keep_growth();

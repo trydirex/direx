@@ -670,8 +670,8 @@
       "description": "Drops attached and history from the input of ended agent runs, so a run record keeps only the kind, id and digest of what it read (ADR 0008 rule DX-R-0008-025); live runs keep them"
     },
     "0163_click_counts.sql": {
-      "sha256": "8b2f5a5083fd24ff72042135eb1a972c5ac41f8201db52632b05ac68235b3033",
-      "description": "Add daily click counts per tracked link and classification, and the per-minute counter behind the redirect's rate limit (ADR 0035)"
+      "sha256": "2071873d580c09b1b400684883e25dec6353913e376962dc14c52cc3869a37e0",
+      "description": "Add grow-only daily click counts per tracked link and classification key, and the per-minute counter behind the redirect's rate limit (ADR 0035)"
     }
   }
 }

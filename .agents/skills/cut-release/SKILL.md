@@ -15,8 +15,10 @@ A release is one git tag. Pushing a `v*` tag starts two workflows:
 - `.github/workflows/release-sdk.yml` publishes `@trydirex/plugin-sdk` only if the version in
   `packages/plugin-sdk/package.json` isn't on npm yet. Most releases skip it.
 
-The GitHub Release and its notes are created by hand after the tag. `SECURITY.md` says only the
-latest release gets security fixes, so every release becomes the supported one.
+An admin can do steps 1, 2 and 4 with one click: `.github/workflows/release.yml` tags the next version
+on `main`, runs both workflows and creates the GitHub Release. By hand, the release is created after
+the tag. `SECURITY.md` says only the latest release gets security fixes, so every release becomes the
+supported one.
 
 ## Ground rules
 
@@ -59,6 +61,23 @@ their edits or approval. Read every "Before you upgrade" step against the diff y
 
 ## 4. Tag and release (on the maintainer's go)
 
+If the maintainer is an admin and `SHA` is the tip of `main`, use the button:
+
+```bash
+gh workflow run release.yml --repo trydirex/direx --ref main -f bump=patch -f expected_sha="$SHA"    # or minor
+gh run watch --repo trydirex/direx <run-id>
+gh release edit <version> --repo trydirex/direx --notes-file <path>/release-notes-<version>.md
+```
+
+The workflow stops before tagging if its commit differs from the approved `SHA`. If `main` advanced,
+repeat steps 1 to 3 and get approval for the new commit before dispatching again. The workflow
+checks `ci` and `install` on that SHA and refuses `patch` if `deploy/compose/.env.template` gained a
+setting. Watch the run from this dispatch. Only edit the notes once its GitHub Release job succeeds
+for the approved SHA, using the version it released. The image and SDK jobs run inside this run, so
+step 5 reads it.
+
+Otherwise, by hand:
+
 ```bash
 git tag -a <version> "$SHA" -m "<version>"
 git push origin <version>
@@ -71,6 +90,7 @@ Use annotated tags (`-a`): they record who tagged and when.
 ## 5. Check what went out
 
 ```bash
+gh run list --repo trydirex/direx --workflow release.yml --limit 1         # button releases
 gh run list --repo trydirex/direx --workflow release-image.yml --limit 1
 gh run list --repo trydirex/direx --workflow release-sdk.yml --limit 1
 docker manifest inspect ghcr.io/trydirex/direx:<version>   # lists amd64 and arm64
@@ -93,6 +113,7 @@ this on a real server.
 
 | Failure | What to do |
 |---|---|
+| the button stopped before tagging | its error says why (not an admin, `ci` or `install` not green, nothing merged, a new setting on `patch`); fix that and run it again |
 | `release-image` failed | read `gh run view <id> --log-failed`; rerun once if it was infrastructure; otherwise fix on `main` and cut the next patch |
 | `release-sdk` failed | after a fix lands, retry with `gh workflow run release-sdk.yml -f release_tag=<version>` (it checks the SDK files match the tag) |
 | the release is broken for users | fix forward with the next patch at once; tell the maintainer before anyone suggests repointing `:latest` |

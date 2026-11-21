@@ -4,6 +4,6 @@
 // public redirect that counts their clicks.
 export { systemDns, type DnsLookup } from "./adapters/dns";
 export { createTrackingDomains, type TrackingDomains } from "./application/domains";
-export { fixLinks, recordUses, type FixedLinks, type TrackingInput } from "./application/links";
+export { fixLinks, fixLinksIn, recordUses, recordUsesOf, type FixedLinks, type TrackingInput } from "./application/links";
 export { createRedirect, type Redirect } from "./application/redirect";
 export { trackingAskApp, trackingRedirectApp, trackingRoutes } from "./routes";

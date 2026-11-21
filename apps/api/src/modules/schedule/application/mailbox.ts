@@ -73,14 +73,21 @@ const SEARCH_DAYS = 60;
  * within the search horizon has room. An Action that isn't a counted email gets `from` back.
  */
 export async function nextMailboxTime(workspaceId: string, actionId: string, from: Date, opts: { now?: Date } = {}): Promise<Date | null> {
-  const now = opts.now ?? new Date();
-  return inWorkspace(workspaceId, async (tx) => {
-    const send = await sendOf(tx, actionId);
-    if (!send || !counted(send.capability, send.credentialId)) return from;
-    const mailbox = await paceOf(tx, send.credentialId);
-    if (!mailbox) return from;
-    return searchIn(tx, send.credentialId, mailbox, actionId, from, now);
-  });
+  return inWorkspace(workspaceId, (tx) => findMailboxTime(tx, actionId, from, opts.now ?? new Date(), false));
+}
+
+/** Hold the Mailbox lock from the search through the caller's reservation and redate. */
+export function nextMailboxTimeIn(tx: ScheduleTx, actionId: string, from: Date, now: Date): Promise<Date | null> {
+  return findMailboxTime(tx, actionId, from, now, true);
+}
+
+async function findMailboxTime(tx: ScheduleTx, actionId: string, from: Date, now: Date, lock: boolean): Promise<Date | null> {
+  const send = await sendOf(tx, actionId);
+  if (!send || !counted(send.capability, send.credentialId)) return from;
+  if (lock) await lockMailbox(tx, send.credentialId);
+  const mailbox = await paceOf(tx, send.credentialId);
+  if (!mailbox) return from;
+  return searchIn(tx, send.credentialId, mailbox, actionId, from, now);
 }
 
 async function searchIn(tx: ScheduleTx, credentialId: string, { pace, timeZone }: { pace: MailboxPace; timeZone: string }, actionId: string, from: Date, now: Date): Promise<Date | null> {

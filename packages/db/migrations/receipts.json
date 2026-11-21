@@ -677,7 +677,19 @@
       "sha256": "2071873d580c09b1b400684883e25dec6353913e376962dc14c52cc3869a37e0",
       "description": "Add grow-only daily click counts per tracked link and classification key, and the per-minute counter behind the redirect's rate limit (ADR 0035)"
     },
-    "0165_auth_rate_limit.sql": {
+    "0165_drift_workspaces.sql": {
+      "sha256": "de35d25d6e894d203693384889a933f63a15a7a9c3d89885ea460ee8ef66bb59",
+      "description": "Adds system.drift_workspaces(): the live Workspaces with an agent proposal whose route is known, ids only, for the daily agent drift check (ADR 0008 rule 026)"
+    },
+    "0166_agent_run_events_citation.sql": {
+      "sha256": "2dd26aa469d550c5e8cf5086471cfa331512ee296aae3bf5b519a4aade6f4dc7",
+      "description": "Allow 'citation' in the agent_run_events kind check, for a citation a sink dropped; added NOT VALID because agent_run_events is on the large list, and validated by 0167"
+    },
+    "0167_agent_run_events_validate_kind.sql": {
+      "sha256": "10efd99eac8ec8b17a600d054b026dc5a2340bb0a857ab30889ac351af248c83",
+      "description": "Validate the wider agent_run_events kind check after migration 0166 releases its table lock, allowing event writes during the scan"
+    },
+    "0168_auth_rate_limit.sql": {
       "sha256": "47476ac23fac348071e3136c7374a32697d00fe3d21a3ac694cd601df75ecefb",
       "description": "Add auth.rate_limit for Better Auth's rate limit counters, so every API process shares them and a restart keeps them, and grant the app role access"
     }

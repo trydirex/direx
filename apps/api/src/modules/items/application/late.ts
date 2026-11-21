@@ -91,6 +91,8 @@ export function lateSends(d: { ledger: Ledger; now: () => Date; settleGroupIn: S
   }
 
   async function resumeAtIn(tx: ItemsTx, workspaceId: string, actionId: string, actor: Actor, slot: Date, heldFor?: string) {
+    // Take the Action before the Item, as a concurrent redate does.
+    if (!(await d.ledger.lockActionIn(tx, actionId))) return { ok: false, reason: "not_found" } as const;
     const itemId = await itemIdByAction(tx, actionId);
     if (itemId) await setPlannedAt(tx, itemId, slot, d.now());
     return d.ledger.resumeIn(tx, workspaceId, actionId, actor, { ...(heldFor && { heldFor }), dueAt: slot });

@@ -17,9 +17,10 @@ export type Placement = { workspaceId: string; campaignId: string; stepKey: stri
 /** The email itself. Its keys come from the placement, so every path names the same email the same way. */
 export type PlacedEmail = Omit<Compose, "personId" | "idempotencyKey" | "groupKey" | "submit"> & { submit: boolean };
 
+// Every step email names its step, so its links become tracked links while the Campaign tracks them (ADR 0035 rule 001).
 const composeInput = (p: Placement, e: PlacedEmail): Compose => {
   const { submit: _, ...email } = e;
-  return { ...email, personId: p.personId, idempotencyKey: keyOf(p.campaignId, p.stepKey, p.personId), groupKey: groupKeyOf(p.campaignId, p.stepKey) };
+  return { ...email, personId: p.personId, idempotencyKey: keyOf(p.campaignId, p.stepKey, p.personId), groupKey: groupKeyOf(p.campaignId, p.stepKey), tracking: { campaignId: p.campaignId, stepKey: p.stepKey } };
 };
 
 /**

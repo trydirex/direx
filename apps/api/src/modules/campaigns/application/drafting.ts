@@ -6,10 +6,14 @@ import type { DraftInput, DroppedCitation, Sink, SinkResult } from "../../agents
 import type { Facts } from "../../facts";
 import { warn, type Warning } from "../../items";
 import type { Plans } from "../../plans";
-import { activeActions, anyDrafts, fillTemplate, inWorkspace, lockStep, readCampaign, requireApproved, setAdvance, setDraftingMode, setOutsideContent, setStepMode, stepHasDraft, stepsOf, warnTemplatesOfRuns, type CampaignsTx } from "../adapters/repo";
+import { activeActions, anyDrafts, fillTemplate, inWorkspace, lockStep, readCampaign, requireApproved, setAdvance, setDraftingMode, setOutsideContent, setPerPerson, setStepMode, setTracking, trackingDomainState, stepHasDraft, stepsOf, warnTemplatesOfRuns, type CampaignsTx } from "../adapters/repo";
 import { reviewClaims } from "../domain/claims";
 import { fieldsIn, unknownFields } from "../domain/merge";
 import type { TemplateBody, TemplateOutput } from "../definitions/drafter";
+
+/** The versions of the two tracking dialogs' wording; a dialog sends the one it showed (ADR 0035 rule 016). */
+export const TRACKING_WORDING_VERSION = 1;
+export const PER_PERSON_WORDING_VERSION = 1;
 
 export type DraftingMode = "template" | "per_person";
 
@@ -215,6 +219,32 @@ export function campaignDrafting({ plans, facts, startDraft, now, onOutsideConte
         const at = now();
         await setOutsideContent(tx, campaignId, a.allowed, a.userId, at);
         await onOutsideContentChanged?.(tx, campaignId, at);
+        return { ok: true } as const;
+      }),
+
+    /**
+     * Counting the Campaign's link clicks, on one of the Workspace's verified tracking domains. Turning it
+     * on records the person and the version of the dialog they confirmed, which must be the current one
+     * (ADR 0035 rule 016). Off turns per-Person off too. New drafts follow; drafts already fixed keep theirs.
+     */
+    setTracking: (workspaceId: string, campaignId: string, a: { on: true; domainId: string; wordingVersion: number; userId: string } | { on: false; userId: string }) =>
+      inWorkspace(workspaceId, async (tx) => {
+        const approved = await requireApproved(tx, campaignId);
+        if (!approved.ok) return approved;
+        if (a.on && a.wordingVersion !== TRACKING_WORDING_VERSION) return { ok: false, reason: "wording_changed" } as const;
+        if (a.on && (await trackingDomainState(tx, a.domainId)) !== "verified") return { ok: false, reason: "domain_not_verified" } as const;
+        await setTracking(tx, campaignId, a.on ? { domainId: a.domainId, wordingVersion: a.wordingVersion } : null, a.userId, now());
+        return { ok: true } as const;
+      }),
+
+    /** Counting clicks per Person for US recipients whose country a person stated, only while tracking is on. */
+    setPerPerson: (workspaceId: string, campaignId: string, a: { on: true; wordingVersion: number; userId: string } | { on: false; userId: string }) =>
+      inWorkspace(workspaceId, async (tx) => {
+        const approved = await requireApproved(tx, campaignId);
+        if (!approved.ok) return approved;
+        if (a.on && !approved.campaign.trackingOn) return { ok: false, reason: "tracking_off" } as const;
+        if (a.on && a.wordingVersion !== PER_PERSON_WORDING_VERSION) return { ok: false, reason: "wording_changed" } as const;
+        await setPerPerson(tx, campaignId, a.on ? a.wordingVersion : null, a.userId, now());
         return { ok: true } as const;
       }),
 

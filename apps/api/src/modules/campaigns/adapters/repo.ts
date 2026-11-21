@@ -6,6 +6,7 @@ import { campaignActions, campaignDms, campaignOutcomes, campaignPeople, campaig
 import { replySignals } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
 import { socialPosts } from "@direx/db/schema-social";
+import { trackingDomains } from "@direx/db/schema-tracking";
 import type { VisibleState } from "../../items";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQLWrapper } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -273,6 +274,29 @@ export async function stepHasDraft(tx: CampaignsTx, campaignId: string, stepKey:
 
 export async function setStepMode(tx: CampaignsTx, campaignId: string, stepKey: string, mode: "template" | "per_person", now: Date) {
   await tx.update(campaignSteps).set({ draftingMode: mode, updatedAt: now }).where(and(eq(campaignSteps.campaignId, campaignId), eq(campaignSteps.stepKey, stepKey)));
+}
+
+/** A tracking domain's state in this Workspace, or undefined when it has none by that id. */
+export async function trackingDomainState(tx: CampaignsTx, domainId: string): Promise<string | undefined> {
+  const [row] = await tx.select({ state: trackingDomains.state }).from(trackingDomains).where(eq(trackingDomains.id, domainId));
+  return row?.state;
+}
+
+/** Link tracking on a domain, or off; off turns per-Person off too. Who changed it is kept either way (ADR 0035 rule 016). */
+export async function setTracking(tx: CampaignsTx, campaignId: string, a: { domainId: string; wordingVersion: number } | null, userId: string, now: Date) {
+  const who = { trackingSetBy: userId, trackingSetAt: now, updatedAt: now };
+  await tx
+    .update(campaigns)
+    .set(a ? { ...who, trackingOn: true, trackingDomainId: a.domainId, trackingWordingVersion: a.wordingVersion } : { ...who, trackingOn: false, perPersonOn: false, perPersonSetBy: userId, perPersonSetAt: now })
+    .where(eq(campaigns.id, campaignId));
+}
+
+/** Per-Person counting on (with the wording shown) or off. */
+export async function setPerPerson(tx: CampaignsTx, campaignId: string, wordingVersion: number | null, userId: string, now: Date) {
+  await tx
+    .update(campaigns)
+    .set({ perPersonOn: wordingVersion !== null, perPersonSetBy: userId, perPersonSetAt: now, updatedAt: now, ...(wordingVersion !== null && { perPersonWordingVersion: wordingVersion }) })
+    .where(eq(campaigns.id, campaignId));
 }
 
 export async function setOutsideContent(tx: CampaignsTx, campaignId: string, allowed: boolean, userId: string, now: Date) {

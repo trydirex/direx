@@ -156,6 +156,33 @@ const made = async (id: string) => ok(await make(id)).results;
 const actionOf = async (itemId: string) => (await q("select action_id from items where id = $1", [itemId]))[0].action_id as string;
 const message = (i: number) => Buffer.from(Buffer.from(fake.sent[i]!.raw, "base64url").toString().split("\r\n\r\n")[1]!, "base64").toString();
 
+test("once a Campaign tracks links, its new email drafts carry tracked links, and a US Person's carry a token and the line", async () => {
+  const id = await ready();
+  ok(await write(id, { subject: "Hi {{firstName}}", text: "Hello {{firstName}}, see https://acme.example/offer." }));
+  const [before] = await addPeople(id, [person({ first: "Ana" })]);
+  ok(await make(id));
+  const textOf = async (personId: string) => {
+    const [row] = await q("select a.spec ->> 'text' as text from campaign_actions c join actions a on a.id = c.action_id where c.campaign_id = $1 and c.person_id = $2", [id, personId]);
+    return row.text as string;
+  };
+  expect(await textOf(before!)).toContain("see https://acme.example/offer.");
+  let txt = "";
+  const domains = createTrackingDomains({ dns: { records: async () => ({ cname: ["t.direx.example"], txt: [txt] }), handshake: async () => true }, target: () => "t.direx.example" });
+  const d = await domains.add(W, owner, `links${crypto.randomUUID().slice(0, 8)}.example.com`);
+  if (typeof d === "string") throw new Error(d);
+  txt = d.txtValue;
+  await domains.check(W, d.id);
+  ok(await campaigns.setTracking(W, id, { on: true, domainId: d.id, wordingVersion: 1, userId: owner }));
+  ok(await campaigns.setPerPerson(W, id, { on: true, wordingVersion: 1, userId: owner }));
+  const [after] = await addPeople(id, [person({ first: "Bo" })]);
+  ok(await make(id));
+  const host = d.hostname.replaceAll(".", "\\.");
+  // Ana's draft was fixed before; Bo's, made after, carries a token (US, stated) and says so above the stop line.
+  expect(await textOf(before!)).toContain("see https://acme.example/offer.");
+  expect(await textOf(after!)).toMatch(new RegExp(`^Hello Bo, see https://${host}/t/[A-Za-z0-9_-]{22}/[A-Za-z0-9_-]{43}\\.`));
+  expect(await textOf(after!)).toContain("Links in this email are tracked per recipient to measure engagement.\nReply");
+});
+
 test("refusals before any draft: no template, no Mailbox, no campaign", async () => {
   const id = await ready();
   expect(await make(id)).toEqual({ ok: false, reason: "no_template" });

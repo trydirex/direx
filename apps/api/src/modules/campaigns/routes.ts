@@ -298,6 +298,24 @@ const outsideContentRoute = createRoute({
   request: { params: one, body: { required: true, content: { "application/json": { schema: z.strictObject({ allowed: z.boolean() }) } } } },
   responses: { 200: json(Ok, "Saved"), ...errors },
 });
+// Counting link clicks (ADR 0035 rule 016): on names a verified tracking domain and the version of the
+// dialog the person confirmed; off needs neither.
+const trackingOn = z.strictObject({ on: z.literal(true), domainId: z.uuid(), confirmed: z.literal(true), wordingVersion: z.number().int() });
+const trackingOff = z.strictObject({ on: z.literal(false) });
+const trackingRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/campaigns/{id}/tracking",
+  middleware: [requirePermission("item.edit")],
+  request: { params: one, body: { required: true, content: { "application/json": { schema: z.union([trackingOn, trackingOff]) } } } },
+  responses: { 200: json(Ok, "Saved"), ...errors },
+});
+const perPersonRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/campaigns/{id}/tracking/per-person",
+  middleware: [requirePermission("item.edit")],
+  request: { params: one, body: { required: true, content: { "application/json": { schema: z.union([trackingOn.omit({ domainId: true }), trackingOff]) } } } },
+  responses: { 200: json(Ok, "Saved"), ...errors },
+});
 // Run lets model work start with no click, so it is granted like a rule.
 const advanceRoute = createRoute({
   method: "post",
@@ -875,6 +893,20 @@ export function campaignRoutes(deps: { campaigns: () => Campaigns }) {
   app.openapi(outsideContentRoute, async (c) => {
     const { workspaceId, id } = c.req.valid("param");
     const r = await deps.campaigns().setOutsideContent(workspaceId, id, { allowed: c.req.valid("json").allowed, userId: c.get("member").userId });
+    return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, r.reason === "not_found" ? 404 : 409);
+  });
+  app.openapi(trackingRoute, async (c) => {
+    const { workspaceId, id } = c.req.valid("param");
+    const b = c.req.valid("json");
+    const userId = c.get("member").userId;
+    const r = await deps.campaigns().setTracking(workspaceId, id, b.on ? { on: true, domainId: b.domainId, wordingVersion: b.wordingVersion, userId } : { on: false, userId });
+    return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, r.reason === "not_found" ? 404 : 409);
+  });
+  app.openapi(perPersonRoute, async (c) => {
+    const { workspaceId, id } = c.req.valid("param");
+    const b = c.req.valid("json");
+    const userId = c.get("member").userId;
+    const r = await deps.campaigns().setPerPerson(workspaceId, id, b.on ? { on: true, wordingVersion: b.wordingVersion, userId } : { on: false, userId });
     return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, r.reason === "not_found" ? 404 : 409);
   });
   app.openapi(advanceRoute, async (c) => {

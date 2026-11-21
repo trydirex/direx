@@ -376,6 +376,8 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "POST /api/w/:workspaceId/campaigns/:id/drafting-confirm": { path: `/api/w/${w2}/campaigns/${anyItem}/drafting-confirm`, body: { timeZone: "UTC" } },
   "PUT /api/w/:workspaceId/campaigns/:id/steps/:key/drafting-mode": { path: `/api/w/${w2}/campaigns/${anyItem}/steps/first/drafting-mode`, body: { mode: "template" } },
   "POST /api/w/:workspaceId/campaigns/:id/outside-content": { path: `/api/w/${w2}/campaigns/${anyItem}/outside-content`, body: { allowed: true } },
+  "POST /api/w/:workspaceId/campaigns/:id/tracking": { path: `/api/w/${w2}/campaigns/${anyItem}/tracking`, body: { on: false } },
+  "POST /api/w/:workspaceId/campaigns/:id/tracking/per-person": { path: `/api/w/${w2}/campaigns/${anyItem}/tracking/per-person`, body: { on: false } },
   "POST /api/w/:workspaceId/campaigns/:id/advance": { path: `/api/w/${w2}/campaigns/${anyItem}/advance`, body: { advance: "run", timeZone: "UTC" } },
   "POST /api/w/:workspaceId/campaigns/:id/steps/:key/draft-run": { path: `/api/w/${w2}/campaigns/${anyItem}/steps/first/draft-run` },
   "PUT /api/w/:workspaceId/campaigns/:id/steps/:key/template": { path: `/api/w/${w2}/campaigns/${anyItem}/steps/first/template`, body: { revision: 0, subject: "Hi", text: "Hi" } },

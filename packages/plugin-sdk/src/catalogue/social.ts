@@ -30,6 +30,29 @@ export const socialHealth = {
   output: z.strictObject({ ok: z.boolean(), reason: z.enum(["auth", "other"]).optional() }),
 } as const;
 
+// A Social account's own published posts, newest first (ADR 0039 rule 001). A list passes `cursor` (the
+// plugin's own opaque string; none gives the newest); a lookup passes `ids` and gets back those that still
+// exist, so a missing id means deleted. `next` pages back in time; `newest` is the cursor a later read passes
+// for newer posts only. `text` is the account's own words, never a quoted post's.
+const target = z.string().optional();
+const url = z.url({ protocol: /^https?$/ });
+const outsidePost = z.strictObject({
+  id: text,
+  accountId: text,
+  kind: z.enum(["original", "reply", "repost", "quote"]),
+  createdAt: z.iso.datetime(),
+  editedAt: z.iso.datetime().optional(),
+  text: z.string(),
+  links: z.array(url),
+  permalink: url.optional(),
+});
+export const socialPosts = {
+  name: "social.posts",
+  version: 1,
+  input: z.union([z.strictObject({ target, cursor: z.string().optional(), limit: z.number().int().min(1).max(100) }), z.strictObject({ target, ids: z.array(text).min(1).max(100) })]),
+  output: z.strictObject({ posts: z.array(outsidePost), next: z.string().optional(), newest: z.string().optional() }),
+} as const;
+
 // A post with no video or images has no `media` at all, so a text post approved before either existed keeps
 // its hash; nor does a video post have `alt`. `media` is one video, or up to four images in the order shown,
 // with `alt` the words a screen reader says for each.

@@ -40,6 +40,7 @@ function serve(o: { outreach?: () => Promise<unknown>; code?: string | null; hoo
     if (path === "/api/w/{workspaceId}/outreach/people/{personId}/outside-touches") return reply(200, { touches: [{ id: "t1", channel: "call", direction: "outbound", occurredAt: "2026-11-05T10:00:00.000Z", source: "manual", canDelete: true }], profiles: [{ kind: "linkedin", url: "https://www.linkedin.com/in/lee" }] });
     if (path === "/api/w/{workspaceId}/outreach/people/{personId}/holds") return reply(200, { holds: o.holds ?? [] });
     if (path === "/api/w/{workspaceId}/outreach/hold-hook") return reply(200, { hook: o.hook ?? null });
+    if (path === "/api/w/{workspaceId}/customers") return reply(200, { customers: [] });
     return reply(404, { error: "not_found" });
   }) as never);
   const answer = (() => (o.code ? reply(400, { error: o.code }) : reply(200, {}))) as never;

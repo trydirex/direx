@@ -20,6 +20,7 @@ import { Link } from "@tanstack/react-router";
 import { dayWords, momentWords } from "../campaigns/actions";
 import { addHold, addPerson, addSuppression, endHold, mailboxesQuery, outreachQuery, personHolds, releaseHold, BASIS_WORDS, recordWords, say, SENDER_COUNTRY_NOTE, undoOptOut, verdict, warningWords, writeEmail, type Basis, type EntityType, type Overview, type Verdict } from "./actions";
 import { COUNTRIES } from "./countries";
+import { Customers } from "./Customers";
 import { Touches } from "./Touches";
 
 const BASES: { value: Basis; label: string }[] = [
@@ -271,6 +272,8 @@ export function Outreach(p: { workspaceId: string; role: Role; initial?: { data:
           </div>
         )}
       </QueryBoundary>
+
+      <Customers workspaceId={workspaceId} canEdit={canEdit} />
 
       {canEdit && (
         <Dialog isOpen={adding} onOpenChange={setAdding} purpose="form" width={640}>

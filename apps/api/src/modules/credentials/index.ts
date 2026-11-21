@@ -4,8 +4,8 @@
 // entry point, use-secret.ts. The ledger takes credentialReady as a check and
 // credentialLabel as the "credential" resolver.
 import { rootKeyFromEnv, type RootKey } from "./adapters/crypto";
-import type { AppProvider } from "./adapters/provider";
-import { singleAppSource } from "./application/apps";
+import type { AppProvider, ClientPair } from "./adapters/provider";
+import { singleAppSource, type AppContext } from "./application/apps";
 import { createVault, type VaultDeps } from "./application/secrets";
 import { readSystemApp } from "./system-secrets";
 
@@ -26,15 +26,20 @@ export { migrationsPending, type MigrationState } from "./adapters/repo";
  * Google's sign-in pair, and are offered only when it is set. `googleAppProviders` are Google
  * connections a Workspace may bring its own app for, such as Gmail and Search Console.
  *
- * An app connection uses the Workspace's own app, then the deployment's (`social_app.<connection>`),
- * then, for `googleAppProviders` only, the sign-in pair.
+ * An app connection uses the Workspace's own app, then the operator's `platformApps` (an installed
+ * extension), then the deployment's (`social_app.<connection>`), then, for `googleAppProviders`
+ * only, the sign-in pair.
  */
 export function vaultFromEnv(
   cfg: { baseURL: string; google?: { clientId: string; clientSecret: string }; rootKey?: RootKey },
   onReady?: VaultDeps["onReady"],
-  social?: Pick<VaultDeps, "appProviders" | "identify"> & { googleApps?: readonly AppProvider[]; googleAppProviders?: readonly AppProvider[] },
+  social?: Pick<VaultDeps, "appProviders" | "identify"> & {
+    googleApps?: readonly AppProvider[];
+    googleAppProviders?: readonly AppProvider[];
+    platformApps?: (ctx: AppContext) => Promise<ClientPair[]>;
+  },
 ) {
-  const { googleApps = [], googleAppProviders = [], appProviders = [], ...rest } = social ?? {};
+  const { googleApps = [], googleAppProviders = [], appProviders = [], platformApps, ...rest } = social ?? {};
   const google = cfg.google;
   const vault = createVault({
     rootKey: cfg.rootKey ?? rootKeyFromEnv(),
@@ -45,6 +50,7 @@ export function vaultFromEnv(
     onReady,
     ...rest,
     appSources: [
+      ...(platformApps ? [{ owner: "platform" as const, apps: async (ctx: AppContext) => (await platformApps(ctx)).map((a) => ({ ...a, owner: "platform" as const })) }] : []),
       singleAppSource("deployment", (connection) => readSystemApp(vault, connection)),
       singleAppSource("sign_in", async (connection) => (google && googleAppProviders.some((p) => p.connection === connection) ? google : null)),
     ],

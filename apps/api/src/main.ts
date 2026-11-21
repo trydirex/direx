@@ -33,7 +33,7 @@ import { listenHost, loadDeployment, mediaS3Url, withClientIp } from "./startup"
 import { onStopSignal } from "./shutdown";
 import { healthOnly, roleFromEnv } from "./roles";
 import { standingRuleRoutes, suspendAgentRulesFor, suspendForAgent } from "./modules/standing-rules/index";
-import type { Discovery, RootKey } from "./modules/extensions/index";
+import { noOAuthApps, type Discovery, type OAuthApps, type RootKey } from "./modules/extensions/index";
 import { createNextSteps, type NextSteps } from "./modules/next-steps/index";
 import { askRoutes } from "./modules/ask/index";
 import { modelEvals, startWorker } from "./worker";
@@ -73,7 +73,7 @@ const need = <T>(value: T | undefined, what: string): T => {
  * and these modules need each other, so the worker is read through `worker`, which runServer fills
  * once it has started; until then a route that needs it throws. `ports` are what the worker needs back.
  */
-export function createApp({ worker, deployment, admission: supplied, mediaStore, maxTokenDays = null, rootKey }: { worker: () => Worker | undefined; deployment?: AuthConfig; admission?: Admission; mediaStore?: Store; maxTokenDays?: number | null; rootKey?: RootKey }) {
+export function createApp({ worker, deployment, admission: supplied, mediaStore, maxTokenDays = null, rootKey, oauthApps = noOAuthApps }: { worker: () => Worker | undefined; deployment?: AuthConfig; admission?: Admission; mediaStore?: Store; maxTokenDays?: number | null; rootKey?: RootKey; oauthApps?: OAuthApps }) {
   // A module app without its own defaultHook inherits this one, so every schema failure is one {error}
   // body, never the raw ZodError.
   const app = new OpenAPIHono({
@@ -121,6 +121,8 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
       appProviders: [...socialProviders(), NOTION_OAUTH_PROVIDER],
       // Gmail and Search Console each use the Workspace's own Google app, then the server's app for that connection, then the sign-in pair.
       googleAppProviders: [GOOGLE_PROVIDER, GOOGLE_SEARCH_CONSOLE_PROVIDER],
+      // An installed extension's apps come after the Workspace's own and before the server's.
+      platformApps: (ctx) => oauthApps.apps(ctx),
       identify: (ws, connection, token) => social.identify(ws, connection, token),
     }));
   const social = createSocial({
@@ -551,7 +553,7 @@ export const { app } = createApp({ worker: () => undefined });
  * missing SMTP URL outside dev and test, a value left in env, a lost or wrong root key, or a cloud
  * start with no Admission stops the server here. A supplied `rootKey` replaces the one from env.
  */
-export async function runServer({ admission: supplied, rootKey, ...extensions }: { discovery?: Discovery; admission?: Admission; rootKey?: RootKey } = {}) {
+export async function runServer({ admission: supplied, rootKey, oauthApps, ...extensions }: { discovery?: Discovery; admission?: Admission; rootKey?: RootKey; oauthApps?: OAuthApps } = {}) {
   const admission = pickAdmission(deploymentFromEnv(), supplied, isDevOrTest(process.env));
   const deployment = await loadDeployment(process.env, console.log, rootKey);
   // A malformed value stops the start here, naming the form it should have.
@@ -559,7 +561,7 @@ export async function runServer({ admission: supplied, rootKey, ...extensions }:
   const maxTokenDays = maxDaysFromEnv(process.env.DIREX_EXTERNAL_TOKEN_MAX_DAYS, deploymentFromEnv() === "cloud");
   // Read by the app's routes through a getter, since they and the worker need each other.
   let worker: Worker | undefined;
-  const built = createApp({ worker: () => worker, deployment, admission, mediaStore: s3 ? s3Store(parseS3Url(s3)) : undefined, maxTokenDays, rootKey });
+  const built = createApp({ worker: () => worker, deployment, admission, mediaStore: s3 ? s3Store(parseS3Url(s3)) : undefined, maxTokenDays, rootKey, oauthApps });
   worker = await startWorker({ vault: built.vault(), mailer: deployment.mailer, ...built.ports, ...extensions });
   // ADR 0024: an unclaimed self-hosted server says how to claim it, once.
   if (deploymentFromEnv() === "self_host" && !isDevOrTest(process.env) && !(await admission.status()).claimed) console.warn("No Server admin yet. Run: bun run server-admin --invite");

@@ -48,6 +48,7 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
      * approval, as any move does. A slot over its cap still moves, and says so: the claim then finds no
      * reservation for that time and holds the Action with reason "cap". A full Mailbox day is different:
      * the move takes the Mailbox's next time with room instead, since no person is there to choose.
+     * A Social post stays on its original schedule if the target day has no capacity.
      */
     async redateItem(workspaceId: string, id: string, wanted: Date, actor: Actor) {
       const at = now();
@@ -61,8 +62,11 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
       let plannedAt = wanted;
       let overCap = false;
       if (item.actionId) {
-        const placed = await capacity.reserveRedate?.(workspaceId, item.actionId, wanted, at);
-        const room = placed ?? await capacity.nextTime(workspaceId, item.actionId, wanted, { now: at });
+        const placed = await capacity.reserveAutomatic?.(workspaceId, item.actionId, wanted, at);
+        const result = placed?.result;
+        if (result?.kind === "not_found" || result?.kind === "unavailable") return { ok: false, reason: result.kind } as const;
+        if (result?.kind === "full") return { ok: false, reason: "reason" in result ? result.reason : "mailbox_day_full", day: result.day, limit: result.limit } as const;
+        const room = placed?.slot ?? await capacity.nextTime(workspaceId, item.actionId, wanted, { now: at });
         if (!room) return { ok: false, reason: "mailbox_day_full" } as const;
         plannedAt = room;
         const reserved = await reserveTouch(workspaceId, item.actionId, plannedAt, { now: at });

@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { createVault, credentialLabel, rootKeyFromEnv } from "../credentials/index";
 import { routeCapacity } from "../items/index";
-import { itemsWorld, person } from "../items/fixtures/items";
+import { actionIdOf, itemsWorld, person } from "../items/fixtures/items";
 import { socialCapacity } from "./application/capacity";
 import { offPace } from "./application/pace";
 
@@ -123,6 +123,40 @@ describe("a Social account's day", () => {
     const dayLater = new Date(placed.at!.getTime() + 24 * HOUR);
     expect(await w.items.redateItem(w.W, placed.id, dayLater, person)).toMatchObject({ ok: true });
     expect(await w.reserved("2026-11-04")).toEqual([dayLater]);
+    await w.done();
+  });
+
+  it("leaves an approved post on its original schedule when the redate day is full", async () => {
+    const w = await world();
+    await w.post(today(12), "exact");
+    const post = await w.submit(await w.post(tomorrow(12), "exact"));
+    expect(await w.items.approve(w.W, post.id, post.revision, w.who)).toMatchObject({ ok: true });
+    const id = await actionIdOf(w.W, post.id);
+    expect(await w.items.redateItem(w.W, post.id, today(14), person)).toEqual({ ok: false, reason: "account_day_full", day: "2026-11-02", limit: 1 });
+    expect(await w.items.detail(w.W, post.id)).toMatchObject({ item: { at: tomorrow(12) } });
+    expect(await w.ledger.getAction(w.W, id)).toMatchObject({ state: "scheduled", dueAt: tomorrow(12) });
+    expect(await w.reserved("2026-11-03")).toEqual([tomorrow(12)]);
+    expect(await w.reserved("2026-11-02")).toEqual([today(12)]);
+    await w.done();
+  });
+
+  it("resumes concurrent late posts at spaced slots after a full day", async () => {
+    const w = await world();
+    const posts = [await w.submit(await w.post(tomorrow(10))), await w.submit(await w.post(tomorrow(10)))];
+    const ids = await Promise.all(posts.map(async (post) => {
+      expect(await w.items.approve(w.W, post.id, post.revision, w.who)).toMatchObject({ ok: true });
+      return actionIdOf(w.W, post.id);
+    }));
+    w.clock.at = new Date(tomorrow(13).getTime() + 24 * HOUR);
+    await w.post(new Date(w.clock.at.getTime() + HOUR), "exact");
+    // This fixture has no publishing effect; start at the late hold the dispatcher would record.
+    await w.q("update actions set state = 'held', hold_reason = 'late', next_attempt_at = null where id = any($1::uuid[])", [ids]);
+    const results = await Promise.all(posts.map((post) => w.items.resume(w.W, post.id, person)));
+    expect(results.every((result) => result.ok)).toBe(true);
+    const slots = (await w.reserved("2026-11-05")).sort((a, b) => a.getTime() - b.getTime());
+    expect(slots).toHaveLength(2);
+    expect(offPace(slots[0]!, PACE, "UTC", [slots[1]!])).toBeNull();
+    expect(offPace(slots[1]!, PACE, "UTC", [slots[0]!])).toBeNull();
     await w.done();
   });
 

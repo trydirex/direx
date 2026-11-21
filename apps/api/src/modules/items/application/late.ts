@@ -14,12 +14,23 @@ const HOUR = 3_600_000;
 const SEARCH_HOURS = 14 * 24;
 
 /**
- * The first slot from `from` that both the Action's Person and its Mailbox's day can take, reserved;
+ * The first slot from `from` that both the Action's Person and its account can take, reserved;
  * `from` itself when neither counts it; null when none is free.
  */
 export async function nextFreeSlot(capacity: CapacityPort, workspaceId: string, actionId: string, from: Date): Promise<Date | null> {
   const end = from.getTime() + SEARCH_HOURS * HOUR;
   for (let next = from; next.getTime() <= end; ) {
+    const placed = await capacity.reserveAutomatic?.(workspaceId, actionId, next, from, async (slot) => {
+      if (slot.getTime() > end) return "unavailable";
+      const touch = await reserveTouch(workspaceId, actionId, slot, { now: from });
+      return touch.kind === "not_found" ? "not_found" : touch.kind === "full" ? "unavailable" : "ok";
+    });
+    if (placed) {
+      if (placed.slot.getTime() > end || placed.result.kind === "not_found") return null;
+      if (placed.result.kind !== "full" && placed.result.kind !== "unavailable") return placed.slot;
+      next = new Date(placed.slot.getTime() + HOUR);
+      continue;
+    }
     const slot = await capacity.nextTime(workspaceId, actionId, next, { now: from });
     if (!slot || slot.getTime() > end) return null;
     const r = await reserveTouch(workspaceId, actionId, slot, { now: from });

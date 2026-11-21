@@ -105,14 +105,15 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
         const action = await postActionOf(tx, actionId);
         return action ? nextPostTimeIn(tx, workspaceId, actionId, action, from, opts?.now ?? new Date()) : from;
       }),
-    reserveRedate: (workspaceId, actionId, wanted, now) =>
+    reserveAutomatic: (workspaceId, actionId, wanted, now, checkSlot) =>
       inWorkspace(workspaceId, async (tx) => {
         const action = await postActionOf(tx, actionId);
-        if (!action) return wanted;
+        if (!action) return { slot: wanted, result: { kind: "not_found" } };
         const slot = await nextPostTimeIn(tx, workspaceId, actionId, action, wanted, now);
+        const check = await checkSlot?.(slot);
+        if (check && check !== "ok") return { slot, result: { kind: check } };
         // The account lock acquired in placement stays held through the reservation.
-        await reservePostIn(tx, workspaceId, actionId, action, slot, now);
-        return slot;
+        return { slot, result: await reservePostIn(tx, workspaceId, actionId, action, slot, now) };
       }),
   };
 }

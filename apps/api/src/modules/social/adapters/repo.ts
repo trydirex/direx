@@ -176,9 +176,10 @@ export async function specsPostedOnDay(tx: WorkspaceTx, a: { credentialId: strin
   const from = new Date(midnightUtc - dayMs);
   const to = new Date(midnightUtc + 2 * dayMs);
   const onDay = (postedAt: Date | null) => postedAt !== null && mailboxDay(postedAt, timeZone) === day;
+  // A sent post counts on the day its last attempt went out; one that may have gone out counts on the day of either attempt.
   const direct = (
     await tx
-      .select({ spec: actions.spec, postedAt: actions.firstDispatchedAt })
+      .select({ spec: actions.spec, state: actions.state, first: actions.firstDispatchedAt, last: actions.dispatchStartedAt })
       .from(socialPosts)
       .innerJoin(actions, eq(actions.id, socialPosts.actionId))
       .where(
@@ -186,12 +187,12 @@ export async function specsPostedOnDay(tx: WorkspaceTx, a: { credentialId: strin
           eq(socialPosts.credentialId, a.credentialId),
           eq(socialPosts.networkId, a.networkId),
           exceptActionId ? ne(actions.id, exceptActionId) : undefined,
-          gte(actions.firstDispatchedAt, from),
           lt(actions.firstDispatchedAt, to),
+          gte(actions.dispatchStartedAt, from),
           or(inArray(actions.state, ["sent", "dispatching"]), isNotNull(actions.outcomeUnknownAt)),
         ),
       )
-  ).filter((r) => onDay(r.postedAt)).map((r) => (r.spec ?? {}) as Spec);
+  ).filter((r) => onDay(r.last) || (r.state !== "sent" && onDay(r.first))).map((r) => (r.spec ?? {}) as Spec);
   // ponytail: a hand post counts on the day its Item was last updated, which is when it was marked posted; store a posted-at time if that ever drifts.
   const byHand = (
     await tx

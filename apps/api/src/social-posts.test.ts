@@ -853,6 +853,19 @@ test("an account's day at dispatch is the Workspace's day, not UTC's", async () 
   }
 });
 
+test("a post sent on a retry counts on the day the retry went out", async () => {
+  beforeWhen();
+  const a = await account();
+  const first = await postOn(a, "Retried", 20);
+  const second = await postOn(a, "Same day", 120);
+  await runAt(first, new Date(WHEN.getTime() + 21 * 60_000));
+  expect((await stateOf(first)).state).toBe("sent");
+  // Its first attempt was the day before, rejected, and kept as the first dispatch.
+  await q("update actions set first_dispatched_at = first_dispatched_at - interval '1 day' where id = $1", [await items.actionIdOf(W, first)]);
+  await runAt(second, new Date(WHEN.getTime() + 121 * 60_000));
+  expect(await stateOf(second)).toMatchObject({ state: "held", reasonCode: "account_budget_reached" });
+});
+
 test("a post before a skipped local midnight does not spend the next day's budget", async () => {
   await q("update workspaces set time_zone = 'America/Sao_Paulo' where id = $1", [W]);
   const previous = clock.at;

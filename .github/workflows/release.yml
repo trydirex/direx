@@ -16,8 +16,8 @@ on:
         options: [patch, minor]
         default: patch
       expected_sha:
-        description: Full commit SHA approved for release
-        required: true
+        description: Optional. The full commit SHA approved for release; the run stops if main has moved past it
+        required: false
         type: string
 
 permissions:
@@ -42,7 +42,10 @@ jobs:
           [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Start a release from main"; exit 1; }
           role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" -q .permission)
           [ "$role" = admin ] || { echo "::error::Only an admin can cut a release ($GITHUB_ACTOR is $role)"; exit 1; }
+      # Left empty, a click in the Actions tab releases main's tip. cut-release always passes the SHA
+      # the maintainer approved, so a main that moved on in between is caught here.
       - name: Confirm the approved commit
+        if: inputs.expected_sha != ''
         env:
           EXPECTED_SHA: ${{ inputs.expected_sha }}
         run: |

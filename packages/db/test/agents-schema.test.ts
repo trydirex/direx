@@ -103,10 +103,25 @@ test("a person's cancellation names them, and only known sources may cancel", as
   await expect(c.query("delete from agent_cancellations")).rejects.toThrow(/permission denied/);
 });
 
+test("a drift incident is one per version and measure, only for known measures, and never changed", async () => {
+  const incident = (measure: string, agent = "drift_writer") =>
+    c.query(
+      `insert into agent_drift_incidents (workspace_id, agent, definition_version, route_hash, measure, previous_definition_version, previous_route_hash, rate, previous_rate, runs, previous_runs, created_at)
+       values ($1, $2, 2, 'h2', $3, 1, null, 0.18, 0.06, 124, 210, now())`,
+      [W, agent, measure],
+    );
+  await incident("rejections");
+  await incident("citations");
+  await expect(incident("rejections")).rejects.toThrow(/agent_drift_incidents_version_measure_key/);
+  await expect(incident("edits", "other_writer")).rejects.toThrow(/agent_drift_incidents_measure_check/);
+  await expect(c.query("update agent_drift_incidents set rate = 0")).rejects.toThrow(/permission denied/);
+  await expect(c.query("delete from agent_drift_incidents")).rejects.toThrow(/permission denied/);
+});
+
 test("another Workspace sees none of it", async () => {
   await run();
   await c.query("select set_config('app.workspace_id', $1, false)", [crypto.randomUUID()]);
-  for (const table of ["agent_runs", "agent_run_parts", "agent_run_events", "agent_proposals", "agent_cancellations", "agent_settings", "agent_setting_revisions"]) {
+  for (const table of ["agent_runs", "agent_run_parts", "agent_run_events", "agent_proposals", "agent_cancellations", "agent_settings", "agent_setting_revisions", "agent_drift_incidents"]) {
     expect((await c.query(`select 1 from ${table}`)).rows).toEqual([]);
   }
   await c.query("select set_config('app.workspace_id', $1, false)", [W]);

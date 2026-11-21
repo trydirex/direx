@@ -12,6 +12,7 @@ const REFUSED: Record<string, string> = {
   forbidden: "Only an Owner or Admin can change an account's posting hours.",
   bad_pace: "Pick an end time after the start time, and a gap of 0 to 720 minutes.",
 };
+const SAVE_FAILED = "That didn't save. Try again.";
 
 /** The words for an account's pace, such as "Posts go out 08:00 to 21:00 every day, at least 60 minutes apart, Europe/Berlin time." */
 export const paceWords = (p: SocialPace, timeZone: string) =>
@@ -23,7 +24,17 @@ export function AccountPace(p: { workspaceId: string; accountId: string; name: s
   const [draft, setDraft] = useState<SocialPace>();
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
-  if (!q.data) return null;
+  if (!q.data) {
+    if (!q.isError) return null;
+    return (
+      <div className="flex items-center gap-2">
+        <p role="alert">Couldn't load posting hours.</p>
+        <Button size="sm" variant="outline" pending={q.isFetching} onClick={() => void q.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
   const view = q.data;
   const pace = draft ?? view.pace;
   const ownSet = Object.values(view.own).some((v) => v !== null);
@@ -32,13 +43,17 @@ export function AccountPace(p: { workspaceId: string; accountId: string; name: s
     setError(undefined);
   };
   const save = async (next: SocialPace | null) => {
+    if (saving) return;
     setSaving(true);
+    setError(undefined);
     try {
       const own = next ? { postingFrom: next.from, postingUntil: next.until, postingWeekends: next.weekends, gapMinutes: next.gapMinutes } : { postingFrom: null, postingUntil: null, postingWeekends: null, gapMinutes: null };
       const failed = await savePace(p.workspaceId, p.accountId, own);
-      if (failed) return setError(REFUSED[failed] ?? "That didn't save. Try again.");
-      close();
+      if (failed) return setError(REFUSED[failed] ?? SAVE_FAILED);
       await client.invalidateQueries({ queryKey: paceKey(p.workspaceId, p.accountId) });
+      close();
+    } catch {
+      setError(SAVE_FAILED);
     } finally {
       setSaving(false);
     }
@@ -74,11 +89,11 @@ export function AccountPace(p: { workspaceId: string; accountId: string; name: s
             Save
           </Button>
           {ownSet && (
-            <Button type="button" size="sm" variant="outline" onClick={() => void save(null)}>
+            <Button type="button" size="sm" variant="outline" disabled={saving} onClick={() => void save(null)}>
               Use the network's pace
             </Button>
           )}
-          <Button type="button" size="sm" variant="ghost" onClick={close}>
+          <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={close}>
             Cancel
           </Button>
         </form>

@@ -49,3 +49,39 @@ test("Change saves the account's own hours, a refusal says why, and they can go 
   await userEvent.click(screen.getByRole("button", { name: "Use the network's pace" }));
   expect(put).toHaveBeenLastCalledWith(path, { params: { path: { workspaceId: W, accountId: A } }, body: none });
 });
+
+test("a failed first read explains what happened and can be retried", async () => {
+  vi.spyOn(api, "GET")
+    .mockImplementationOnce((() => reply(502, undefined)) as never)
+    .mockImplementation((() => reply(200, { own: none, defaults: network, pace: network, timeZone: "UTC" })) as never);
+  render(withQueries(<AccountPace workspaceId={W} accountId={A} name="Acme" mayEdit />));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Couldn't load posting hours.");
+  await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(await screen.findByRole("button", { name: "Change posting hours: Acme" })).toBeTruthy();
+});
+
+test("an in-flight save blocks Cancel and Reset; network and empty HTTP failures keep the draft", async () => {
+  const pending = Promise.withResolvers<never>();
+  vi.spyOn(api, "GET").mockImplementation((() => reply(200, { own: { ...none, gapMinutes: 60 }, defaults: network, pace: network, timeZone: "UTC" })) as never);
+  const put = vi.spyOn(api, "PUT")
+    .mockImplementationOnce(() => pending.promise)
+    .mockImplementationOnce((() => reply(502, undefined)) as never);
+  render(withQueries(<AccountPace workspaceId={W} accountId={A} name="Acme" mayEdit />));
+  await userEvent.click(await screen.findByRole("button", { name: "Change posting hours: Acme" }));
+  const gap = screen.getByLabelText("Minutes apart");
+  await userEvent.clear(gap);
+  await userEvent.type(gap, "90");
+  const save = screen.getByRole("button", { name: "Save" });
+  await userEvent.click(save);
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await userEvent.click(screen.getByRole("button", { name: "Use the network's pace" }));
+  expect(put).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("button", { name: "Change posting hours: Acme" })).toBeNull();
+  pending.reject(new TypeError("Connection failed"));
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "That didn't save. Try again.");
+  expect(screen.getByLabelText("Minutes apart")).toHaveProperty("value", "90");
+  await userEvent.click(save);
+  expect(put).toHaveBeenCalledTimes(2);
+  expect(await screen.findByRole("alert")).toHaveProperty("textContent", "That didn't save. Try again.");
+  expect(screen.getByLabelText("Minutes apart")).toHaveProperty("value", "90");
+});

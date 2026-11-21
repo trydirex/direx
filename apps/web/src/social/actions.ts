@@ -47,8 +47,8 @@ export const paceQuery = (workspaceId: string, accountId: string) =>
   queryOptions({ queryKey: paceKey(workspaceId, accountId), queryFn: () => call(api.GET("/api/w/{workspaceId}/social/accounts/{accountId}/pace", { params: account(workspaceId, accountId) })) });
 /** Null values put the account back on its network's pace. */
 export async function savePace(workspaceId: string, accountId: string, own: OwnPace): Promise<string | null> {
-  const { error } = await api.PUT("/api/w/{workspaceId}/social/accounts/{accountId}/pace", { params: account(workspaceId, accountId), body: own });
-  return error ? error.error : null;
+  const { error, response } = await api.PUT("/api/w/{workspaceId}/social/accounts/{accountId}/pace", { params: account(workspaceId, accountId), body: own });
+  return response.ok ? null : (error?.error || "failed");
 }
 
 /** Where the account itself says who runs it, and what it is for beside the Workspace's other accounts. */

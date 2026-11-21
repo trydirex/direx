@@ -2,7 +2,7 @@
 // Search runs over HTTP with a fake Discovery, real sessions and a real queue. Without discovery, as
 // on a deployment with no extension installed, search refuses with not_available.
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { appClient } from "../../../../../test/db";
+import { appClient, ownerClient } from "../../../../../test/db";
 import { createBoss } from "../../jobs/boss";
 import { noDiscovery, type Discovery } from "../extensions/index";
 import { testIdentity } from "./fixtures/support";
@@ -200,6 +200,23 @@ test("a term holding Person data is refused by name, and nothing reaches the sea
   expect(await search(W, { signals: ["funding"] })).toMatchObject({ status: 400, body: { error: "unknown_signal", signals: ["funding"] } });
   expect(searches).toEqual([]);
   expect((await q(W, "select id from prospect_runs where source = 'search'")).length).toBe(0);
+});
+
+test("an operator hold refuses a search before the vendor is asked, and a paste too; lifting it lets both start", async () => {
+  const W = await newWorkspace();
+  const owner = await ownerClient();
+  try {
+    await owner.query("select system.set_operator_hold('workspace', $1, 'abuse', 'cli:ops')", [W]);
+    searches.length = 0;
+    expect(await search(W)).toMatchObject({ status: 400, body: { error: "operator_hold" } });
+    expect(await createRuns({ boss }).startPasted(W, { websites: ["acme.test"], signals: [], confirmedUsd: 1, userId: U })).toEqual({ ok: false, reason: "operator_hold" });
+    expect(searches).toEqual([]);
+    expect(await q(W, "select id from prospect_runs")).toEqual([]);
+    await owner.query("select system.lift_operator_hold('workspace', $1, 'cli:ops')", [W]);
+    expect((await search(W)).status).toBe(200);
+  } finally {
+    await owner.end();
+  }
 });
 
 test("with no discovery installed, the estimate and the search say not_available and store nothing", async () => {

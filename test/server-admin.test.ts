@@ -153,3 +153,54 @@ test("purge --confirm purges and prints the receipt; --replay purges again what 
   expect((await owner.query("select id from workspaces where id = $1", [restored])).rows).toEqual([]);
   expect(JSON.parse(replayed.lines[1]!.split("Receipt: ")[1]!)).toMatchObject({ rows: { "public.workspaces": 1, "public.organizations": 1 }, kept: {} });
 });
+
+test("hold, holds and lift set, list and lift an operator hold, and the record keeps who and why", async () => {
+  const ws = await workspace(null);
+  const org = (await owner.query("select org_id from workspaces where id = $1", [ws])).rows[0].org_id as string;
+  let lines: string[] = [];
+  const hold = (...args: string[]) => serverAdmin(args, owner, { baseURL: BASE, print: (l) => lines.push(l), actor: "cli:ops" });
+  expect(await hold("hold", "--org", org, "--reason", "  spam reports  ")).toBe(0);
+  expect(lines).toEqual([`Held organization ${org}. Nothing it has due sends, and no model runs for it, until you lift the hold.`]);
+  lines = [];
+  expect(await hold("hold", "--org", org, "--reason", "again")).toBe(0);
+  expect(lines).toEqual([`organization ${org} was already held. Nothing changed.`]);
+  lines = [];
+  expect(await hold("hold", "--deployment", "--reason", "OAuth app warning")).toBe(0);
+  lines = [];
+  expect(await hold("holds")).toBe(0);
+  expect(lines).toEqual([expect.stringMatching(new RegExp(`^organization ${org}: spam reports \\(set by cli:ops, \\d{4}-`)), expect.stringMatching(/^deployment: OAuth app warning \(set by cli:ops, /)]);
+
+  lines = [];
+  expect(await hold("lift", "--org", org)).toBe(0);
+  expect(lines).toEqual([`Lifted the hold on organization ${org}. What it held is checked again and resumes within a minute.`]);
+  lines = [];
+  expect(await hold("lift", "--org", org)).toBe(1);
+  expect(lines).toEqual([`organization ${org} has no live hold. Nothing changed.`]);
+  expect(await hold("lift", "--deployment")).toBe(0);
+  lines = [];
+  expect(await hold("holds")).toBe(0);
+  expect(lines).toEqual(["No operator holds are live."]);
+  expect((await owner.query("select reason, set_by, lifted_by from system.operator_holds where target = $1", [org])).rows).toEqual([{ reason: "spam reports", set_by: "cli:ops", lifted_by: "cli:ops" }]);
+});
+
+test("a hold needs one target that exists and a reason; lift and holds take no reason", async () => {
+  const lines: string[] = [];
+  const run = (...args: string[]) => serverAdmin(args, owner, { baseURL: BASE, print: (l) => lines.push(l) });
+  expect(await run("hold", "--workspace", crypto.randomUUID(), "--reason", "x")).toBe(1);
+  expect(lines).toEqual(["No workspace has that id."]);
+  expect(await run("hold", "--org", crypto.randomUUID(), "--reason", " ")).toBe(2);
+  expect(lines.at(-1)).toBe("--reason must say why, in at most 500 characters. Only operators read it.");
+  expect(await run("hold", "--deployment", "--reason", "x".repeat(501))).toBe(2);
+  for (const args of [
+    ["hold", "--deployment"],
+    ["hold", "--org", "not-a-uuid", "--reason", "x"],
+    ["hold", "--deployment", "--org", crypto.randomUUID(), "--reason", "x"],
+    ["lift", "--deployment", "--reason", "x"],
+    ["lift"],
+    ["holds", "--deployment"],
+    ["holds", "extra"],
+    ["purge", "--deployment"],
+    ["hold", "--deployment", "--reason", "x", "--confirm"],
+  ]) expect(await run(...args)).toBe(2);
+  expect((await owner.query("select count(*)::int as n from system.operator_holds where lifted_at is null")).rows).toEqual([{ n: 0 }]);
+});

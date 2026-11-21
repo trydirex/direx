@@ -6,6 +6,7 @@
 // A search run also pays the search, and takes only the companies its confirmed amount still covers.
 import type { PgBoss } from "pg-boss";
 import type { Discovery } from "../../extensions/index";
+import { operatorHold } from "../../ledger/index";
 import { sharedMailDomain } from "../../people";
 import { addCompanies, addRun, companiesPage, finishRun, inWorkspace, knownCompanies, lockNewCompanies, recentRuns, runWithProgress, uncheckedOfRun, type ProspectingTx } from "../adapters/repo";
 import { sendCompanyRead, sendCompanyVerify } from "../adapters/queue";
@@ -35,11 +36,11 @@ export type SearchInput = { terms: string[]; limit: number; signals: string[] };
 /** `namesFree` when names runs go to a subscription, which costs no money per run, so the amount covers the search and checks only. */
 export type Estimate = { searchUsd: number; namesUsd: number; verifyUsd: number; totalUsd: number; limit: number; namesFree: boolean; defaults: { namesUsdPerCompany: number; verifyUsdPerAddress: number; addressesPerCompany: number } };
 export type SearchLine = { domain: string; name: string | null; ok: boolean; companyId?: string; runId?: string; reason?: "already_known" | "over_amount" };
-type SearchRefusal = { ok: false; reason: "unknown_signal"; signals: string[] } | { ok: false; reason: "person_data"; terms: string[] } | { ok: false; reason: "below_estimate"; usd: number };
+type SearchRefusal = { ok: false; reason: "unknown_signal"; signals: string[] } | { ok: false; reason: "person_data"; terms: string[] } | { ok: false; reason: "below_estimate"; usd: number } | { ok: false; reason: "operator_hold" };
 export type SearchResult = { ok: true; runId: string; status: "running" | "done" | "stopped"; searchUsd: number; results: SearchLine[] } | SearchRefusal;
 
 export type PastedLine = { line: number; website: string; ok: boolean; companyId?: string; runId?: string; reason?: "invalid_website" | "duplicate" | "already_known"; sameAs?: number };
-export type PastedResult = { ok: true; runId: string | null; results: PastedLine[] } | { ok: false; reason: "empty" | "too_many" | "unknown_signal"; max?: number; signals?: string[] };
+export type PastedResult = { ok: true; runId: string | null; results: PastedLine[] } | { ok: false; reason: "empty" | "too_many" | "unknown_signal" | "operator_hold"; max?: number; signals?: string[] };
 
 // The site as pasted, reduced to where its home page is, so www. or plain http still reach it.
 const homeOf = (value: string) => `${new URL(/^[a-z][a-z0-9+.-]*:/i.test(value) ? value : `https://${value}`).origin}/`;
@@ -90,6 +91,9 @@ export async function estimateSearch(workspaceId: string, discovery: Discovery, 
 /** The most reading one company and checking its addresses can cost, for an estimate of a pasted list. */
 export const perCompanyUsd = (namesFree: boolean) => microsToUsd(perCompanyMicros(namesFree));
 
+/** Whoever runs this Direx holds the Workspace, its Organization or the deployment: no paid run starts. */
+const operatorHeld = (workspaceId: string) => inWorkspace(workspaceId, (tx) => operatorHold(tx, workspaceId));
+
 /** How many runs Find companies lists. */
 const RECENT_RUNS = 20;
 
@@ -102,6 +106,7 @@ export function createRuns(deps: { boss: PgBoss; now?: () => Date }) {
       if (unknown.length) return { ok: false, reason: "unknown_signal", signals: unknown };
       const lines = a.websites.map((website, i) => ({ line: i + 1, website: website.trim() })).filter((l) => l.website);
       if (!lines.length) return { ok: false, reason: "empty" };
+      if (await operatorHeld(workspaceId)) return { ok: false, reason: "operator_hold" };
 
       const first = new Map<string, { line: number; website: string }>();
       const results = new Map<number, PastedLine>();
@@ -142,6 +147,7 @@ export function createRuns(deps: { boss: PgBoss; now?: () => Date }) {
     async startSearch(workspaceId: string, discovery: Discovery, a: SearchInput & { confirmedUsd: number; userId: string; namesFree?: boolean }): Promise<SearchResult> {
       const refused = await refuseTerms(workspaceId, a);
       if (refused) return refused;
+      if (await operatorHeld(workspaceId)) return { ok: false, reason: "operator_hold" };
       const { usd: searchUsd } = await discovery.estimate(a.terms, a.limit);
       if (a.confirmedUsd < searchUsd) return { ok: false, reason: "below_estimate", usd: searchUsd };
       const limit = Math.min(a.limit, MAX_COMPANIES);

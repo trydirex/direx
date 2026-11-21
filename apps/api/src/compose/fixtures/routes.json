@@ -550,6 +550,8 @@
   "DELETE /api/w/:workspaceId/tracking/domains/:id",
   "DELETE /api/w/:workspaceId/tracking/domains/:id",
   "DELETE /api/w/:workspaceId/tracking/domains/:id",
+  "GET /t/:linkId",
+  "GET /t/:linkId/:token",
   "GET /api/w/:workspaceId/newsletter/settings",
   "GET /api/w/:workspaceId/newsletter/settings",
   "GET /api/w/:workspaceId/newsletter/settings",

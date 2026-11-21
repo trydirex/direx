@@ -45,7 +45,7 @@ export function createItems(deps: { ledger: Ledger; kinds?: Record<string, ItemK
   };
   return {
     ...store,
-    ...decisions({ ledger: deps.ledger, kinds, now, describeChange: deps.describeChange, onApproved: deps.onApproved, onApplied, actionPermission: deps.actionPermission, mayGrant: deps.mayGrant, editOf: deps.editOf, capacity, resumeLate: (workspaceId, actionId, actor) => inWorkspace(workspaceId, (tx) => late.resumeLateIn(tx, workspaceId, actionId, actor)) }),
+    ...decisions({ ledger: deps.ledger, kinds, now, describeChange: deps.describeChange, onApproved: deps.onApproved, onApplied, actionPermission: deps.actionPermission, mayGrant: deps.mayGrant, editOf: deps.editOf, capacity, resumeLate: late.resumeLate }),
     ...moves({ ledger: deps.ledger, now, onStep: deps.onMoveStep, capacity }),
     /** How many of these Items, made without an Action, still wait for a person; for the door's caps. */
     waitingAmongIn: countWaiting,

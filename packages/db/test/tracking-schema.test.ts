@@ -8,7 +8,7 @@ import type pg from "pg";
 import { withWorkspace } from "../src/index";
 import { organizations, workspaces } from "../src/schema";
 import { campaigns } from "../src/schema-campaigns";
-import { trackedLinks, trackedLinkUses, trackingDomains } from "../src/schema-tracking";
+import { clickCounts, trackedLinks, trackedLinkUses, trackingCounters, trackingDomains } from "../src/schema-tracking";
 import { appClient, insertAuthUser } from "../../../test/db";
 
 let c: pg.Client;
@@ -204,7 +204,37 @@ test("lookup returns ids only on the link's host even when stopped, and only sen
   await expect(c.query("update tracked_link_uses set inputs_hash = 'changed' where id = $1", [useId])).rejects.toMatchObject({ code: "42501" });
 });
 
-test("the drizzle schema names the same checks, keys, foreign keys and indexes as migration 0158", async () => {
+test("daily counts only grow and stay in their Workspace; the rate counter can be pruned", async () => {
+  const d = await domain(W, host());
+  const camp = await campaign(W);
+  const id = linkId();
+  await link(W, camp, d, { id });
+  const count = (bucket: string, n = 1) =>
+    c.query("insert into click_counts (workspace_id, link_id, day, bucket, classifier_version, count) values ($1, $2, '2026-11-21', $3, 1, $4)", [W, id, bucket, n]);
+  await expect(count("human")).rejects.toThrow(/click_counts_bucket_check/);
+  await expect(count("rest", 0)).rejects.toThrow(/click_counts_count_check/);
+  await count("rest");
+  await c.query("update click_counts set count = count + 1 where link_id = $1", [id]);
+  const violation = { code: "23514", message: "click_counts: count cannot decrease and the key cannot change" };
+  await expect(c.query("update click_counts set count = 1 where link_id = $1", [id])).rejects.toMatchObject(violation);
+  await expect(c.query("update click_counts set bucket = 'automatic' where link_id = $1", [id])).rejects.toMatchObject(violation);
+  const incremented = await c.query(
+    `insert into click_counts (workspace_id, link_id, day, bucket, classifier_version, count)
+     values ($1, $2, '2026-11-21', 'rest', 1, 1)
+     on conflict (workspace_id, link_id, day, bucket, classifier_version)
+     do update set count = click_counts.count + excluded.count returning count`,
+    [W, id],
+  );
+  expect(incremented.rows).toEqual([{ count: 3 }]);
+  await expect(c.query("delete from click_counts where link_id = $1", [id])).rejects.toThrow(/permission denied/);
+  await c.query("insert into tracking_counters (workspace_id, link_id, minute, count) values ($1, $2, now(), 1)", [W, id]);
+  expect((await c.query("delete from tracking_counters where link_id = $1", [id])).rowCount).toBe(1);
+  await as(OTHER);
+  expect((await c.query("select count(*)::int as n from click_counts where link_id = $1", [id])).rows[0].n).toBe(0);
+  await expect(c.query("insert into tracking_counters (workspace_id, link_id, minute, count) values ($1, $2, now(), 1)", [W, id])).rejects.toThrow(/row-level security/);
+});
+
+test("the drizzle schema names the same checks, keys, foreign keys and indexes as migrations 0158 and 0164", async () => {
   const names = (t: PgTable) => {
     const cfg = getTableConfig(t);
     const fks = cfg.foreignKeys.map((f) => {
@@ -213,16 +243,16 @@ test("the drizzle schema names the same checks, keys, foreign keys and indexes a
     });
     return [...cfg.checks.map((x) => x.name), ...cfg.uniqueConstraints.map((u) => u.name), ...fks, ...cfg.indexes.map((i) => i.config.name)].sort();
   };
-  const tables = { trackingDomains, trackedLinks, trackedLinkUses };
+  const tables = { trackingDomains, trackedLinks, trackedLinkUses, clickCounts, trackingCounters };
   await as("");
   const { rows } = await c.query(
     `select conrelid::regclass::text as tbl, conname from pg_constraint
-     where conrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses')
+     where conrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses', 'click_counts', 'tracking_counters')
        and contype in ('c', 'u', 'f')
      union all
      select i.indrelid::regclass::text, i.indexrelid::regclass::text
      from pg_index i
-     where i.indrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses')
+     where i.indrelid::regclass::text in ('tracking_domains', 'tracked_links', 'tracked_link_uses', 'click_counts', 'tracking_counters')
        and not exists (select 1 from pg_constraint c where c.conindid = i.indexrelid)`,
   );
   for (const [, table] of Object.entries(tables)) {

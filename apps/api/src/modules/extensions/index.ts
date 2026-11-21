@@ -3,7 +3,14 @@
 // such a package, and with nothing installed each one refuses or does nothing.
 
 /** Raised on any change to a type here, so a package built against another shape can refuse to start. */
-export const EXTENSIONS_VERSION = 1;
+export const EXTENSIONS_VERSION = 2;
+
+/**
+ * The deployment's root key, which wraps every Workspace's data key. Supplied, it replaces
+ * DIREX_MASTER_KEY and the key file, so a KMS can hold it; the startup check that the deployment
+ * still runs with the key it recorded applies to it unchanged.
+ */
+export type { RootKey } from "../credentials/index";
 
 /** Finds companies for search terms. The estimate comes first, since a search can cost money. */
 export type Discovery = {

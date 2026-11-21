@@ -29,7 +29,7 @@ name or username, and for a Mailbox its email address and the permissions Google
 |---|---|
 | Self-hosted | A file Direx generates on first start: `DIREX_DATA_DIR/master.key`, by default `~/.direx/master.key`, readable only by its owner. To supply your own, set `DIREX_MASTER_KEY` (32 bytes as 64 hex characters or base64) or `DIREX_MASTER_KEY_FILE`, which take priority. The API refuses a key file that is readable by group or others. |
 | Local development | The same generated file. |
-| Direx Cloud | A key held in a cloud key management service. The cloud build supplies it through the same interface and never generates one. It is not part of this repository. |
+| Direx Cloud, or any package that starts the server | A key held in a cloud key management service. The package passes it as `rootKey` to `startServer` (see `apps/api/src/modules/extensions`), and the server, the worker and the media storage check use it instead of `DIREX_MASTER_KEY` or a file. The start refuses if either variable is also set, and never generates a key. The commands (`secrets.ts`, `replace-root-key`, `server-admin`, `doctor`) still read the key from the environment. The cloud adapter is not part of this repository. |
 
 The root key can't be stored in the vault, because it is what decrypts the vault, and it
 can't be stored in the database, because then a dump would expose every credential.

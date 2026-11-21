@@ -56,7 +56,9 @@ export function createDrift(d: { mailer: Mailer; adminEmails: (workspaceId: stri
   const now = d.now ?? (() => new Date());
   const tell = async (workspaceId: string, mail: { subject: string; text: string }) => {
     const sent = named(await workspaceName(workspaceId))(mail);
-    for (const to of await d.adminEmails(workspaceId)) await d.mailer({ to, ...sent });
+    for (const to of await d.adminEmails(workspaceId)) {
+      await d.mailer({ to, ...sent }).catch((e) => console.error("agents: drift notice failed", workspaceId, e));
+    }
   };
 
   /** One Workspace: every version with a previous one, both measures; an incident opened here is mailed. */

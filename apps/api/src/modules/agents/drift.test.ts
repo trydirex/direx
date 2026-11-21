@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The drift check against the database: runs and proposals seeded per agent version, counted per
 // Workspace, and one notice per version and measure that rose past ADR 0008's line.
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, test, vi } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { seedMember } from "../identity/fixtures/member";
 import type { Mail } from "../identity/index";
@@ -145,6 +145,34 @@ test("a version whose rejection rate rose opens one incident and sends one notic
   expect(await incidents(a.ws)).toEqual(opened);
   expect(mailTo(b.ws)).toHaveLength(1);
   expect(await incidents(b.ws)).toHaveLength(1);
+});
+
+test("a failed recipient does not prevent notices to the other admins or cause a retry", async () => {
+  const { ws } = await workspace();
+  await seed(ws, { version: 1, route: "r1", runs: 60, refused: 3, code: "too_long", day: 1 });
+  await seed(ws, { version: 2, route: "r2", runs: 60, refused: 12, code: "too_long", day: 2 });
+  const attempted: string[] = [];
+  const delivered: string[] = [];
+  const failure = new Error("recipient rejected");
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const check = createDrift({
+    adminEmails: async () => ["first@example.test", "bad@example.test", "last@example.test"],
+    mailer: async ({ to }) => {
+      attempted.push(to);
+      if (to === "bad@example.test") throw failure;
+      delivered.push(to);
+    },
+  });
+  try {
+    await check.checkDrift(ws);
+    await check.checkDrift(ws);
+    expect(attempted).toEqual(["first@example.test", "bad@example.test", "last@example.test"]);
+    expect(delivered).toEqual(["first@example.test", "last@example.test"]);
+    expect(await incidents(ws)).toHaveLength(1);
+    expect(log).toHaveBeenCalledWith("agents: drift notice failed", ws, failure);
+  } finally {
+    log.mockRestore();
+  }
 });
 
 test("refusals that say the world moved don't count, and a version under 50 runs never fires", async () => {

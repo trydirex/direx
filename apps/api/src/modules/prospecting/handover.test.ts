@@ -239,6 +239,49 @@ test("a hold defers a batch needing verification and the queued retry resumes af
   }
 });
 
+test("a hold between checks keeps the selected unknown addresses and rechecks Campaign eligibility", async () => {
+  const w = await world();
+  const emails = Array.from({ length: 4 }, (_, i) => `p${i}@partial-hold.test`);
+  await w.seed("partial-hold.test", emails.map((email) => ({ email, verification: "unknown" })));
+  const ordered = await q<{ email: string }>(w.W, "select email from prospect_addresses order by id");
+  const campaignId = await w.newCampaign();
+  const handoverId = await w.handOver(await w.cohort({ verification: ["unknown"] }), campaignId);
+  const db = await ownerClient();
+  const lift = () => db.query("select system.lift_operator_hold('workspace', $1, 'cli:test')", [w.W]);
+  vendor.calls.length = 0;
+  const partial = createVerifier({
+    verify: async (workspaceId, email) => {
+      if (vendor.calls.length === 0) await db.query("select system.set_operator_hold('workspace', $1, 'test', 'cli:test')", [w.W]);
+      return verify(workspaceId, email);
+    },
+    now: () => NOW, resolveMx: async () => [{ exchange: "mx.example.net" }], log: () => undefined,
+  });
+  const job = { workspaceId: w.W, handoverId };
+  const worker = createHandovers({ boss, campaigns: () => campaigns, freshResults: partial.freshResults, now: () => NOW, batchSize: 3 });
+  try {
+    await worker.run(job);
+    expect(vendor.calls).toHaveLength(1);
+    const verified = vendor.calls[0]!;
+    expect(await q(w.W, "select verification_result from prospect_addresses where email = $1", [verified])).toEqual([{ verification_result: "deliverable" }]);
+    expect(await w.view(handoverId)).toMatchObject({ status: "running", results: [] });
+
+    const suppressed = ordered.slice(0, 3).find(({ email }) => email !== verified)!.email;
+    await outreach.addSuppression(w.W, suppressed);
+    await lift();
+    // Use the regular worker to retry: membership must survive a different invocation.
+    await w.work(handoverId);
+    expect(vendor.calls.sort()).toEqual(emails);
+    const done = await w.view(handoverId);
+    expect(done).toMatchObject({ status: "done", counts: { added: 3, leftOut: 1 } });
+    expect(done.results.find((r) => r.email === verified)).toMatchObject({ status: "added" });
+    expect(done.results.find((r) => r.email === suppressed)).toMatchObject({ status: "left_out", reason: "suppressed" });
+    expect(done.results.find((r) => r.email === ordered[3]!.email)).toMatchObject({ status: "added" });
+    expect((await campaigns.people(w.W, campaignId)).people).toHaveLength(3);
+  } finally {
+    await lift().finally(() => db.end());
+  }
+});
+
 test("a guess is never handed over for a company in Canada or a Person recorded in Canada; a published address is", async () => {
   const w = await world();
   await w.seed("maple.test", [{ email: "pub@maple.test" }, { email: "guess@maple.test", source: "guessed", verifiedDaysAgo: VERIFIED_FOR_DAYS + 5 }], "CA");

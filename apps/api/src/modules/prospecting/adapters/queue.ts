@@ -57,9 +57,3 @@ export const workHandovers = (boss: PgBoss, handle: (p: Handover) => Promise<unk
 
 /** Queued in the transaction that makes the hand-over row, so neither exists without the other. */
 export const sendHandover = (boss: PgBoss, tx: LedgerTx, payload: Handover, at: Date): Promise<void> => sendJobInTx(boss, tx, HANDOVER_QUEUE, Handover.parse(payload), at);
-
-/** Upsert the delayed successor so replays of the current job agree on one queued retry. */
-export async function deferHandover(boss: PgBoss, payload: Handover, at: Date): Promise<void> {
-  const job = Handover.parse(payload);
-  await boss.upsert(HANDOVER_QUEUE, job, { singletonKey: job.handoverId, startAfter: at });
-}

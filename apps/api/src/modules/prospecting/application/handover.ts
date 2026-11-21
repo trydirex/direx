@@ -7,8 +7,8 @@ import type { VerificationResult } from "@direx/plugin-sdk";
 import type { PgBoss } from "pg-boss";
 import { MAX_ROWS, type Campaigns, type PersonInput, type PersonResult } from "../../campaigns/index";
 import { cohortById } from "../adapters/cohorts-repo";
-import { addHandover, addressesOfPerson, keptFor, campaignExists, campaignSkips, canadianAddresses, checkedAt, failHandover, finishHandover, handoverById, handoverCounts, handoverNames, resultsPage, saveBatch, signalsOfPerson, type HandoverResultRow } from "../adapters/handover-repo";
-import { deferHandover, sendHandover, type Handover } from "../adapters/queue";
+import { addHandover, addressesOfPerson, keptFor, campaignExists, campaignSkips, canadianAddresses, checkedAt, failHandover, finishHandover, handoverById, handoverCounts, handoverNames, pendingMembers, resultsPage, saveBatch, savePendingBatch, signalsOfPerson, type HandoverResultRow } from "../adapters/handover-repo";
+import { HANDOVER_QUEUE, Handover, sendHandover } from "../adapters/queue";
 import { inWorkspace } from "../adapters/repo";
 import { mayGuessIn } from "../domain/guesses";
 import { createCohorts, type CohortMember } from "./cohorts";
@@ -16,6 +16,7 @@ import type { Verifier } from "./verify";
 
 const PAGE = 100;
 const HOLD_RETRY_MS = 60_000;
+type BatchMember = Awaited<ReturnType<typeof pendingMembers>>[number];
 
 /** The first line of what broke, without the values a failed query lists after it. */
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).split("\nparams:")[0]!.split("\n")[0]!.slice(0, 200);
@@ -24,7 +25,7 @@ export const errorText = (e: unknown) => (e instanceof Error ? e.message : Strin
  * The Campaign's evidence field: how the address was found, its check, and the page it came from. The
  * page address goes last, so if the Campaign has to cut the summary to fit, only the address is cut.
  */
-export function evidenceSummary(m: CohortMember, result: VerificationResult, verifiedAt: Date | null): string {
+export function evidenceSummary(m: Pick<CohortMember, "source" | "pattern" | "evidence">, result: VerificationResult, verifiedAt: Date | null): string {
   const found = m.source === "guessed" ? `Guessed address (${m.pattern}@) for a person named on the company's site` : "Address published on the company's site";
   const checked = `verified ${result}${verifiedAt ? ` on ${verifiedAt.toISOString().slice(0, 10)}` : ""}`;
   return `${found}; ${checked}; page read ${m.evidence.readAt}, snapshot ${m.evidence.snapshotId}: ${m.evidence.pageUrl}`;
@@ -53,7 +54,7 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
   const batchSize = Math.min(deps.batchSize ?? MAX_ROWS, MAX_ROWS);
   const cohorts = createCohorts({ now });
 
-  async function handBatch(h: { id: string; campaignId: string; createdBy: string }, workspaceId: string, members: CohortMember[]): Promise<"saved" | "operator_hold"> {
+  async function handBatch(h: { id: string; campaignId: string; createdBy: string }, workspaceId: string, members: BatchMember[], cursor: string): Promise<"saved" | "operator_hold"> {
     const out = new Map<string, HandoverResultRow>();
     // Checked before verification, so nothing is paid for a guess that can't go over.
     const guesses = members.filter((m) => m.source === "guessed");
@@ -64,7 +65,7 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
     const fresh = await deps.freshResults(workspaceId, toCheck);
     if (fresh.status === "operator_hold") return "operator_hold";
     const dates = await inWorkspace(workspaceId, (tx) => checkedAt(tx, toCheck));
-    const sendable: { m: CohortMember; row: PersonInput }[] = [];
+    const sendable: { m: BatchMember; row: PersonInput }[] = [];
     for (const m of members) {
       if (out.has(m.addressId)) continue;
       const result = fresh.results.get(m.addressId);
@@ -97,7 +98,7 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
       added.results.forEach((r, i) => out.set(sendable[i]!.m.addressId, { ...fromCampaign(sendable[i]!.m.addressId, r), basis: sendable[i]!.row.basis, evidence: sendable[i]!.row.evidence }));
     }
     const results = members.map((m) => out.get(m.addressId)!);
-    await inWorkspace(workspaceId, (tx) => saveBatch(tx, { workspaceId, handoverId: h.id, results, cursor: members.at(-1)!.addressId, at: now() }));
+    await inWorkspace(workspaceId, (tx) => saveBatch(tx, { workspaceId, handoverId: h.id, results, cursor, at: now() }));
     return "saved";
   }
 
@@ -149,23 +150,34 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
       const h = await inWorkspace(workspaceId, (tx) => handoverById(tx, handoverId));
       if (!h || h.status === "done") return;
       let cursor = h.cursor ?? undefined;
+      let pending = h.pendingAddressIds;
       for (let more = true; more; ) {
-        const batch: CohortMember[] = [];
-        while (batch.length < batchSize) {
-          const page = await cohorts.cohortMembers(workspaceId, h.cohortId, cursor);
-          const taken = page?.members.slice(0, batchSize - batch.length) ?? [];
-          batch.push(...taken);
-          cursor = taken.at(-1)?.addressId ?? cursor;
-          if (taken.length < (page?.members.length ?? 0)) break;
-          if (!page?.next) {
-            more = false;
-            break;
+        let batch: BatchMember[];
+        if (pending?.length) {
+          const ids = pending;
+          batch = await inWorkspace(workspaceId, (tx) => pendingMembers(tx, workspaceId, ids));
+          cursor = ids.at(-1)!;
+          pending = null;
+        } else {
+          batch = [];
+          while (batch.length < batchSize) {
+            const page = await cohorts.cohortMembers(workspaceId, h.cohortId, cursor);
+            const taken = page?.members.slice(0, batchSize - batch.length) ?? [];
+            batch.push(...taken);
+            cursor = taken.at(-1)?.addressId ?? cursor;
+            if (taken.length < (page?.members.length ?? 0)) break;
+            if (!page?.next) {
+              more = false;
+              break;
+            }
           }
+          if (!batch.length) break;
+          await inWorkspace(workspaceId, (tx) => savePendingBatch(tx, handoverId, batch.map((m) => m.addressId)));
         }
-        if (batch.length && (await handBatch(h, workspaceId, batch)) === "operator_hold") {
-          // A hold can outlast the queue's normal fault retries. Keep the saved cursor and queue
-          // another attempt without treating the hold as a failure.
-          await deferHandover(deps.boss, { workspaceId, handoverId }, new Date(now().getTime() + HOLD_RETRY_MS));
+        if ((await handBatch(h, workspaceId, batch, cursor!)) === "operator_hold") {
+          // Upsert one delayed successor. A hold can outlast the queue's normal fault retries.
+          const job = Handover.parse({ workspaceId, handoverId });
+          await deps.boss.upsert(HANDOVER_QUEUE, job, { singletonKey: handoverId, startAfter: new Date(now().getTime() + HOLD_RETRY_MS) });
           return;
         }
       }

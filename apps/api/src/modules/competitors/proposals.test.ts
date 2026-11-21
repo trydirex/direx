@@ -5,7 +5,7 @@ import type { OpenAPIHono } from "@hono/zod-openapi";
 import { expect, test } from "vitest";
 import { ownerClient } from "../../../../../test/db";
 import type { FetchHtml, FetchSitemap } from "../agents/index";
-import type { Discovery } from "../extensions/index";
+import { NotAvailable, type Discovery } from "../extensions/index";
 import { TEST_SECRET, testIdentity } from "../identity/test-auth";
 import { createProposals } from "./application/proposals";
 import { competitorRoutes, createCompetitors, createSnapshots, type ReadPage } from "./index";
@@ -48,7 +48,7 @@ const scan = async (cookie = owner) => {
 const names = (l: Listed) => l.proposals.map((p) => p.name);
 
 test("with no Brand read of a website there is no site, nothing proposed and nothing to scan", async () => {
-  expect(await get()).toEqual({ proposals: [], site: null, scannedAt: null, searchAvailable: false });
+  expect(await get()).toEqual({ proposals: [], site: null, scannedAt: null, searchAvailable: false, searchesLeft: 5 });
   expect(await scan()).toEqual({ status: 409, body: { error: "no_site" } });
 });
 
@@ -115,33 +115,28 @@ test("a scan that runs past its limit says so and records nothing", async () => 
 
 const post = (path: string, body: object, cookie = owner, w = W) => call(`/api/w/${w}/competitors/proposals/${path}`, cookie, { method: "POST", body });
 
-test("with no search installed, the panel says so and an estimate is refused", async () => {
+test("with no search installed, the panel says so and a search is refused", async () => {
   discovery = undefined;
   expect((await get()).searchAvailable).toBe(false);
-  const r = await post("estimate", { terms: ["bank reconciliation software"] });
+  const r = await post("search", { terms: ["bank reconciliation software"] });
   expect([r.status, await r.json()]).toEqual([409, { error: "not_available" }]);
 });
 
-test("a paid search shows its cost first, needs that much confirmed, and proposes what it finds once", async () => {
-  const searched: string[][] = [];
+test("a search Direx pays for proposes what it finds once, records its estimate as the spend, and stops at 5 a month", async () => {
   let results = [
     { domain: "doublehq.com", name: "Double", source: "s" },
     { domain: "xenett.com", name: "Xenett", source: "s" },
     { domain: "www.equilityhq.com", name: "Equility", source: "s" },
     { domain: "booke.ai", name: "", source: "s" },
   ];
-  discovery = { estimate: async () => ({ usd: 0.12 }), search: async (_w, terms) => (searched.push(terms), results) };
+  let searches = 0;
+  discovery = { estimate: async () => ({ usd: 0.12 }), search: async () => (searches++, results) };
   const W3 = (await createOrg(owner, "Searching")).workspace.id;
   sites.set(W3, SITE);
-  expect((await (await call(`/api/w/${W3}/competitors/proposals`, owner)).json()).searchAvailable).toBe(true);
-  const estimate = await post("estimate", { terms: ["bank reconciliation software"] }, owner, W3);
-  expect([estimate.status, await estimate.json()]).toEqual([200, { usd: 0.12 }]);
+  const listed = async () => (await (await call(`/api/w/${W3}/competitors/proposals`, owner)).json()) as Listed & { searchesLeft: number };
+  expect(await listed()).toMatchObject({ searchAvailable: true, searchesLeft: 5 });
 
-  const low = await post("search", { terms: ["bank reconciliation software"], confirmedUsd: 0.1 }, owner, W3);
-  expect([low.status, await low.json()]).toEqual([400, { error: "below_estimate" }]);
-  expect(searched).toEqual([]);
-
-  const found = (await (await post("search", { terms: ["bank reconciliation software"], confirmedUsd: 0.12 }, owner, W3)).json()) as Listed & { proposals: { terms: string[] | null }[] };
+  const found = (await (await post("search", { terms: ["bank reconciliation software"] }, owner, W3)).json()) as Listed & { proposals: { terms: string[] | null }[]; searchesLeft: number };
   // The Workspace's own site is never proposed; a company with no name goes by its domain.
   expect(found.proposals.map((p) => [p.name, p.site, p.source])).toEqual([
     ["booke.ai", "https://booke.ai/", "search"],
@@ -149,26 +144,93 @@ test("a paid search shows its cost first, needs that much confirmed, and propose
     ["Xenett", "https://xenett.com/", "search"],
   ]);
   expect(found.proposals[0]!.terms).toEqual(["bank reconciliation software"]);
+  expect(found.searchesLeft).toBe(4);
 
-  // A search that finds nothing new is still recorded, with what was confirmed and by whom.
+  // A search that finds nothing new still counts, and is recorded with its estimate and who ran it.
   results = [{ domain: "doublehq.com", name: "Double", source: "s" }];
-  expect(names((await (await post("search", { terms: ["bookkeeping automation"], confirmedUsd: 0.5 }, owner, W3)).json()) as Listed)).toEqual(["booke.ai", "Double", "Xenett"]);
+  for (let i = 0; i < 4; i++) expect((await post("search", { terms: [`bookkeeping automation ${i}`] }, owner, W3)).status).toBe(200);
+  expect((await listed()).searchesLeft).toBe(0);
+  const over = await post("search", { terms: ["one more"] }, owner, W3);
+  expect([over.status, await over.json()]).toEqual([409, { error: "search_limit" }]);
+  expect(searches).toBe(5);
   const db = await ownerClient();
-  const { rows } = await db.query("select terms, confirmed_micros from competitor_finds where workspace_id = $1 and kind = 'search' order by at", [W3]);
+  const { rows } = await db.query("select count(*)::int as n, min(confirmed_micros) as micros from competitor_finds where workspace_id = $1 and kind = 'search'", [W3]);
   await db.end();
-  expect(rows).toEqual([
-    { terms: ["bank reconciliation software"], confirmed_micros: "120000" },
-    { terms: ["bookkeeping automation"], confirmed_micros: "500000" },
-  ]);
+  expect(rows).toEqual([{ n: 5, micros: "120000" }]);
+});
+
+test("concurrent requests for the final slot only start one paid search", async () => {
+  const w = (await createOrg(owner, "Concurrent searching")).workspace.id;
+  let searches = 0;
+  discovery = { estimate: async () => ({ usd: 0.12 }), search: async () => (searches++, []) };
+  const search = () => post("search", { terms: ["bank reconciliation software"] }, owner, w);
+  for (let i = 0; i < 4; i++) expect((await search()).status).toBe(200);
+
+  const quotes = Promise.withResolvers<void>();
+  let quoting = 0;
+  discovery.estimate = async () => {
+    if (++quoting === 2) quotes.resolve();
+    await quotes.promise;
+    return { usd: 0.12 };
+  };
+  const results = await Promise.all([search(), search()]);
+  expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
+  expect(await results.find((r) => r.status === 409)!.json()).toEqual({ error: "search_limit" });
+  expect(searches).toBe(5);
+});
+
+test("a search completing in December still uses November's allowance", async () => {
+  const w = (await createOrg(owner, "Month boundary")).workspace.id;
+  const { user } = (await (await call("/api/me", owner)).json()) as { user: { id: string } };
+  const november = new Date("2026-11-30T23:59:59Z");
+  const december = new Date("2026-12-01T00:00:00Z");
+  let clock = november;
+  const searcher = createProposals({
+    site: async () => null, now: () => clock,
+    discovery: () => ({ estimate: async () => ({ usd: 0.12 }), search: async () => { clock = december; return []; } }),
+  });
+  const search = () => searcher.search(w, user.id, ["bank reconciliation software"]);
+  expect(await search()).toMatchObject({ searchesLeft: 5 });
+  expect(await search()).toMatchObject({ searchesLeft: 4 });
+  clock = november;
+  expect(await searcher.list(w)).toMatchObject({ searchesLeft: 4 });
+});
+
+test("failed estimates leave the allowance untouched; uncertain discovery and proposal failures retain usage", async () => {
+  const w = (await createOrg(owner, "Search failures")).workspace.id;
+  const { user } = (await (await call("/api/me", owner)).json()) as { user: { id: string } };
+  const vendor: Discovery = {
+    estimate: async () => { throw new NotAvailable("quote"); },
+    search: async () => { throw new Error("discovery connection lost"); },
+  };
+  const searcher = createProposals({
+    site: async () => { throw new Error("site lookup failed"); },
+    now: () => new Date("2026-11-04T00:00:00Z"),
+    discovery: () => vendor,
+  });
+  const search = () => searcher.search(w, user.id, ["bank reconciliation software"]);
+  const allowance = async () => (await createProposals({
+    site: async () => null, now: () => new Date("2026-11-04T00:00:00Z"),
+  }).list(w)).searchesLeft;
+  expect(await search()).toEqual({ ok: false, reason: "not_available" });
+  expect(await allowance()).toBe(5);
+
+  vendor.estimate = async () => ({ usd: 0.12 });
+  await expect(search()).rejects.toThrow("discovery connection lost");
+  expect(await allowance()).toBe(4);
+
+  vendor.search = async () => [{ name: "Acme", domain: "acme.example", source: "test" }];
+  await expect(search()).rejects.toThrow("site lookup failed");
+  expect(await allowance()).toBe(3);
 });
 
 test("search terms holding an email or a web address are refused, and only an Owner or Admin may search", async () => {
   discovery = { estimate: async () => ({ usd: 0.12 }), search: async () => [] };
   for (const term of ["mail sam@contoso.example", "see contoso.example/pricing"]) {
-    const r = await post("estimate", { terms: [term] });
+    const r = await post("search", { terms: [term] });
     expect([r.status, await r.json()]).toEqual([400, { error: "person_data" }]);
   }
-  expect((await post("estimate", { terms: ["a", "b", "c", "d"] })).status).toBe(400);
+  expect((await post("search", { terms: ["a", "b", "c", "d"] })).status).toBe(400);
   const viewer = (await addMember(owner, W, "viewer")).cookie;
-  expect((await post("search", { terms: ["bank rec"], confirmedUsd: 1 }, viewer)).status).toBe(403);
+  expect((await post("search", { terms: ["bank rec"] }, viewer)).status).toBe(403);
 });

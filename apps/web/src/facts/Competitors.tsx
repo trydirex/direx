@@ -14,7 +14,6 @@ import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
 import { Skeleton } from "@astryxdesign/core/Skeleton";
 import type { Role } from "../items/actions";
-import { usd } from "../prospecting/actions";
 import { factsQuery } from "./actions";
 import {
   addCompetitor,
@@ -22,7 +21,6 @@ import {
   changeWords,
   checkCompetitor,
   dismissProposal,
-  estimateSearch,
   checkWords,
   competitorsQuery,
   editCompetitor,
@@ -60,34 +58,22 @@ function useFirstScan(workspaceId: string, manage: boolean) {
 const SEARCH_WORDS: Record<string, string> = {
   not_available: "Search isn't available on this server.",
   person_data: "A search term can't hold an email address, a web address or a person's name.",
-  below_estimate: "The search costs more than that now. See the cost again.",
+  search_limit: "This Workspace has used its 5 searches for this month.",
   bad_terms: "Give 1 to 3 search terms of 2 to 100 characters.",
 };
 
-/** A paid search for competitors: the cost first, then a search the person confirms at that cost. */
-function Search(p: { workspaceId: string; onDone: () => Promise<unknown> }) {
+/** A search for competitors, which Direx pays for, a few a month per Workspace. */
+function Search(p: { workspaceId: string; left: number; onDone: () => Promise<unknown> }) {
   const action = useAction(SEARCH_WORDS);
   const [terms, setTerms] = useState(["", "", ""]);
-  const [cost, setCost] = useState<number | null>(null);
   const kept = terms.map((t) => t.trim()).filter((t) => t.length >= 2);
-  const type = (i: number, value: string) => {
-    setTerms((all) => all.map((t, j) => (j === i ? value : t)));
-    setCost(null);
-  };
-  const estimate = () =>
-    void action.run(async () => {
-      const r = await estimateSearch(p.workspaceId, kept);
-      if ("code" in r) return r.code;
-      setCost(r.usd);
-      return null;
-    });
-  const search = (usdConfirmed: number) =>
+  const type = (i: number, value: string) => setTerms((all) => all.map((t, j) => (j === i ? value : t)));
+  const search = () =>
     void action.run(
       async () => {
-        const code = await searchCompetitors(p.workspaceId, kept, usdConfirmed);
+        const code = await searchCompetitors(p.workspaceId, kept);
         if (code) return code;
         setTerms(["", "", ""]);
-        setCost(null);
         await p.onDone();
         return null;
       },
@@ -97,7 +83,7 @@ function Search(p: { workspaceId: string; onDone: () => Promise<unknown> }) {
     <details className="text-sm">
       <summary className="cursor-pointer">Search for competitors</summary>
       <div className="mt-2 flex flex-col gap-2">
-        <p className="text-muted-foreground">A paid search for companies like yours. You see what it costs before it runs.</p>
+        <p className="text-muted-foreground">Search the web for companies like yours. {p.left === 1 ? "1 search" : `${p.left} searches`} left this month.</p>
         {terms.map((t, i) => (
           <Field key={i} label={i === 0 ? "Search term" : `Search term ${i + 1} (optional)`}>
             <Input value={t} onChange={(e) => type(i, e.target.value)} maxLength={100} placeholder={i === 0 ? "bank reconciliation software for QuickBooks" : undefined} />
@@ -105,15 +91,9 @@ function Search(p: { workspaceId: string; onDone: () => Promise<unknown> }) {
         ))}
         {action.error && <Notice tone="error">{action.error}</Notice>}
         <div>
-          {cost === null ? (
-            <Button size="sm" variant="outline" pending={action.pending} disabled={kept.length === 0} onClick={estimate}>
-              See the cost
-            </Button>
-          ) : (
-            <Button size="sm" pending={action.pending} onClick={() => search(cost)}>
-              Search, up to {usd(cost)}
-            </Button>
-          )}
+          <Button size="sm" pending={action.pending} disabled={kept.length === 0 || p.left === 0} onClick={search}>
+            Search
+          </Button>
         </div>
       </div>
     </details>
@@ -351,7 +331,7 @@ export function Competitors(p: { workspaceId: string; role: Role }) {
                 {manage && list.length >= MAX_COMPETITORS && <p className="text-sm text-muted-foreground">5 of 5 set. Remove one to add another.</p>}
               </section>
             )}
-            {manage && found?.searchAvailable && <Search workspaceId={p.workspaceId} onDone={reloadProposals} />}
+            {manage && found?.searchAvailable && <Search workspaceId={p.workspaceId} left={found.searchesLeft} onDone={reloadProposals} />}
             {manage && found?.site && (
               <div>
                 <Button size="sm" variant="outline" pending={action.pending} onClick={lookAgain}>

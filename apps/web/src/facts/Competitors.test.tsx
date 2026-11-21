@@ -317,94 +317,60 @@ test("a site never scanned is scanned once when the panel opens", async () => {
   expect(post).toHaveBeenCalledTimes(1);
 });
 
-test("a paid search shows its cost first and runs at that cost; changing a term asks for the cost again", async () => {
-  const table = serve([], { found: { proposals: [], ...scanned, searchAvailable: true } });
-  const post = vi.spyOn(api, "POST").mockImplementation(((path: string) => (path.endsWith("/estimate") ? reply(200, { usd: 0.12 }) : reply(200, { proposals: [], ...scanned, searchAvailable: true }))) as never);
+test("a search shows how many are left this month, runs with the terms given, and lists what it found", async () => {
+  const table = serve([], { found: { proposals: [], ...scanned, searchAvailable: true, searchesLeft: 3 } });
+  const post = vi.spyOn(api, "POST").mockImplementation((() => reply(200, { proposals: [], ...scanned, searchAvailable: true, searchesLeft: 2 })) as never);
   render(withQueries(<Competitors workspaceId={W} role="owner" />));
   await userEvent.click(await screen.findByText("Search for competitors"));
+  expect(screen.getByText(/3 searches left this month\./)).toBeTruthy();
+  expect(screen.queryByText(/\$/)).toBeNull();
   const term = screen.getByRole("textbox", { name: "Search term" });
-  expect((screen.getByRole("button", { name: "See the cost" }) as HTMLButtonElement).disabled).toBe(true);
-  await userEvent.type(term, "bank rec");
-  await userEvent.click(screen.getByRole("button", { name: "See the cost" }));
-  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/estimate", { params: { path: { workspaceId: W } }, body: { terms: ["bank rec"] } });
-  await userEvent.type(term, " software");
-  expect(screen.queryByRole("button", { name: /^Search, up to/ })).toBeNull();
-  await userEvent.click(screen.getByRole("button", { name: "See the cost" }));
-  table.found = { proposals: [found({ source: "search", terms: ["bank rec software"], comparisonUrl: null })], ...scanned, searchAvailable: true };
-  await userEvent.click(await screen.findByRole("button", { name: "Search, up to $0.12" }));
-  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/search", { params: { path: { workspaceId: W } }, body: { terms: ["bank rec software"], confirmedUsd: 0.12 } });
+  expect((screen.getByRole("button", { name: "Search" }) as HTMLButtonElement).disabled).toBe(true);
+  await userEvent.type(term, "bank rec software");
+  table.found = { proposals: [found({ source: "search", terms: ["bank rec software"], comparisonUrl: null })], ...scanned, searchAvailable: true, searchesLeft: 2 };
+  await userEvent.click(screen.getByRole("button", { name: "Search" }));
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/search", { params: { path: { workspaceId: W } }, body: { terms: ["bank rec software"] } });
   expect(await screen.findByText("Search: bank rec software")).toBeTruthy();
   expect((term as HTMLInputElement).value).toBe("");
+  expect(screen.getByText(/2 searches left this month\./)).toBeTruthy();
 });
 
-test("search is hidden without a search installed, and a refused term says why", async () => {
-  serve([], { found: { proposals: [], ...scanned, searchAvailable: false } });
+test("search is hidden without a search installed, closed once the month's are used, and a refused term says why", async () => {
+  serve([], { found: { proposals: [], ...scanned, searchAvailable: false, searchesLeft: 5 } });
   render(withQueries(<Competitors workspaceId={W} role="owner" />));
   await screen.findByRole("form", { name: "Add a competitor" });
   expect(screen.queryByText("Search for competitors")).toBeNull();
   cleanup();
-  serve([], { found: { proposals: [], ...scanned, searchAvailable: true } });
+  serve([], { found: { proposals: [], ...scanned, searchAvailable: true, searchesLeft: 0 } });
+  render(withQueries(<Competitors workspaceId={W} role="owner" />));
+  await userEvent.click(await screen.findByText("Search for competitors"));
+  expect(screen.getByText(/0 searches left this month\./)).toBeTruthy();
+  await userEvent.type(screen.getByRole("textbox", { name: "Search term" }), "bank rec");
+  expect((screen.getByRole("button", { name: "Search" }) as HTMLButtonElement).disabled).toBe(true);
+  cleanup();
+  serve([], { found: { proposals: [], ...scanned, searchAvailable: true, searchesLeft: 1 } });
   vi.spyOn(api, "POST").mockImplementation((() => reply(400, { error: "person_data" })) as never);
   render(withQueries(<Competitors workspaceId={W} role="owner" />));
   await userEvent.click(await screen.findByText("Search for competitors"));
+  expect(screen.getByText(/1 search left this month\./)).toBeTruthy();
   await userEvent.type(screen.getByRole("textbox", { name: "Search term" }), "sam@contoso.example");
-  await userEvent.click(screen.getByRole("button", { name: "See the cost" }));
+  await userEvent.click(screen.getByRole("button", { name: "Search" }));
   expect(await screen.findByText("A search term can't hold an email address, a web address or a person's name.")).toBeTruthy();
 });
 
-test("a rejected discovery request shows a retry message", async () => {
-  serve([finlens]);
-  vi.spyOn(api, "POST").mockRejectedValueOnce(new TypeError("Network error"));
+test("search terms are trimmed, a one-letter term is left out, and the rest go in one search", async () => {
+  serve([], { found: { proposals: [], ...scanned, searchAvailable: true, searchesLeft: 5 } });
+  const post = vi.spyOn(api, "POST").mockImplementation((() => reply(200, { proposals: [], ...scanned, searchAvailable: true, searchesLeft: 4 })) as never);
   render(withQueries(<Competitors workspaceId={W} role="owner" />));
-  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
-  const find = screen.getByRole("button", { name: "Find pages" }) as HTMLButtonElement;
-  await userEvent.click(find);
-  expect(await screen.findByText("Direx couldn't look just now. Try again.")).toBeTruthy();
-  expect(find.disabled).toBe(false);
-});
-
-const pendingFind = () => {
-  const pending = Promise.withResolvers<Awaited<ReturnType<typeof reply>>>();
-  const post = vi.spyOn(api, "POST").mockImplementation((() => pending.promise) as never);
-  const finish = () => act(async () => pending.resolve(await reply(200, {
-    ok: true,
-    pricing: { url: "https://www.finlens.app/pricing", via: "sitemap", text: "" },
-    changelog: { url: "https://www.finlens.app/changelog", via: "sitemap", text: "" },
-    alsoPricing: ["https://www.finlens.app/plans"],
-  })));
-  return { post, finish };
-};
-
-test.each(["switch competitor", "cancel", "change landing page"])("ignores a pending discovery after %s", async (change) => {
-  const other = competitor(3, { landingUrl: finlens.landingUrl });
-  serve([finlens, other]);
-  const { post, finish } = pendingFind();
-  render(withQueries(<Competitors workspaceId={W} role="owner" />));
-  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
-  await userEvent.click(screen.getByRole("button", { name: "Find pages" }));
+  await userEvent.click(await screen.findByText("Search for competitors"));
+  const search = screen.getByRole("button", { name: "Search" }) as HTMLButtonElement;
+  await userEvent.type(screen.getByRole("textbox", { name: "Search term" }), " x ");
+  expect(search.disabled).toBe(true);
+  await userEvent.type(screen.getByRole("textbox", { name: "Search term 2 (optional)" }), "  bank rec software  ");
+  await userEvent.type(screen.getByRole("textbox", { name: "Search term 3 (optional)" }), "bookkeeping automation");
+  expect(search.disabled).toBe(false);
+  await userEvent.click(search);
   expect(post).toHaveBeenCalledTimes(1);
-
-  if (change === "switch competitor") await userEvent.click(screen.getByRole("button", { name: "Edit C3" }));
-  else if (change === "cancel") await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  else fireEvent.change(screen.getByRole("textbox", { name: "Landing page" }), { target: { value: "https://other.example" } });
-  await finish();
-
-  expect((screen.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement).value).toBe("");
-  expect((screen.getByRole("textbox", { name: /^Changelog/ }) as HTMLInputElement).value).toBe("");
-  expect(screen.queryByText(/^Other pricing pages:/)).toBeNull();
-});
-
-test("discovery preserves a page entered while waiting and fills the other empty field", async () => {
-  serve([finlens]);
-  const { finish } = pendingFind();
-  render(withQueries(<Competitors workspaceId={W} role="owner" />));
-  await userEvent.click(await screen.findByRole("button", { name: "Edit Finlens" }));
-  await userEvent.click(screen.getByRole("button", { name: "Find pages" }));
-  const pricing = screen.getByRole("textbox", { name: /^Pricing page/ }) as HTMLInputElement;
-  fireEvent.change(pricing, { target: { value: "https://www.finlens.app/custom" } });
-  await finish();
-
-  expect(pricing.value).toBe("https://www.finlens.app/custom");
-  expect(screen.getByText("Direx found https://www.finlens.app/pricing")).toBeTruthy();
-  expect((screen.getByRole("textbox", { name: /^Changelog/ }) as HTMLInputElement).value).toBe("https://www.finlens.app/changelog");
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/competitors/proposals/search", { params: { path: { workspaceId: W } }, body: { terms: ["bank rec software", "bookkeeping automation"] } });
+  expect(await screen.findAllByText("Search done. What it found is under Proposed.")).not.toHaveLength(0);
 });

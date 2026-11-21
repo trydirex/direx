@@ -412,8 +412,7 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "POST /api/w/:workspaceId/competitors/find-pages": { path: `/api/w/${w2}/competitors/find-pages`, body: { landingUrl: "http://127.0.0.1/" } },
   "GET /api/w/:workspaceId/competitors/proposals": { path: `/api/w/${w2}/competitors/proposals` },
   "POST /api/w/:workspaceId/competitors/proposals/scan": { path: `/api/w/${w2}/competitors/proposals/scan` },
-  "POST /api/w/:workspaceId/competitors/proposals/estimate": { path: `/api/w/${w2}/competitors/proposals/estimate`, body: { terms: ["bank reconciliation software"] } },
-  "POST /api/w/:workspaceId/competitors/proposals/search": { path: `/api/w/${w2}/competitors/proposals/search`, body: { terms: ["bank reconciliation software"], confirmedUsd: 1 } },
+  "POST /api/w/:workspaceId/competitors/proposals/search": { path: `/api/w/${w2}/competitors/proposals/search`, body: { terms: ["bank reconciliation software"] } },
   "POST /api/w/:workspaceId/competitors/proposals/:id/dismiss": { path: `/api/w/${w2}/competitors/proposals/${proposalId}/dismiss` },
   "GET /api/w/:workspaceId/competitors/:id/changes": { path: `/api/w/${w2}/competitors/${competitorId}/changes` },
   // Last of the four: W2's Owner removes the row the cases above use.

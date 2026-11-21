@@ -4,7 +4,7 @@
 // proposal changes nothing: a person uses it to fill the form and adds the competitor, or dismisses it.
 import { NotAvailable, noDiscovery, type Discovery } from "../../extensions/index";
 import { holdsPersonData, knownNames } from "../../prospecting/index";
-import { addScan, addSearch, closeProposals, inWorkspace, lastScan, listRows, openProposals, proposedBefore, type CompetitorsTx, type NewProposal, type ProposalRow } from "../adapters/repo";
+import { addScan, addSearchProposals, closeProposals, inWorkspace, lastScan, listRows, openProposals, proposedBefore, reserveSearch, searchesInMonth, type CompetitorsTx, type NewProposal, type ProposalRow } from "../adapters/repo";
 import { nameKey, nameOf, namesFromSitemap, ownNames, siteFromLinks, siteKey } from "../domain/own-site";
 import { siteReader, type SiteReadDeps } from "./find-pages";
 
@@ -14,10 +14,16 @@ const TIMEOUT_MS = 30_000;
 /** How many companies one paid search asks for. */
 export const SEARCH_LIMIT = 10;
 export const MAX_TERMS = 3;
+/** Direx pays for searches on cloud (founder, 2026-11-20), so each Workspace gets this many a calendar month (UTC). */
+export const SEARCHES_PER_MONTH = 5;
 
 export type Proposal = { id: string; name: string; site: string | null; comparisonUrl: string | null; source: "own_site" | "search"; terms: string[] | null; foundAt: Date };
-export type ProposalList = { proposals: Proposal[]; site: string | null; scannedAt: Date | null; searchAvailable: boolean };
-type SearchRefusal = { ok: false; reason: "bad_terms" | "person_data" | "not_available" | "below_estimate" };
+export type ProposalList = { proposals: Proposal[]; site: string | null; scannedAt: Date | null; searchAvailable: boolean; searchesLeft: number };
+type SearchRefusal = { ok: false; reason: "bad_terms" | "person_data" | "not_available" | "search_limit" };
+const utcMonth = (d: Date) => ({
+  start: new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)),
+  end: new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1)),
+});
 /** The site the Workspace's latest Brand read of a website used, or null when there is none. */
 export type WorkspaceSite = (workspaceId: string) => Promise<string | null>;
 
@@ -39,7 +45,13 @@ export function createProposals(deps: { site: WorkspaceSite; reads?: SiteReadDep
   async function list(workspaceId: string): Promise<ProposalList> {
     const site = await deps.site(workspaceId);
     const searchAvailable = discovery() !== noDiscovery;
-    return inWorkspace(workspaceId, async (tx) => ({ proposals: (await openProposals(tx)).map(view), site, scannedAt: site ? await lastScan(tx, site) : null, searchAvailable }));
+    return inWorkspace(workspaceId, async (tx) => ({
+      proposals: (await openProposals(tx)).map(view),
+      site,
+      scannedAt: site ? await lastScan(tx, site) : null,
+      searchAvailable,
+      searchesLeft: Math.max(0, SEARCHES_PER_MONTH - (await searchesInMonth(tx, utcMonth(now())))),
+    }));
   }
 
   /** Terms go to a search vendor: 1 to 3 of them, and none holding an email, a web address or a known person's name. */
@@ -49,17 +61,6 @@ export function createProposals(deps: { site: WorkspaceSite; reads?: SiteReadDep
     return terms.some((t) => holdsPersonData(t, names)) ? { ok: false, reason: "person_data" } : null;
   }
 
-  /** The search's cost, asked of the search vendor before anything is spent. */
-  async function estimate(workspaceId: string, terms: string[]): Promise<{ ok: true; usd: number } | SearchRefusal> {
-    const refused = await refuseTerms(workspaceId, terms);
-    if (refused) return refused;
-    try {
-      return { ok: true, usd: (await discovery().estimate(terms, SEARCH_LIMIT)).usd };
-    } catch (e) {
-      if (e instanceof NotAvailable) return { ok: false, reason: "not_available" };
-      throw e;
-    }
-  }
 
   /** Names from the site's comparison pages, each with the competitor's site when its page links to it. */
   async function read(site: string) {
@@ -88,18 +89,35 @@ export function createProposals(deps: { site: WorkspaceSite; reads?: SiteReadDep
       return list(workspaceId);
     },
 
-    estimate,
-
-    /** One paid search, once the person confirmed at least its estimate. It is recorded whatever it finds. */
-    async search(workspaceId: string, userId: string, terms: string[], confirmedUsd: number): Promise<ProposalList | SearchRefusal> {
-      const cost = await estimate(workspaceId, terms);
-      if (!cost.ok) return cost;
-      if (confirmedUsd < cost.usd) return { ok: false, reason: "below_estimate" };
-      const companies = await discovery().search(workspaceId, terms, SEARCH_LIMIT);
+    /**
+     * One paid search, which Direx pays for: refused past the month's cap. Its estimate is recorded as
+     * the spend, with who ran it, whatever it finds.
+     */
+    async search(workspaceId: string, userId: string, terms: string[]): Promise<ProposalList | SearchRefusal> {
+      const refused = await refuseTerms(workspaceId, terms);
+      if (refused) return refused;
+      const at = now();
+      const month = utcMonth(at);
+      // Skip quoting if the month is already full. Only the locked reservation can admit a search.
+      if ((await inWorkspace(workspaceId, (tx) => searchesInMonth(tx, month))) >= SEARCHES_PER_MONTH) return { ok: false, reason: "search_limit" };
+      const provider = discovery();
+      let companies: Awaited<ReturnType<Discovery["search"]>>;
+      let findId: string;
+      try {
+        const { usd } = await provider.estimate(terms, SEARCH_LIMIT);
+        const confirmedMicros = Math.round(usd * 1_000_000);
+        const reserved = await inWorkspace(workspaceId, (tx) => reserveSearch(tx, workspaceId, { terms, confirmedMicros, by: userId }, at, month, SEARCHES_PER_MONTH));
+        if (reserved === null) return { ok: false, reason: "search_limit" };
+        findId = reserved;
+        // The reservation is durable. A discovery error may still have incurred spend.
+        companies = await provider.search(workspaceId, terms, SEARCH_LIMIT);
+      } catch (e) {
+        if (e instanceof NotAvailable) return { ok: false, reason: "not_available" };
+        throw e;
+      }
       const found = companies.map((c) => ({ name: c.name.trim().slice(0, 100) || c.domain, nameKey: nameKey(c.name || c.domain), site: `https://${c.domain}/`, comparisonUrl: null }));
       const ownSite = await deps.site(workspaceId);
-      const confirmedMicros = Math.round(confirmedUsd * 1_000_000);
-      await inWorkspace(workspaceId, async (tx) => addSearch(tx, workspaceId, { terms, confirmedMicros, by: userId }, await fresh(tx, found, ownSite), now()));
+      await inWorkspace(workspaceId, async (tx) => addSearchProposals(tx, workspaceId, findId, await fresh(tx, found, ownSite), now()));
       return list(workspaceId);
     },
 

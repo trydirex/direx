@@ -22,6 +22,42 @@ TLS is always on, and certificates are always verified. Port 465 uses TLS from t
 other sending port must offer STARTTLS, or the connection is refused. A mail server with a
 self-signed certificate can't be connected.
 
+## Your own Google app
+
+Gmail Mailboxes connect through a Google OAuth app. A Workspace can bring its own, so its Gmail
+doesn't depend on the server's app. An app that belongs to your Google Workspace organisation and is
+set to Internal needs no verification from Google and has no cap on users.
+
+Gmail picks an app in this order:
+
+1. The Workspace's own app, set in Settings, then Email and keys, then Mailboxes.
+2. The server's mailbox app, the system secret `social_app.google`. See
+   [Deployment secrets](deployment-secrets.md#gmails-mailbox-app).
+3. The server's sign-in app, `DIREX_GOOGLE_CLIENT_ID` with the `signin.google` secret.
+
+With none of the three, Direx doesn't offer Gmail.
+
+To set up your own:
+
+1. In the Google Cloud console, create a project, or pick one you already have.
+2. Under APIs and services, enable the Gmail API.
+3. Set up the OAuth consent screen. Choose Internal if your Mailboxes belong to a Google Workspace
+   organisation. For personal Gmail accounts, choose External and set the publishing status to In
+   production. Never leave it in Testing: Google expires the refresh tokens of an app in Testing
+   after 7 days, so every Mailbox would need reconnecting each week.
+4. Under Credentials, create an OAuth client ID of type Web application. Add the authorized
+   redirect URI `<base URL>/api/connections/callback`, for example
+   `https://direx.example.com/api/connections/callback`.
+5. In Direx, open Settings, then Email and keys, then Mailboxes, and paste the client ID and client
+   secret. Only an Owner or Admin can, and Direx asks them to sign in again first. Direx shows the
+   client ID afterwards, never the secret.
+
+Direx asks Google for `gmail.modify` and the account's email address, and nothing else.
+
+A refresh token works only with the app that issued it. So saving, changing or removing the app
+makes each Gmail Mailbox in the Workspace need reconnecting, once. Until a Mailbox is reconnected,
+its scheduled email waits. Removing the app moves Gmail back to the server's app, if there is one.
+
 ## Replies and opt-outs
 
 This applies to every Mailbox, Google ones included. Direx checks the inbox for replies to the
@@ -70,8 +106,9 @@ Gmail Mailboxes, and never on Direx cloud. Nothing happens until both of these a
 - **The Mailbox has a yes.** The person who connected the Mailbox answers on its screen, after
   reading what is sent and read. Any member of the Workspace can stop it with one click.
 
-Your Google OAuth app, the one `DIREX_GOOGLE_CLIENT_ID` belongs to, must have its publishing
-status set to **Internal** or **In production** in the Google Cloud console. Don't run
+The Google OAuth app your Gmail Mailboxes connect through (see
+[Your own Google app](#your-own-google-app)) must have its publishing status set to **Internal** or
+**In production** in the Google Cloud console. Don't run
 Placement checks on an app in **Testing**: Google expires its refresh tokens after 7 days, so
 the Mailbox drops out of the circle partway through a week.
 

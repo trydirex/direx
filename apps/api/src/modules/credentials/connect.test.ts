@@ -11,7 +11,9 @@ import { masterRootKey } from "./adapters/crypto";
 import { credentialLabel, credentialReady } from "./application/check";
 import { vaultFromEnv } from "./index";
 import { createVault, resolverOf } from "./application/secrets";
+import type { ClientPair } from "./adapters/provider";
 import { startFakeProvider } from "./fake-provider";
+import { setSystemSecret, SYSTEM_WORKSPACE_ID } from "./system-secrets";
 import { vaultDb } from "./test-helpers";
 
 const { q, newUser, addMember, newWorkspace, events, close } = vaultDb();
@@ -401,6 +403,97 @@ test("Search Console uses the Workspace's own Google app, else the sign-in pair,
   expect(await clientOf(signIn)).toBe("own-id");
   expect(await clientOf(bare)).toBe("own-id");
   expect(await signIn.appSource(ws, connection)).toBe("own");
+});
+
+/**
+ * Gmail as a Google app provider against the fake, which accepts only its own client at authorize,
+ * token and refresh: a connect or refresh that works went through that app. `signIn: "fake"` makes
+ * the fake's client the sign-in pair.
+ */
+function gmailVault(signIn?: ClientPair | "fake") {
+  const fake = startFakeProvider();
+  fakes.push(fake);
+  // Inside the refresh window, so every resolve refreshes.
+  fake.expiresIn = 60;
+  const { clientId, clientSecret, ...gmail } = fake.provider();
+  const accepted = { clientId, clientSecret };
+  process.env.DIREX_MASTER_KEY = "11".repeat(32);
+  const google = signIn === "fake" ? accepted : signIn;
+  const vault = vaultFromEnv({ baseURL: "http://direx.test", ...(google && { google }) }, undefined, { googleAppProviders: [gmail] });
+  const clientOf = async (ws: string, owner: string) => {
+    const r = await vault.start({ workspaceId: ws, userId: owner, connection: "google" });
+    return r.ok ? new URL(r.url).searchParams.get("client_id") : r.reason;
+  };
+  const connectGmail = async (ws: string, owner: string) => {
+    const started = await vault.start({ workspaceId: ws, userId: owner, connection: "google" });
+    if (!started.ok) throw new Error(started.reason);
+    const back = new URL((await fetch(started.url, { redirect: "manual" })).headers.get("location")!);
+    const r = await vault.callback({ cookie: started.cookie, state: back.searchParams.get("state")!, code: back.searchParams.get("code")!, sessionUserId: owner });
+    if (!r.ok) throw new Error(r.reason);
+    return r.credential;
+  };
+  const saveOwnApp = (ws: string, owner: string, pair: ClientPair) =>
+    vault.create({ workspaceId: ws, actorUserId: owner, scope: "workspace", kind: "basic", key: "oauth_app:google", name: "Gmail app", meta: { username: pair.clientId }, value: { password: pair.clientSecret } });
+  /** Resolving refreshes; the fake refuses any other client, so a token back means the same app refreshed. */
+  const refreshed = async (ws: string, id: string) => {
+    const before = fake.calls.refresh;
+    const r = await resolverOf(vault)(ws, id, "poll");
+    return { token: r?.value, calls: fake.calls.refresh - before };
+  };
+  return { fake, vault, accepted, clientOf, connectGmail, saveOwnApp, refreshed };
+}
+
+test("with only its own Google app and no sign-in pair, a Workspace connects Gmail and refreshes it through that app", async () => {
+  const g = gmailVault();
+  const { ws, owner } = await newWorkspace();
+  expect(await g.clientOf(ws, owner)).toBe("unknown_connection");
+  expect(await g.vault.appSource(ws, "google")).toBeNull();
+
+  expect((await g.saveOwnApp(ws, owner, g.accepted)).ok).toBe(true);
+  expect(await g.vault.appSource(ws, "google")).toBe("own");
+  expect(await g.clientOf(ws, owner)).toBe(g.accepted.clientId);
+  const mailbox = await g.connectGmail(ws, owner);
+  expect(mailbox).toMatchObject({ kind: "oauth2", scope: "user", status: "active", connection: "google", ownerUserId: owner });
+  expect(await g.refreshed(ws, mailbox.id)).toEqual({ token: { accessToken: expect.stringMatching(/^at-/), expiresAt: expect.any(String) }, calls: 1 });
+});
+
+test("a Workspace's own app beats the sign-in pair for Gmail, refreshes with it, and serves no other Workspace", async () => {
+  const g = gmailVault({ clientId: "signin-id", clientSecret: "signin-secret" });
+  const a = await newWorkspace();
+  const b = await newWorkspace();
+  expect((await g.saveOwnApp(a.ws, a.owner, g.accepted)).ok).toBe(true);
+  expect(await g.clientOf(a.ws, a.owner)).toBe(g.accepted.clientId);
+  const mailbox = await g.connectGmail(a.ws, a.owner);
+  // The fake refuses the sign-in pair, so this refresh went through the own app.
+  expect((await g.refreshed(a.ws, mailbox.id)).token).toMatchObject({ accessToken: expect.stringMatching(/^at-/) });
+  expect(await g.clientOf(b.ws, b.owner)).toBe("signin-id");
+  expect(await g.vault.appSource(b.ws, "google")).toBe("system");
+});
+
+test("the server's mailbox app, social_app.google, beats the sign-in pair for Gmail", async () => {
+  const g = gmailVault({ clientId: "signin-id", clientSecret: "signin-secret" });
+  const { ws, owner } = await newWorkspace();
+  await setSystemSecret(g.vault, "social_app.google", `${g.accepted.clientId}:${g.accepted.clientSecret}`);
+  try {
+    expect(await g.vault.appSource(ws, "google")).toBe("system");
+    expect(await g.clientOf(ws, owner)).toBe(g.accepted.clientId);
+    const mailbox = await g.connectGmail(ws, owner);
+    expect((await g.refreshed(ws, mailbox.id)).token).toMatchObject({ accessToken: expect.stringMatching(/^at-/) });
+  } finally {
+    const stored = (await g.vault.list(SYSTEM_WORKSPACE_ID)).find((c) => c.key === "social_app.google")!;
+    await g.vault.remove({ workspaceId: SYSTEM_WORKSPACE_ID, id: stored.id, actorUserId: null });
+  }
+  expect(await g.clientOf(ws, owner)).toBe("signin-id");
+});
+
+test("with nothing but the sign-in pair, Gmail connects and keeps refreshing with it, as before", async () => {
+  const g = gmailVault("fake");
+  const { ws, owner } = await newWorkspace();
+  expect(await g.vault.appSource(ws, "google")).toBe("system");
+  expect(await g.clientOf(ws, owner)).toBe(g.accepted.clientId);
+  const mailbox = await g.connectGmail(ws, owner);
+  expect(await g.refreshed(ws, mailbox.id)).toMatchObject({ calls: 1, token: { accessToken: expect.stringMatching(/^at-/) } });
+  expect(await g.refreshed(ws, mailbox.id)).toMatchObject({ calls: 1, token: { accessToken: expect.stringMatching(/^at-/) } });
 });
 
 test("a provider that names its client id differently gets that name on the consent URL", async () => {

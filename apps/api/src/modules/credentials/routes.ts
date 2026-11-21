@@ -84,6 +84,8 @@ const MailboxProvider = z
     connect: z.enum(["oauth", "form"]),
     fields: z.array(z.object({ name: z.string(), label: z.string(), optional: z.boolean().optional() })).optional(),
     presets: z.array(z.object({ label: z.string(), values: z.record(z.string(), z.string()) })).optional(),
+    /** Whose app an OAuth provider connects through here: the Workspace's own, or the server's. Absent for a form, and when listing for existing Mailboxes. */
+    app: z.enum(["own", "system"]).optional(),
   })
   .openapi("MailboxProvider");
 const providersRoute = route({
@@ -306,8 +308,8 @@ function toJson(c: CredentialMeta) {
 export type CheckMailbox = (workspaceId: string, connection: string, credential: { username: string; password: string; settings: Record<string, string> }) => Promise<{ emailAddress: string; hasSent?: boolean }>;
 export type ProbeStart = { ok: true; check: { state: string; reason: string | null } } | { ok: false; reason: string };
 export type MailboxConnect = {
-  /** Providers currently available for new connections. */
-  providers: () => readonly z.infer<typeof MailboxProvider>[];
+  /** Providers this Workspace can connect a new Mailbox with now. */
+  providers: (workspaceId: string) => Promise<readonly z.infer<typeof MailboxProvider>[]>;
   /** Providers this deployment recognizes for existing Mailboxes, regardless of connect configuration. */
   eligibleProviders: () => readonly z.infer<typeof MailboxProvider>[];
   check: CheckMailbox;
@@ -411,15 +413,15 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
   });
 
   return app
-    .openapi(providersRoute, (c) => {
-      const eligible = c.req.valid("query").purpose === "existing" ? mailboxes?.eligibleProviders() : mailboxes?.providers();
-      const providers = (eligible ?? []).map(({ connection, label, connect, fields, presets }) => ({ connection, label, connect, fields, presets }));
+    .openapi(providersRoute, async (c) => {
+      const eligible = c.req.valid("query").purpose === "existing" ? mailboxes?.eligibleProviders() : await mailboxes?.providers(c.get("member").workspaceId);
+      const providers = (eligible ?? []).map(({ connection, label, connect, fields, presets, app }) => ({ connection, label, connect, fields, presets, app }));
       return c.json({ providers }, 200);
     })
     .openapi(connectFormRoute, async (c) => {
       const m = c.get("member");
       const { connection } = c.req.valid("param");
-      const provider = mailboxes?.providers().find((p) => p.connection === connection && p.connect === "form");
+      const provider = (await mailboxes?.providers(m.workspaceId))?.find((p) => p.connection === connection && p.connect === "form");
       if (!mailboxes || !provider) return c.json({ error: "unknown_connection" }, 404);
       const { username, password, settings, probeWording } = c.req.valid("json");
       if (mailboxes.probe && probeWording !== mailboxes.probeWordingVersion) return c.json({ error: "stale_wording" }, 409);

@@ -13,12 +13,15 @@ const effects: Record<string, EffectCapability> = {};
 // Which Workspaces' keys were fetched: a held Action must never fetch them.
 const keysFetched: string[] = [];
 const keys = oneKey(testKey);
-// A test seam run once a step commits; one test sets a hold between the claim and the dispatch check.
+// Test seams, run once the claim commits and as keys are fetched (after a pass's first hold read,
+// before its row lock). One test sets a hold there, so only the dispatch check under the lock sees it.
 let afterClaim: (() => Promise<void>) | undefined;
+let onKeys: (() => Promise<void>) | undefined;
 const { ledger } = await testLedger({
   effects,
   signingKeys: async (ws) => {
     keysFetched.push(ws);
+    await onKeys?.();
     return keys(ws);
   },
   onStep: async (step) => {
@@ -90,7 +93,10 @@ test("a hold committed after the claim stops the send at the dispatch check, und
   const { id, fake } = await due(ws);
   afterClaim = async () => {
     afterClaim = undefined;
-    await hold("workspace", ws);
+    onKeys = async () => {
+      onKeys = undefined;
+      await hold("workspace", ws);
+    };
   };
   await ledger.run(ws, id);
   expect(fake.calls).toHaveLength(0);

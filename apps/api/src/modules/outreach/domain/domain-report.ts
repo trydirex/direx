@@ -57,6 +57,19 @@ function dmarcPolicy(value: string | undefined) {
   return policy === "none" || policy === "quarantine" || policy === "reject" ? policy : undefined;
 }
 
+function hasQueryRecipient(field: string): boolean {
+  const equals = field.indexOf("=");
+  if (equals < 0) return false;
+  try {
+    if (decodeURIComponent(field.slice(0, equals)).toLowerCase() !== "to") return false;
+    // A mailto query is not form data: a literal plus is part of the address.
+    const address = decodeURIComponent(field.slice(equals + 1));
+    return /^[^@?\s\p{Cc}]+@[^@?\s\p{Cc}]+$/u.test(address);
+  } catch {
+    return false; // A well-formed percent escape can still encode invalid UTF-8.
+  }
+}
+
 function hasReportingUri(value: string | undefined): boolean {
   return value?.split(",").some((entry) => {
     // DMARC still accepts the obsolete optional !size suffix.
@@ -64,7 +77,7 @@ function hasReportingUri(value: string | undefined): boolean {
     if (!/^[a-z][a-z0-9+.-]*:[a-z0-9._~:/?#[\]@&'()*+;=%$-]+$/i.test(uri) || /%(?![0-9a-f]{2})/i.test(uri)) return false;
     if (/^mailto:\?/i.test(uri)) {
       // RFC 6068 also allows the recipient in a query header.
-      if (uri.includes("#") || !uri.slice("mailto:?".length).split("&").some((field) => /^to=[^@?]+@[^@?]+$/i.test(field))) return false;
+      if (uri.includes("#") || !uri.slice("mailto:?".length).split("&").some(hasQueryRecipient)) return false;
     } else if (/^mailto:/i.test(uri) && !/^mailto:[^@?]+@[^@?]+(?:\?|$)/i.test(uri)) return false;
     return URL.canParse(uri);
   }) ?? false;

@@ -52,13 +52,43 @@ function spfOf(r: Lookup<string[][]>, provider: MailProvider | null): DomainRepo
   return "pass";
 }
 
-function dmarcOf(r: Lookup<string[][]>): DomainReport["dmarc"] {
-  if (!r.ok) return r.missing ? "missing" : "unknown";
-  const policies = records(r.value).filter((t) => /^v=DMARC1\s*;/i.test(t.trim()));
-  if (policies.length !== 1) return "missing";
-  const [dmarc] = policies;
-  const policy = dmarc?.match(/(?:^|;)\s*p\s*=\s*(none|quarantine|reject)\s*(?:;|$)/i)?.[1]?.toLowerCase();
-  return (policy as DomainReport["dmarc"] | undefined) ?? "missing";
+function dmarcPolicy(value: string | undefined) {
+  return value === "none" || value === "quarantine" || value === "reject" ? value : undefined;
+}
+
+async function discoverDmarc(domain: string, dns: DomainDns): Promise<DomainReport["dmarc"]> {
+  const labels = domain.split(".");
+  let inherited: { labels: number; policy: NonNullable<ReturnType<typeof dmarcPolicy>> } | undefined;
+
+  // RFC 9989: query the sending domain first, then walk up from at most seven labels.
+  for (let count = labels.length; count > 0; count = Math.min(count - 1, 7)) {
+    const name = labels.slice(-count).join(".");
+    const answer = await lookup(() => dns.txt(`_dmarc.${name}`));
+    if (!answer.ok) {
+      if (!answer.missing) return "unknown";
+      continue;
+    }
+    const policies = records(answer.value).filter((t) => /^v=DMARC1\s*;/i.test(t.trim()));
+    const [record] = policies;
+    if (policies.length !== 1 || !record) continue;
+    const tags = new Map<string, string>();
+    for (const field of record.toLowerCase().split(";")) {
+      const equals = field.indexOf("=");
+      if (equals === -1) continue;
+      const key = field.slice(0, equals).trim();
+      if (!tags.has(key)) tags.set(key, field.slice(equals + 1).trim());
+    }
+    const policy = dmarcPolicy(tags.get("p"));
+    if (!policy) continue;
+    if (count === labels.length) return policy;
+    const effective = dmarcPolicy(tags.get("sp")) ?? policy;
+    const psd = tags.get("psd");
+    if (psd === "n") return effective;
+    // At a public suffix, the organization is one label below it.
+    if (psd === "y") return inherited?.labels === count + 1 ? inherited.policy : effective;
+    inherited = { labels: count, policy: effective };
+  }
+  return inherited?.policy ?? "missing";
 }
 
 /**
@@ -71,7 +101,7 @@ export async function domainReport(domain: string, dns: DomainDns, a: { consumer
   const [mx, spf, dmarc, ...dkim] = await Promise.all([
     lookup(() => dns.mx(d)),
     lookup(() => dns.txt(d)),
-    lookup(() => dns.txt(`_dmarc.${d}`)),
+    discoverDmarc(d, dns),
     ...selectors.map((s) => lookup(() => dns.txt(`${s}._domainkey.${d}`))),
   ]);
   const dkimKey = dkim.some((r) => r.ok && records(r.value).some((t) => /(^|;)\s*p\s*=\s*[A-Za-z0-9+/]/.test(t)));
@@ -81,7 +111,7 @@ export async function domainReport(domain: string, dns: DomainDns, a: { consumer
     mx: mx.ok ? (mx.value.some((r) => r.exchange !== "" && r.exchange !== ".") ? "pass" : "missing") : mx.missing ? "missing" : "unknown",
     spf: spfOf(spf, a.provider),
     dkim: dkimKey ? "pass" : dkim.every((r) => r.ok || r.missing) ? "not_found" : "unknown",
-    dmarc: dmarcOf(dmarc),
+    dmarc,
   };
 }
 

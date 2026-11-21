@@ -73,6 +73,65 @@ test("each record missing, or answered with an error, says which", async () => {
   for (const dmarc of ["none", "reject"]) expect(await report({ ...GOOD, "_dmarc.acme.test": [`v=DMARC1; p=${dmarc}`] })).toMatchObject({ dmarc });
 });
 
+const sendingDomain = "sales.acme.test";
+const sendingZone = {
+  [sendingDomain]: GOOD["acme.test"],
+  [`google._domainkey.${sendingDomain}`]: GOOD["google._domainkey.acme.test"],
+};
+
+test.each([
+  ["an inherited sp tag", ["site-verification=x"], ["v=DMARC1; p=reject; SP = QUARANTINE"], "quarantine", true],
+  ["an inherited p tag", "ENODATA", ["v=DMARC1; p=reject"], "reject", true],
+  ["a local policy", ["v=DMARC1; p=none; sp=reject"], "ETIMEOUT", "none", true],
+  ["a local lookup failure", "ETIMEOUT", ["v=DMARC1; p=reject"], "unknown", false],
+  ["a parent lookup failure", "ENOTFOUND", "ESERVFAIL", "unknown", false],
+  ["no policy in the tree", "ENODATA", "ENOTFOUND", "missing", false],
+] as const)("the sending subdomain reports %s", async (_case, local, parent, dmarc, auth) => {
+  const r = await domainReport(sendingDomain, dns({
+    ...sendingZone,
+    [`_dmarc.${sendingDomain}`]: typeof local === "string" ? local : [...local],
+    "_dmarc.acme.test": typeof parent === "string" ? parent : [...parent],
+  }), { consumer: false, provider: "google" });
+  expect(r.dmarc).toBe(dmarc);
+  expect(authenticated(r)).toBe(auth);
+});
+
+test.each([
+  ["v=DMARC1; p=quarantine", "v=DMARC1; p=reject", "reject"],
+  ["v=DMARC1; p=quarantine; psd=n", "ETIMEOUT", "quarantine"],
+  ["v=DMARC1; p=quarantine", "v=DMARC1; p=reject; psd=y", "quarantine"],
+] as const)("discovers the organizational policy with records %s and %s", async (parent, ancestor, expected) => {
+  const r = await domainReport("east.sales.acme.test", dns({
+    "_dmarc.sales.acme.test": [parent],
+    "_dmarc.acme.test": ancestor === "ETIMEOUT" ? ancestor : [ancestor],
+  }), { consumer: false, provider: "google" });
+  expect(r.dmarc).toBe(expected);
+});
+
+test("deep sending domains make at most eight DMARC queries and still reach the organizational domain", async () => {
+  const domain = "a.b.c.d.e.f.g.h.sales.acme.test";
+  const fixture = dns({ "_dmarc.acme.test": ["v=DMARC1; p=reject"] });
+  const queries: string[] = [];
+  const r = await domainReport(domain, {
+    ...fixture,
+    txt: (name) => {
+      if (name.startsWith("_dmarc.")) queries.push(name);
+      return fixture.txt(name);
+    },
+  }, { consumer: false, provider: "google" });
+  expect(queries).toHaveLength(8);
+  expect(queries.slice(0, 2)).toEqual([`_dmarc.${domain}`, "_dmarc.e.f.g.h.sales.acme.test"]);
+  expect(r.dmarc).toBe("reject");
+});
+
+test("a marked public suffix policy applies if its immediate child has no policy", async () => {
+  const r = await domainReport("east.sales.acme.test", dns({
+    "_dmarc.sales.acme.test": ["v=DMARC1; p=none"],
+    "_dmarc.test": ["v=DMARC1; p=quarantine; psd=y"],
+  }), { consumer: false, provider: "google" });
+  expect(r.dmarc).toBe("quarantine");
+});
+
 test("Microsoft selectors and a domain's own selector are read; an unknown provider needs only an SPF record", async () => {
   const microsoft = { "acme.test": ["v=spf1 include:spf.protection.outlook.com -all"], "_dmarc.acme.test": ["v=DMARC1; p=none"], "selector2._domainkey.acme.test": ["v=DKIM1; p=MIGf"] };
   expect(await report(microsoft, { provider: "microsoft" })).toMatchObject({ spf: "pass", dkim: "pass", dmarc: "none" });

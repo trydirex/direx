@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Button } from "@/components/Button";
+import { Button, Key } from "@/components/Button";
 import { Textarea } from "@/components/Input";
 import { Field, Notice } from "../components/layout";
 import { approve, itemQuery, message, type Item } from "../items/actions";
@@ -126,7 +126,7 @@ const MAX_TEXT = 400;
  * line. Approve adds the ticked ones, as edited, to the Strategy. Read-only once decided or for a role
  * that can't approve.
  */
-export function AssumptionsChoice(p: { workspaceId: string; item: Pick<Item, "id" | "revision" | "state">; suggestions: Suggestion[]; approve: boolean; onDone: () => void }) {
+export function AssumptionsChoice(p: { workspaceId: string; item: Pick<Item, "id" | "revision" | "state">; suggestions: Suggestion[]; approve: boolean; onDone: () => void; keys?: boolean }) {
   const client = useQueryClient();
   const [ticked, setTicked] = useState(() => p.suggestions.map(() => true));
   const [texts, setTexts] = useState(() => p.suggestions.map((s) => s.assumption));
@@ -184,8 +184,10 @@ export function AssumptionsChoice(p: { workspaceId: string; item: Pick<Item, "id
       </ul>
       {error && <Notice tone="error">{error}</Notice>}
       <div className="flex flex-wrap items-center gap-3">
-        <Button pending={pending} disabled={!!why} aria-describedby={why ? "assumptions-why" : undefined} onClick={() => void add()}>
+        {/* In Review, A presses this, as it does each kind's approve button. */}
+        <Button pending={pending} disabled={!!why} aria-describedby={why ? "assumptions-why" : undefined} aria-keyshortcuts={p.keys ? "A" : undefined} onClick={() => void add()}>
           {usable ? `Add ${usable} to the Strategy` : "Add to the Strategy"}
+          {p.keys && <Key>A</Key>}
         </Button>
         {why && (
           <span id="assumptions-why" className="text-sm text-muted-foreground">

@@ -123,11 +123,12 @@ export function Review(p: { workspaceId: string; role: Role;
   // Only a company review has a reject of its own; R does nothing on anything else.
   const company = all.find((i) => i.id === at?.id)?.kind === "company_review";
   const reject = () => panel.current?.querySelector<HTMLButtonElement>('[aria-keyshortcuts="R"]')?.click();
-  // E opens the Item's text editor where it has one, otherwise the first field (a time, the rewrite box).
+  // E opens the Item's text editor where it has one, otherwise the first field you type or pick in (a
+  // time, the rewrite box, a suggestion's text), never a checkbox.
   const edit = () => {
     const editor = panel.current?.querySelector<HTMLButtonElement>("[data-edit-text]");
     if (editor) editor.click();
-    else panel.current?.querySelector<HTMLElement>("input, textarea, select")?.focus();
+    else panel.current?.querySelector<HTMLElement>("textarea, select, input:not([type='checkbox']):not([type='radio'])")?.focus();
   };
   const skip = () => {
     if (!at) return;
@@ -206,7 +207,7 @@ export function Review(p: { workspaceId: string; role: Role;
   return (
     <Page
       title="Review"
-      description="One draft at a time. Each button shows its key."
+      description="One at a time. Each button shows its key."
       actions={
         <Link to="/w/$workspaceId" params={w} className={buttonVariants({ variant: "outline" })}>
           Back to Home

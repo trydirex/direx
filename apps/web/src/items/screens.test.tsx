@@ -370,6 +370,24 @@ test("E goes to the edit, and keys typed in a field are words, not shortcuts", a
   editor.remove();
 });
 
+test("on the suggestions for the Strategy, A adds the ticked ones and E goes to the first one's words, not its box", async () => {
+  const suggestions = [
+    { assumption: "Ops leads answer a second email.", because: "12 replies came after it.", readingIds: ["r1"] },
+    { assumption: "LinkedIn DMs help with ops leads.", because: "11 interested were reached both ways.", readingIds: ["r1"] },
+  ];
+  const assumptions = item({ kind: "strategy_assumptions", title: "Add 2 assumptions to your Strategy?", at: null });
+  const post = serve({ list: () => [assumptions], content: () => ({ campaignId: "c9", suggestions }) });
+  show(<Review workspaceId={W} role="marketer" />);
+  const panel = await screen.findByRole("article", { name: "Add 2 assumptions to your Strategy?" });
+  const add = await within(panel).findByRole("button", { name: /^Add 2 to the Strategy/ });
+  expect(add.getAttribute("aria-keyshortcuts")).toBe("A");
+  await userEvent.keyboard("e");
+  expect(document.activeElement).toBe(within(panel).getByRole("textbox", { name: "Suggestion 1" }));
+  (document.activeElement as HTMLElement).blur();
+  await userEvent.keyboard("a");
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/items/{id}/approve", expect.objectContaining({ body: expect.objectContaining({ choice: JSON.stringify({ add: [{ index: 0 }, { index: 1 }] }) }) }));
+});
+
 test("Edit (E) shows only where the open Item can still change and this person may change it", async () => {
   serve({ list: () => [item()] });
   show(<Review workspaceId={W} role="viewer" />);

@@ -71,6 +71,13 @@ export async function countryOf(tx: TrackingTx, personId: string) {
   return row;
 }
 
+/** Reads the original destination of a link on this domain in the current Workspace. */
+export async function linkDestination(tx: TrackingTx, domainId: string, id: string): Promise<string | undefined> {
+  const [row] = await tx.select({ destination: trackedLinks.destination }).from(trackedLinks)
+    .where(and(eq(trackedLinks.domainId, domainId), eq(trackedLinks.id, id)));
+  return row?.destination;
+}
+
 /** The step's link to this destination: the existing one, else `id` made now. Links never change. */
 export async function linkFor(tx: TrackingTx, l: { id: string; workspaceId: string; campaignId: string; stepKey: string; domainId: string; destination: string; checkOnly: boolean; now: Date }): Promise<string> {
   await tx

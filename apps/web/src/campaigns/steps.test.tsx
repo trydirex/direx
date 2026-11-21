@@ -257,6 +257,7 @@ test("Save as drafts is busy while it writes, then shows each network that refus
   const { put } = serve({ get: social([]), put: () => write.promise });
   showPost();
   await userEvent.click(await screen.findByRole("checkbox", { name: /Instagram/ }));
+  expect(screen.getByText("Direx uses the Workspace's time zone for the posting day and each account's posting hours.")).toBeTruthy();
   await userEvent.type(screen.getByRole("textbox", { name: "Text" }), "Launch day");
   await userEvent.click(screen.getByRole("button", { name: "Save as drafts" }));
   expect(busy("Save as drafts")).toBe("true");

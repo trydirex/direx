@@ -1156,6 +1156,34 @@
       "when": 1795234566727,
       "tag": "0164_click_counts",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1795240000000,
+      "tag": "0165_drift_workspaces",
+      "breakpoints": true
+    },
+    {
+      "idx": 166,
+      "version": "7",
+      "when": 1795240000001,
+      "tag": "0166_agent_run_events_citation",
+      "breakpoints": true
+    },
+    {
+      "idx": 167,
+      "version": "7",
+      "when": 1795240000002,
+      "tag": "0167_agent_run_events_validate_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 168,
+      "version": "7",
+      "when": 1795240000003,
+      "tag": "0168_operator_holds",
+      "breakpoints": true
     }
   ]
 }

@@ -2,7 +2,7 @@
 // Writing a step's template. A run is given Facts, the Strategy and the plan, and no Person's data. Its
 // output only fills the step's template: no Item and no Action, so a person reads it first.
 import { datedSteps } from "../domain/anchor";
-import type { DraftInput, Sink } from "../../agents";
+import type { DraftInput, DroppedCitation, Sink, SinkResult } from "../../agents";
 import type { Facts } from "../../facts";
 import { warn, type Warning } from "../../items";
 import type { Plans } from "../../plans";
@@ -51,21 +51,35 @@ export type FactReads = Pick<Facts, "usableFacts" | "checkCitation" | "bannedCla
 
 /** Checks written text, whoever wrote it, so a person's edit is held to the same words as a run's. */
 export async function reviewTemplate(workspaceId: string, facts: FactReads, o: TemplateOutput, sourced: readonly string[] = []): Promise<TemplateBody> {
+  return (await reviewed(workspaceId, facts, o, sourced)).body;
+}
+
+/** The checked text, and the citations left out of it and why, for a run to record. */
+async function reviewed(workspaceId: string, facts: FactReads, o: TemplateOutput, sourced: readonly string[] = []): Promise<{ body: TemplateBody; dropped: DroppedCitation[] }> {
   const usable = await facts.usableFacts(workspaceId);
   const text = `${o.subject}\n${o.text}`;
   const citations: TemplateOutput["citations"] = [];
-  for (const c of o.citations) if ((await facts.checkCitation(workspaceId, c.factId, c.version)) === "ok") citations.push(c);
+  const dropped: DroppedCitation[] = [];
+  for (const c of o.citations) {
+    const result = await facts.checkCitation(workspaceId, c.factId, c.version);
+    if (result === "ok") citations.push(c);
+    else dropped.push({ id: c.factId, result });
+  }
   const cited = usable.filter((f) => citations.some((c) => c.factId === f.id && c.version === f.version)).map((f) => f.value);
   const prices = usable.filter((f) => f.field === "price").map((f) => f.value);
   const { uncited, conflicts } = reviewClaims(text, [...cited, ...sourced], prices);
   const banned = await facts.bannedClaimsIn(workspaceId, text);
-  return {
+  const body = {
     ...o,
     citations,
     warnings: [...uncited.map((n) => warn("uncited_number", `A number with no source: "${n}"`)), ...banned.map((p) => warn("banned_claim", `Uses a banned claim: "${p}"`))],
     needsDecision: conflicts.map((n) => warn("price_conflict", `No price Fact says "${n}"`)),
   };
+  return { body, dropped };
 }
+
+/** A sink's result with the citations it dropped, so the run records them; none adds nothing. */
+const withDropped = <R extends SinkResult>(r: R, dropped: readonly DroppedCitation[]): R => (dropped.length ? { ...r, dropped } : r);
 
 /** What every drafter is told, from inside the Workspace: the date, Facts, the Strategy and the plan. */
 export async function briefFor(workspaceId: string, d: { plans: Plans; facts: FactReads; now: () => Date }, planId: string, plan: unknown, planVersion: number | null, strategyVersion: number | null): Promise<DraftInput["brief"]> {
@@ -243,7 +257,7 @@ export async function templateSink(workspaceId: string, proposal: Parameters<Sin
   const written = `${output.subject}\n${output.text}`;
   const refused = output.subject ? unknownFields(written, allowedSteps) : fieldsIn(written).filter((f) => !allowedSteps.some((k) => f === `steps.${k}.url`));
   if (refused.length) return { ok: false, code: "unknown_merge_field" };
-  const body = await reviewTemplate(workspaceId, d.facts, output);
+  const { body, dropped } = await reviewed(workspaceId, d.facts, output);
   const filled = await inWorkspace(workspaceId, async (tx) => {
     const step = await lockStep(tx, target.id!, target.stepKey);
     if (!step) return { ok: false, code: "not_found" } as const;
@@ -252,10 +266,10 @@ export async function templateSink(workspaceId: string, proposal: Parameters<Sin
     await fillTemplate(tx, { campaignId: target.id!, stepKey: target.stepKey, template: body, revision: step.templateRevision + 1, runId: context.runId, now: d.now() });
     return { ok: true, revision: step.templateRevision + 1 } as const;
   });
-  if (!filled.ok) return filled;
+  if (!filled.ok) return withDropped(filled, dropped);
   // A repeat hand-over wrote nothing, so it tells no one. A kept draft a person used names them.
   if (filled.revision !== null) await d.onTemplateSaved?.(workspaceId, { campaignId: target.id!, stepKey: target.stepKey, revision: filled.revision, userId: context.userId ?? null }).catch((e) => console.error("campaigns: onTemplateSaved failed", target.id, target.stepKey, e));
-  return { ok: true, itemId: null };
+  return withDropped({ ok: true, itemId: null }, dropped);
 }
 
 /**
@@ -267,9 +281,9 @@ async function postRedraftSink(workspaceId: string, output: TemplateOutput, targ
   if (!port?.ofItem || !port.edit || !target.userId) return { ok: false, code: "posts_unavailable" };
   if (fieldsIn(output.text).length) return { ok: false, code: "unknown_merge_field" };
   if ((await port.ofItem(workspaceId, target.redraft))?.revision !== target.draftRevision) return { ok: false, code: "changed_since" };
-  const body = await reviewTemplate(workspaceId, d.facts, output);
+  const { body, dropped } = await reviewed(workspaceId, d.facts, output);
   // A price no Fact says is a person's call, as it is when they edit an email.
-  if (body.needsDecision.length) return { ok: false, code: "needs_decision" };
+  if (body.needsDecision.length) return withDropped({ ok: false, code: "needs_decision" }, dropped);
   const edited = await port.edit(workspaceId, target.redraft, output.text, target.userId, { warnings: body.warnings, citations: body.citations });
-  return edited.ok ? { ok: true, itemId: target.redraft } : { ok: false, code: edited.reason };
+  return withDropped(edited.ok ? { ok: true, itemId: target.redraft } : { ok: false, code: edited.reason }, dropped);
 }

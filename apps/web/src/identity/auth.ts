@@ -21,9 +21,12 @@ const REFUSALS: Record<string, string> = {
 /** The refusal named by a sign-in page's `?error=`, after a magic link or Google or Microsoft. */
 export const signupRefusal = (search: string): string | undefined => REFUSALS[new URLSearchParams(search).get("error") ?? ""];
 
-/** Hands an invite or bootstrap token to the server, which keeps it in a cookie for sign-up. */
+/** Hands an invite, bootstrap or sign-up token to the server, which keeps it in a cookie for sign-up. Throws when it isn't held. */
 export async function holdInviteToken(token: string): Promise<void> {
-  await post("/api/admission/token", { token }).catch(() => undefined);
+  const res = await post("/api/admission/token", { token }).catch(() => undefined);
+  // A 400 is a code that isn't one, so trying again won't help.
+  if (res?.status === 400) throw new Error("This link isn't valid. Check that you copied all of it, or ask for a new one.");
+  if (!res?.ok) throw new Error("We couldn't save the code from your link. Try again.");
 }
 
 /** `firstRun` is set only while the server has no accounts (`sign_up` in dev, `needs_link` outside it). */

@@ -1,6 +1,11 @@
 [
   {
     "kind": "queue",
+    "name": "agents.drift_check",
+    "options": null
+  },
+  {
+    "kind": "queue",
     "name": "agents.run",
     "options": {
       "retryLimit": 5,
@@ -73,6 +78,11 @@
       "retryDelay": 5,
       "retryBackoff": true
     }
+  },
+  {
+    "kind": "queue",
+    "name": "ledger.operator_holds_release",
+    "options": null
   },
   {
     "kind": "queue",
@@ -220,6 +230,14 @@
   },
   {
     "kind": "schedule",
+    "name": "agents.drift_check",
+    "cron": "0 5 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
     "name": "campaigns.readings_sweep",
     "cron": "0 6 * * *",
     "options": {
@@ -254,6 +272,14 @@
     "kind": "schedule",
     "name": "docs.write_back",
     "cron": "*/5 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "ledger.operator_holds_release",
+    "cron": "* * * * *",
     "options": {
       "data": null
     }
@@ -380,6 +406,11 @@
   },
   {
     "kind": "work",
+    "name": "agents.drift_check",
+    "options": null
+  },
+  {
+    "kind": "work",
     "name": "agents.run",
     "options": {
       "pollingIntervalSeconds": 1
@@ -443,6 +474,11 @@
     "options": {
       "pollingIntervalSeconds": 1
     }
+  },
+  {
+    "kind": "work",
+    "name": "ledger.operator_holds_release",
+    "options": null
   },
   {
     "kind": "work",

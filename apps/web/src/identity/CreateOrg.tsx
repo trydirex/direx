@@ -6,10 +6,12 @@ import { Field, Notice, Page } from "../components/layout";
 import { NativeButton, NativeInput } from "@/components/native";
 import { createOrg, serverStatusQuery } from "./actions";
 import { Narrow } from "./SignIn";
+import { message } from "./messages";
 
 /**
  * `/new-org`: the form for whoever may create an Organization (on self-host, a Server admin), and
- * otherwise why not: the server has no Server admin yet, or only its Server admins create them (ADR 0024).
+ * otherwise why not: the server has no Server admin yet, or its Admission doesn't let this account
+ * create one (ADR 0024). That wording names no rule, as Cloud's limit isn't the Server admin one.
  */
 export function NewOrg({ onCreated }: { onCreated: (workspaceId: string, website: string) => void }) {
   const status = useQuery(serverStatusQuery);
@@ -21,8 +23,8 @@ export function NewOrg({ onCreated }: { onCreated: (workspaceId: string, website
         ) : (
           <Narrow>
             {s.claimed ? (
-              <Page title="Ask for an invite">
-                <p>Only whoever runs this server can create Organizations. Ask them to invite you to a Workspace.</p>
+              <Page title="You can't create an Organization here">
+                <p>{message("cannot_create_organization")}</p>
               </Page>
             ) : (
               <Page title="This server has no Server admin yet">
@@ -59,9 +61,13 @@ export function CreateOrg({ onCreated }: { onCreated: (workspaceId: string, webs
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
+            setError(undefined);
             setPending(true);
             void createOrg(orgName.trim() || business, business)
-              .then((id) => (id ? onCreated(id, siteAddress(website)) : setError("We couldn't create the Organization. Check the names and try again.")))
+              .then((result) => {
+                if ("workspaceId" in result) return onCreated(result.workspaceId, siteAddress(website));
+                setError(result.error === "cannot_create_organization" ? message(result.error) : "We couldn't create the Organization. Check the names and try again.");
+              })
               .finally(() => setPending(false));
           }}
         >

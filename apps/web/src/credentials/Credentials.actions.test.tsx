@@ -371,3 +371,132 @@ test("stored Gmail retains mailbox controls when Google connections are unavaila
   expect(screen.getByRole("button", { name: "History of stored@example.com" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Connect Google" })).toBeNull();
 });
+
+// Gmail's own Google app: who may set it, the steps, the reconnect warning, and change and remove.
+const gmailApp = { id: "a1", scope: "workspace", kind: "basic", ownerUserId: null, connection: null, key: "oauth_app:google", name: "Gmail app", meta: { username: "own-id.apps.googleusercontent.com" }, status: "active", lastUsedAt: null, version: 1 };
+const gmailAccount = (id: string) => cred({ id, name: `${id}@shop.example`, connection: "google" });
+const as = (role: "owner" | "admin" | "marketer" | "viewer") => render(withQueries(<Credentials workspace={{ ...workspace, role }} me={ME} tab="mailboxes" />));
+async function fillWizard(title: string) {
+  const summary = await screen.findByText(title);
+  await userEvent.click(summary);
+  const wizard = within(summary.closest("details")!);
+  await userEvent.type(wizard.getByLabelText("Client ID"), "new-id.apps.googleusercontent.com");
+  await userEvent.type(wizard.getByLabelText("Client secret"), "new-secret");
+  await userEvent.click(wizard.getByRole("button", { name: "Save" }));
+}
+const confirmBox = () => screen.getByRole("region", { name: "Gmail accounts to reconnect" });
+
+test("Owners and Admins see Use your own Google app next to Connect Gmail, and Marketers don't", async () => {
+  serve({ providers: [{ ...google, app: "system" }] });
+  for (const role of ["owner", "admin"] as const) {
+    as(role);
+    await screen.findByRole("button", { name: "Connect Google" });
+    expect(screen.getByText("Use your own Google app")).toBeTruthy();
+    cleanup();
+  }
+  as("marketer");
+  await screen.findByRole("button", { name: "Connect Google" });
+  expect(screen.queryByText("Use your own Google app")).toBeNull();
+  expect(screen.queryByText(/can't connect/)).toBeNull();
+});
+
+test("with no Google app at all, a Viewer is told why Gmail can't connect, and only an Owner gets the link", async () => {
+  serve({ providers: [] });
+  as("viewer");
+  expect(await screen.findByText("Gmail can't connect until an Owner or Admin sets up a Google app.")).toBeTruthy();
+  expect(screen.queryByText("Use your own Google app")).toBeNull();
+  cleanup();
+  as("owner");
+  expect(await screen.findByText("Gmail can't connect until a Google app is set up.")).toBeTruthy();
+  expect(screen.getByText("Use your own Google app")).toBeTruthy();
+});
+
+test("the wizard shows Gmail's steps and the callback URL, and saves the Workspace's own app without a warning when no Gmail account is connected", async () => {
+  serve({ providers: [{ ...google, app: "system" }] });
+  const post = vi.spyOn(api, "POST").mockImplementation(ok as never);
+  as("owner");
+  await userEvent.click(await screen.findByText("Use your own Google app"));
+  expect(screen.getByText("Turn on the Gmail API for that project.")).toBeTruthy();
+  expect(screen.getByText(/Never leave it in Testing/)).toBeTruthy();
+  expect(screen.getByText(`${location.origin}/api/connections/callback`)).toBeTruthy();
+  await fillWizard("Use your own Google app");
+  await waitFor(() =>
+    expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/credentials", {
+      params: { path: { workspaceId: W } },
+      body: { scope: "workspace", kind: "basic", key: "oauth_app:google", name: "Gmail app", meta: { username: "new-id.apps.googleusercontent.com" }, value: { password: "new-secret" } },
+    }),
+  );
+  expect(screen.queryByText(/will need reconnecting/)).toBeNull();
+});
+
+test("with Gmail accounts connected, saving says how many will need reconnecting, and Cancel saves nothing", async () => {
+  serve({ providers: [google], existingProviders: [google], credentials: [gmailAccount("ana"), gmailAccount("ben")] });
+  const post = vi.spyOn(api, "POST").mockImplementation(ok as never);
+  as("admin");
+  await fillWizard("Use your own Google app");
+  expect(within(confirmBox()).getByRole("status").textContent).toBe("Your 2 Gmail accounts will need reconnecting once. Until each one is, its scheduled email waits.");
+  expect(post).not.toHaveBeenCalled();
+  await userEvent.click(within(confirmBox()).getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("region", { name: "Gmail accounts to reconnect" })).toBeNull();
+  expect(post).not.toHaveBeenCalled();
+
+  await fillWizard("Use your own Google app");
+  await userEvent.click(within(confirmBox()).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect((post.mock.calls[0] as unknown as [string, { body: { key: string } }])[1].body.key).toBe("oauth_app:google");
+});
+
+test("with its own app, Gmail says so and still offers Connect when the server has no app; the secret is never shown", async () => {
+  serve({ providers: [{ ...google, app: "own" }], credentials: [gmailApp] });
+  as("marketer");
+  expect(await screen.findByText("Gmail connects through your own Google app. Client ID: own-id.apps.googleusercontent.com")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Connect Google" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Remove your own Google app" })).toBeNull();
+  expect(screen.queryByText("Change")).toBeNull();
+});
+
+test("a Gmail account already waiting to reconnect isn't counted again, and the page says it can reconnect once an app is set", async () => {
+  serve({ providers: [], existingProviders: [google], credentials: [{ ...gmailAccount("cy"), status: "needs_reauth" }] });
+  const post = vi.spyOn(api, "POST").mockImplementation(ok as never);
+  as("owner");
+  expect(await screen.findByText("Your Gmail account that needs reconnecting can reconnect once one is.")).toBeTruthy();
+  // No working account would newly need reconnecting, so Save goes straight through.
+  await fillWizard("Use your own Google app");
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("region", { name: "Gmail accounts to reconnect" })).toBeNull();
+});
+
+test("deleting the Gmail app under Advanced says Gmail falls back and its accounts reconnect", async () => {
+  serve({ providers: [{ ...google, app: "own" }], existingProviders: [google], credentials: [gmailApp, gmailAccount("ana")] });
+  as("owner");
+  await userEvent.click(await screen.findByText("Advanced: API keys"));
+  await userEvent.click(await screen.findByRole("button", { name: "Delete Gmail app" }));
+  expect(await screen.findByText("Gmail falls back to the server's Google app, if there is one, and each Gmail account needs reconnecting once. Until each one is, its scheduled email waits.")).toBeTruthy();
+});
+
+test("Remove warns about the Gmail account, deletes the own app, and then says Gmail can't connect until an app is set", async () => {
+  const { data } = serve({ providers: [{ ...google, app: "own" }], existingProviders: [google], credentials: [gmailApp, gmailAccount("ana")] });
+  const del = vi.spyOn(api, "DELETE").mockImplementation(ok as never);
+  as("owner");
+  await userEvent.click(await screen.findByRole("button", { name: "Remove your own Google app" }));
+  expect(within(confirmBox()).getByRole("status").textContent).toBe("Your 1 Gmail account will need reconnecting once. Until it is, its scheduled email waits.");
+  expect(del).not.toHaveBeenCalled();
+  data.providers = [];
+  data.credentials = [gmailAccount("ana")];
+  await userEvent.click(within(confirmBox()).getByRole("button", { name: "Remove" }));
+  expect(del).toHaveBeenCalledWith("/api/w/{workspaceId}/credentials/{id}", { params: { path: { workspaceId: W, id: "a1" } } });
+  expect(await screen.findByText("Gmail can't connect until a Google app is set up.")).toBeTruthy();
+  expect(screen.getByText("Use your own Google app")).toBeTruthy();
+});
+
+test("Change removes the own app, then saves the new client id and secret", async () => {
+  serve({ providers: [{ ...google, app: "own" }], credentials: [gmailApp] });
+  const del = vi.spyOn(api, "DELETE").mockImplementation(ok as never);
+  const post = vi.spyOn(api, "POST").mockImplementation(ok as never);
+  as("owner");
+  await fillWizard("Change");
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(del).toHaveBeenCalledWith("/api/w/{workspaceId}/credentials/{id}", { params: { path: { workspaceId: W, id: "a1" } } });
+  expect(del.mock.invocationCallOrder[0]!).toBeLessThan(post.mock.invocationCallOrder[0]!);
+  expect((post.mock.calls[0] as unknown as [string, { body: unknown }])[1].body).toMatchObject({ key: "oauth_app:google", meta: { username: "new-id.apps.googleusercontent.com" }, value: { password: "new-secret" } });
+});

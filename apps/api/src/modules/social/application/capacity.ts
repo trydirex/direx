@@ -12,6 +12,9 @@ import { budgetOf } from "./account-health";
 import { offPace, paceOf, place, type OffPace, type SocialPace } from "./pace";
 
 type Account = { credentialId: string; networkId: string };
+type PostAction = NonNullable<Awaited<ReturnType<typeof postActionOf>>>;
+
+const sameAccount = (a: Account, b: Account) => a.credentialId === b.credentialId && a.networkId === b.networkId;
 
 const isPost = (capability: string) => capability.split("/").at(-1) === "social.publish";
 
@@ -38,7 +41,7 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
 
   /** The account's counted posts on the days around `on`, other than one Action, for the gap and the day's count. */
   async function countedAround(tx: SocialTx, a: Account, on: string, now: Date, exceptActionId?: string) {
-    const rows = (await newestReservationsAround(tx, a, prevDay(on), nextDay(on))).filter((r) => r.actionId !== exceptActionId);
+    const rows = (await newestReservationsAround(tx, a, prevDay(on), nextDay(on))).filter((r) => r.actionId !== exceptActionId && sameAccount(a, r));
     const states = await actionStates(tx, rows.map((r) => r.actionId));
     return rows.filter((r) => counts(r.slot, states.get(r.actionId), now));
   }
@@ -65,15 +68,19 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
 
   async function reserveIn(tx: SocialTx, workspaceId: string, actionId: string, slot: Date, now: Date): Promise<CapacityResult> {
     const action = await postActionOf(tx, actionId);
-    if (!action) return { kind: "not_found" };
+    return action ? reservePostIn(tx, workspaceId, actionId, action, slot, now) : { kind: "not_found" };
+  }
+
+  async function reservePostIn(tx: SocialTx, workspaceId: string, actionId: string, action: PostAction, slot: Date, now: Date): Promise<CapacityResult> {
     const a = isPost(action.capability) ? accountOf(action.credentialId, action.spec) : null;
     const setting = a && (await settingOf(tx, workspaceId, a));
     if (!a || !setting) return { kind: "not_counted" };
     await lockAccount(tx, a);
     const on = mailboxDay(slot, setting.timeZone);
     const own = await newestReservationFor(tx, actionId);
-    if (own?.day === on && own.slot.getTime() === slot.getTime()) return { kind: "reserved", day: on };
-    if (own?.day !== on) {
+    const sameDay = own?.day === on && sameAccount(a, own);
+    if (sameDay && own.slot.getTime() === slot.getTime()) return { kind: "reserved", day: on };
+    if (!sameDay) {
       const limit = await limitOn(tx, workspaceId, a, on, setting.timeZone, now);
       const used = (await countedAround(tx, a, on, now, actionId)).filter((r) => r.day === on).length;
       if (used >= limit) return { kind: "full", day: on, limit, reason: "account_day_full" };
@@ -83,17 +90,29 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
     return { kind: "reserved", day: on };
   }
 
+  async function nextPostTimeIn(tx: SocialTx, workspaceId: string, actionId: string, action: PostAction, wanted: Date, now: Date): Promise<Date> {
+    const placed = await placeIn(tx, workspaceId, { capability: action.capability, credentialId: action.credentialId, spec: action.spec, seed: action.idempotencyKey, wanted, mode: "auto", exceptActionId: actionId }, now);
+    return placed.at;
+  }
+
   return {
     placeIn,
     reserveIn,
     reserve: (workspaceId, actionId, slot, opts) => inWorkspace(workspaceId, (tx) => reserveIn(tx, workspaceId, actionId, slot, opts?.now ?? new Date())),
-    /** An automatic move's time: the account's first legal time on that day, or the wanted time when none fits. Never null: no person is there to choose. */
+    /** No person is there to choose: placeIn keeps the wanted time when nothing fits. */
     nextTime: (workspaceId, actionId, from, opts) =>
       inWorkspace(workspaceId, async (tx) => {
         const action = await postActionOf(tx, actionId);
-        if (!action) return from;
-        const placed = await placeIn(tx, workspaceId, { capability: action.capability, credentialId: action.credentialId, spec: action.spec, seed: action.idempotencyKey, wanted: from, mode: "auto", exceptActionId: actionId }, opts?.now ?? new Date());
-        return placed.at;
+        return action ? nextPostTimeIn(tx, workspaceId, actionId, action, from, opts?.now ?? new Date()) : from;
+      }),
+    reserveRedate: (workspaceId, actionId, wanted, now) =>
+      inWorkspace(workspaceId, async (tx) => {
+        const action = await postActionOf(tx, actionId);
+        if (!action) return wanted;
+        const slot = await nextPostTimeIn(tx, workspaceId, actionId, action, wanted, now);
+        // The account lock acquired in placement stays held through the reservation.
+        await reservePostIn(tx, workspaceId, actionId, action, slot, now);
+        return slot;
       }),
   };
 }

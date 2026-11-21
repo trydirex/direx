@@ -28,20 +28,23 @@ async function world() {
     await db.query("commit");
     return r.rows;
   };
-  await q("insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values ($1, $2, 'testnet', 'page', 'acct-1', 'Page')", [w.W, credentialId]);
-  const post = (plannedAt: Date, placement: "auto" | "exact" = "auto") =>
+  const addAccount = (target: string) => q("insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values ($1, $2, 'testnet', 'page', $3, 'Page')", [w.W, credentialId, target]);
+  await addAccount("acct-1");
+  const spec = (target: string) => ({ text: "hello", followUps: [], target });
+  const post = (plannedAt: Date, placement: "auto" | "exact" = "auto", target = "acct-1") =>
     w.items.createActionItem(w.W, {
       idempotencyKey: crypto.randomUUID(),
       capability: PUBLISH,
       dedupe: "blind",
-      spec: { text: "hello", followUps: [], target: "acct-1" },
+      spec: spec(target),
       credentialId,
       actor: person,
       placement,
       details: { title: "A post", channel: "post", warnings: [], plannedAt },
     });
   const reserved = async (day: string) => ((await q("select distinct on (action_id) action_id, slot from social_reservations where day = $1 order by action_id, created_at desc", [day])) as { slot: Date }[]).map((r) => r.slot);
-  return { ...w, post, reserved, q, done: () => db.end() };
+  const retarget = (id: string, target: string, plannedAt: Date) => w.items.reviseActionItem(w.W, id, { spec: spec(target), actor: person, placement: "exact", details: { warnings: [], plannedAt } });
+  return { ...w, addAccount, post, retarget, reserved, q, done: () => db.end() };
 }
 
 // The world's clock starts on Monday 2026-11-02 at 09:00 UTC, and the Workspace is on UTC.
@@ -73,6 +76,29 @@ describe("a Social account's day", () => {
     await w.done();
   });
 
+  it.each([12, 13])("checks the new account when retargeted today at %i:00", async (hour) => {
+    const w = await world();
+    await w.addAccount("acct-2");
+    const post = await w.post(today(12), "exact");
+    await w.post(today(15), "exact", "acct-2");
+    expect(await w.retarget(post.id, "acct-2", today(hour))).toMatchObject({ ok: true });
+    expect(await w.reserved("2026-11-02")).toEqual(expect.arrayContaining([today(12), today(15)]));
+    const submitted = await w.submit(post);
+    expect(await w.items.approve(w.W, submitted.id, submitted.revision, w.who)).toMatchObject({ ok: false, reason: "account_day_full", limit: 1 });
+    await w.done();
+  });
+
+  it("reserves an unchanged slot on the new account and frees the old account's place", async () => {
+    const w = await world();
+    await w.addAccount("acct-2");
+    const post = await w.post(today(12), "exact");
+    expect(await w.retarget(post.id, "acct-2", today(12))).toMatchObject({ ok: true });
+    expect(await w.q("select network_id from social_reservations order by created_at")).toEqual([{ network_id: "acct-1" }, { network_id: "acct-2" }]);
+    await w.post(today(15), "exact");
+    expect(await w.reserved("2026-11-02")).toEqual(expect.arrayContaining([today(12), today(15)]));
+    await w.done();
+  });
+
   it("checks a later day against the most the budget could reach", async () => {
     const w = await world();
     for (let i = 0; i < 5; i++) await w.post(tomorrow(8));
@@ -97,6 +123,27 @@ describe("a Social account's day", () => {
     const dayLater = new Date(placed.at!.getTime() + 24 * HOUR);
     expect(await w.items.redateItem(w.W, placed.id, dayLater, person)).toMatchObject({ ok: true });
     expect(await w.reserved("2026-11-04")).toEqual([dayLater]);
+    await w.done();
+  });
+
+  it("keeps concurrent automatic redates apart on the same account", async () => {
+    const w = await world();
+    const posts = await Promise.all(Array.from({ length: 5 }, () => w.post(tomorrow(8))));
+    const wanted = new Date(tomorrow(8).getTime() + 24 * HOUR);
+    const results = await Promise.all(posts.map((post) => w.items.redateItem(w.W, post.id, wanted, person)));
+    expect(results.every((result) => result.ok)).toBe(true);
+    const slots = (await w.reserved("2026-11-04")).map((slot) => slot.getTime()).sort((a, b) => a - b);
+    expect(slots).toHaveLength(5);
+    for (let i = 1; i < slots.length; i++) expect(slots[i]! - slots[i - 1]!).toBeGreaterThanOrEqual(PACE.gapMinutes * 60_000);
+    await w.done();
+  });
+
+  it("keeps the wanted redating time when no legal slot remains that day", async () => {
+    const w = await world();
+    const post = await w.post(tomorrow(8));
+    const wanted = new Date(tomorrow(21).getTime() + 24 * HOUR);
+    expect(await w.items.redateItem(w.W, post.id, wanted, person)).toMatchObject({ ok: true });
+    expect(await w.reserved("2026-11-04")).toEqual([wanted]);
     await w.done();
   });
 

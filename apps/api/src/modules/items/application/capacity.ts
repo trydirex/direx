@@ -22,6 +22,8 @@ export type CapacityPort = {
   placeIn(tx: ItemsTx, workspaceId: string, t: PlaceTarget, now: Date): Promise<Placed>;
   reserveIn(tx: ItemsTx, workspaceId: string, actionId: string, slot: Date, now: Date): Promise<CapacityResult>;
   reserve(workspaceId: string, actionId: string, slot: Date, opts?: { now?: Date }): Promise<CapacityResult>;
+  /** For accounts that must hold a lock across automatic placement and reservation. Undefined uses the usual move flow. */
+  reserveRedate?(workspaceId: string, actionId: string, wanted: Date, now: Date): Promise<Date | undefined>;
   nextTime(workspaceId: string, actionId: string, from: Date, opts?: { now?: Date }): Promise<Date | null>;
 };
 
@@ -49,6 +51,7 @@ export function routeCapacity(route: (capability: string) => CapacityPort | unde
     placeIn: (tx, workspaceId, t, now) => (route(t.capability) ?? fallback).placeIn(tx, workspaceId, t, now),
     reserveIn: async (tx, workspaceId, actionId, slot, now) => (await pick(tx, actionId)).reserveIn(tx, workspaceId, actionId, slot, now),
     reserve: async (workspaceId, actionId, slot, opts) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).reserve(workspaceId, actionId, slot, opts),
+    reserveRedate: async (workspaceId, actionId, wanted, now) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).reserveRedate?.(workspaceId, actionId, wanted, now),
     nextTime: async (workspaceId, actionId, from, opts) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).nextTime(workspaceId, actionId, from, opts),
   };
 }

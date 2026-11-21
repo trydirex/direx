@@ -53,6 +53,10 @@ function serve(data: { networks?: Network[]; accounts?: Account[]; targets?: unk
   vi.spyOn(api, "GET").mockImplementation(((path: string) => {
     if (path === "/api/w/{workspaceId}/social/networks") return reply(200, { networks: data.networks ?? [] });
     if (path === "/api/w/{workspaceId}/social/accounts") return reply(200, { accounts: data.accounts ?? [] });
+    if (path === "/api/w/{workspaceId}/social/accounts/{accountId}/pace") {
+      const pace = { from: 480, until: 1260, weekends: true, gapMinutes: 60 };
+      return reply(200, { own: { postingFrom: null, postingUntil: null, postingWeekends: null, gapMinutes: null }, pace, defaults: pace, timeZone: "UTC" });
+    }
     if (path === "/api/w/{workspaceId}/social/credentials/{credentialId}/targets") return reply(200, { targets: data.targets ?? [] });
     if (path === "/api/w/{workspaceId}/connect-links") return reply(200, { links: data.links ?? [] });
     return reply(404, { error: "not_found" });

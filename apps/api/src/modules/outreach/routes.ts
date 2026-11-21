@@ -285,7 +285,7 @@ const hookRotateRoute = createRoute({
   request: { params: ws.extend({ hookId: z.uuid() }) },
   responses: { 200: json(HookMade, "A new secret, shown this once; the old one stops working"), ...errors },
 });
-const MailboxPause = z.object({ credentialId: z.uuid(), pausedAt: z.iso.datetime(), reason: z.enum(["bounces", "person"]) }).openapi("MailboxPause");
+const MailboxPause = z.object({ credentialId: z.uuid(), pausedAt: z.iso.datetime(), reason: z.enum(["bounces", "provider_abuse", "person"]) }).openapi("MailboxPause");
 const DomainReport = z
   .object({
     domain: z.string(),

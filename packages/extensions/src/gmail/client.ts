@@ -20,10 +20,12 @@ export class GmailError extends PluginError {
 
 export type SendAnswer =
   | { ok: true; id: string; threadId?: string }
-  | { ok: false; status: number; retryable: boolean; permanent: boolean; detail: string; providerLimit?: "sending_limit" };
+  | { ok: false; status: number; retryable: boolean; permanent: boolean; detail: string; providerLimit?: "sending_limit" | "abuse" };
 
 const RATE_REASONS = new Set(["rateLimitExceeded", "userRateLimitExceeded", "dailyLimitExceeded", "quotaExceeded"]);
 
+// Only explicit spam or abuse refusals count; generic forbidden and policy errors do not.
+const ABUSE_MESSAGE = /\b(?:reject(?:ed|ing) as (?:spam|abuse)|likely unsolicited (?:e?mail)|unusual rate of unsolicited (?:e?mail))\b/i;
 type GmailErrorBody = { error?: { message?: string; status?: string; errors?: { reason?: string }[] } };
 
 function classify(status: number, body: GmailErrorBody): SendAnswer & { ok: false } {
@@ -33,7 +35,10 @@ function classify(status: number, body: GmailErrorBody): SendAnswer & { ok: fals
     return { ok: false, status, retryable: true, permanent: false, detail, providerLimit: "sending_limit" };
   }
   if (status === 401) return { ok: false, status, retryable: true, permanent: false, detail };
-  if (status === 403) return { ok: false, status, retryable: false, permanent: false, detail };
+  if (status === 403) {
+    const providerLimit = ABUSE_MESSAGE.test(body.error?.message ?? "") ? "abuse" : undefined;
+    return { ok: false, status, retryable: false, permanent: false, detail, providerLimit };
+  }
   // 400 and every other 4xx: Gmail will not take this message as it is.
   return { ok: false, status, retryable: false, permanent: true, detail };
 }

@@ -20,7 +20,7 @@ import { BRIEF_OUTPUT_KEY, briefSink, createPageReader, seoDefinitions, seoKinds
 import { COMPARISON_OUTPUT_KEY, competitorDefinitions, competitorKinds, createLabels, createMoves, LABELS_OUTPUT_KEY, POST_OUTPUT_KEY } from "./modules/competitors/index";
 import { newsletterAfterSend, newsletterKinds, newsletterWeekly } from "./modules/newsletter/index";
 import { createStandingRules, ruleStillCovers, standingRuleKinds, suspendForAgent, suspendOnProviderLimit, suspendOnStale } from "./modules/standing-rules/index";
-import { connectedMailboxes, createReplies, createReplyDesk, mailMembers, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
+import { connectedMailboxes, createReplies, createReplyDesk, mailMembers, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, pauseOnProviderAbuse, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
 import { planDefinitions, planKinds, planSinks } from "./modules/plans/index";
 import { createLedger, type SigningKeys } from "./modules/ledger/index";
 import { accountHealthCheck, pauseOnAccountLimit, postAppearance, postLimitCheck, previewOf, socialCapacity, socialKinds } from "./modules/social/index";
@@ -203,6 +203,7 @@ export async function compose(opts: WorkerOptions) {
     onProviderLimit: suspendOnProviderLimit({ now }),
     onAccountLimit: async (tx, action, limit, detail) => {
       await pauseOnAccountLimit({ now })(tx, action, limit, detail);
+      await pauseOnProviderAbuse({ now })(tx, action, limit);
       await stopOnAccountLimit(now)(tx, action, limit);
     },
     // items is built after the ledger; the hook only runs once dispatch has started.

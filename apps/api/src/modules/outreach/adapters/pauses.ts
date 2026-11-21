@@ -4,7 +4,7 @@ import { actions, credentials } from "@direx/db/schema";
 import { and, desc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
 import type { OutreachTx } from "./repo";
 
-export type PauseReason = "bounces" | "person";
+export type PauseReason = "bounces" | "provider_abuse" | "person";
 export type PauseState = { pausedAt: Date | null; pauseReason: PauseReason | null; resumedAt: Date | null };
 
 const live = (credentialId: string) => and(eq(credentials.id, credentialId), isNull(credentials.deletedAt));

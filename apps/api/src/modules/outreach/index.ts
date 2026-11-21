@@ -10,7 +10,7 @@ export { createReplies, humanReply, type InboundEvent, mailboxNeedsReconnect, me
 export { BASES, ENTITY_TYPES, WARNINGS, type Basis, type Confidence, type EntityType, type Warning as EligibilityWarning } from "./domain/eligibility";
 export { outreachRoutes } from "./routes";
 export { createHoldHooks } from "./application/hold-hooks";
-export { createMailboxPauses, type MailboxPauses } from "./application/mailboxes";
+export { createMailboxPauses, pauseOnProviderAbuse, type MailboxPauses } from "./application/mailboxes";
 export { createMailboxDomains, type MailboxDomains } from "./application/domain-report";
 export { CHANNELS as OUTSIDE_CHANNELS, createOutsideTouches, type OutsideTouches, type ReplyStop } from "./application/outside-touches";
 export { createHeaderCheck, finishHeaderCheck, isProbeCapability, probeRecipient, probeWordingVersion, PROBE_WORDING_VERSION, type ProbeFor } from "./application/header-check";

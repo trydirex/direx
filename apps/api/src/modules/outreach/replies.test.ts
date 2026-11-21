@@ -19,7 +19,7 @@ import { inWorkspace } from "./adapters/repo";
 import { mailMembers, replyOwner } from "./application/reply-desk";
 import { resultLines } from "./application/results";
 import { passMailboxCheck, TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
-import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, createReplyDesk, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, replyDeskKind, sendingPaused } from "./index";
+import { clearOldReplyText, connectedMailboxes, createMailboxPauses, createOutreach, createReplies, createReplyDesk, mailboxNeedsReconnect, optOutReviewKind, outreachFloors, outreachRoutes, pauseOnProviderAbuse, replyDeskKind, sendingPaused } from "./index";
 
 process.env.DIREX_AUTH_SECRET = TEST_SECRET;
 
@@ -72,8 +72,18 @@ const replies: ReturnType<typeof createReplies> = createReplies({
 });
 await replies.ensureQueue();
 await boss.createQueue("plugins.poll");
+// Script the HTTP reply, leaving Gmail's response reader and plugin execution in the path.
+let gmailRefusal: { status: number; message: string; reason: string } | undefined;
+const gmailFetch: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+  if (gmailRefusal && init?.method === "POST" && String(input) === `${fake.url}/messages/send`) {
+    const { status, message, reason } = gmailRefusal;
+    gmailRefusal = undefined;
+    return Response.json({ error: { code: status, message, errors: [{ reason }] } }, { status });
+  }
+  return fetch(input, init);
+}, { preconnect: fetch.preconnect });
 const plugins = loadPlugins({
-  sources: [{ mode: "in_process", plugin: createGmailPlugin({ baseUrl: fake.url, timeoutMs: 1000 }) }],
+  sources: [{ mode: "in_process", plugin: createGmailPlugin({ baseUrl: fake.url, timeoutMs: 1000, fetch: gmailFetch }) }],
   credentials: async () => ({ accessToken: fake.token, expiresAt: "" }),
   confinement: "none",
   log: () => {},
@@ -87,6 +97,7 @@ const { clock, ledger } = await testLedger({
   resolvers: { credential: credentialLabel },
   checks: [workspaceLive(), outreachFloors(async () => repliesBeingRead), approverMayApprove(), touchCheck({ effects: plugins.effects, now: () => clock.at }), credentialReady],
   now: () => clock.at,
+  onAccountLimit: (tx, action, limit) => pauseOnProviderAbuse({ now: () => clock.at })(tx, action, limit),
 });
 const items = createItems({ ledger, kinds: { ...optOutReviewKind({ boss, now: () => clock.at }), ...replyDeskKind() }, now: () => clock.at });
 const outreach = createOutreach({
@@ -777,6 +788,67 @@ test("a stale bounce pause cannot undo a resume; person pauses still work", asyn
     await setPause(tx, credentialId, { reason: "person", by: owner, at: clock.at });
     expect((await pauseOf(tx, credentialId))!.pauseReason).toBe("person");
     await clearPause(tx, credentialId, clock.at);
+  });
+});
+
+test("a provider refusing an email as abuse pauses its Mailbox until someone who approves resumes it; other refusals do not pause it", async () => {
+  const pauses = async () => (await post<{ pauses: { credentialId: string; reason: string }[] }>("/outreach/mailbox-pauses", undefined, "GET")).body.pauses;
+  expect(await pauses()).toEqual([]);
+  gmailRefusal = { status: 403, reason: "userRateLimitExceeded", message: "User-rate limit exceeded." };
+  const limited = await approved((await addPerson()).personId);
+  await ledger.run(W, limited);
+  expect(await stateOf(limited)).toMatchObject({ state: "held", holdReason: "provider_rejected" });
+  expect(await pauses()).toEqual([]);
+
+  gmailRefusal = { status: 403, reason: "domainPolicy", message: "The domain policy has disabled Gmail access." };
+  const forbidden = await approved((await addPerson()).personId);
+  await ledger.run(W, forbidden);
+  expect(await stateOf(forbidden)).toMatchObject({ state: "held", holdReason: "provider_rejected" });
+  expect(await pauses()).toEqual([]);
+
+  gmailRefusal = { status: 403, reason: "forbidden", message: "This message was rejected as spam." };
+  const refused = await approved((await addPerson()).personId);
+  await ledger.run(W, refused);
+  expect(await stateOf(refused)).toMatchObject({ state: "held", holdReason: "provider_rejected" });
+  expect(await pauses()).toEqual([expect.objectContaining({ credentialId, reason: "provider_abuse" })]);
+
+  // However it was approved, nothing else goes from the Mailbox, even once the provider would take it.
+  const next = await approved((await addPerson()).personId);
+  await ledger.run(W, next);
+  expect(await stateOf(next)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
+
+  const probe = "com.trydirex.gmail/mailbox.probe";
+  const { spec } = await plugins.prepare(W, probe, { to: ["me@acme.test"], subject: "Direx Mailbox check", text: "This is an automatic check from Direx." });
+  const { action } = await ledger.createAction(W, { idempotencyKey: crypto.randomUUID(), capability: probe, dedupe: "queryable", spec, actor: { userId: owner }, credentialId });
+  await ledger.submitForApproval(W, action.id, { userId: owner });
+  await ledger.approve(W, action.id, { approverId: approverIdFromSession(owner), draftVersion: action.draftVersion, snapshot: [{ kind: "credential", id: credentialId, version: "me@acme.test" }] });
+  await ledger.run(W, action.id);
+  expect(await stateOf(action.id)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
+
+  const contributor = (await addMember(cookie, W, "contributor")).cookie;
+  const resumeAs = (who: string) => call(`/api/w/${W}/outreach/mailboxes/${credentialId}/pause`, who, { method: "PUT", body: { paused: false } });
+  expect((await resumeAs(contributor)).status).toBe(403);
+  expect((await resumeAs(cookie)).status).toBe(200);
+  expect(await pauses()).toEqual([]);
+  await ledger.run(W, next);
+  expect(await stateOf(next)).toMatchObject({ state: "sent" });
+  await ledger.run(W, action.id);
+  expect(await stateOf(action.id)).toMatchObject({ state: "sent" });
+});
+
+test("only an abuse refusal of a Mailbox's own email pauses it", async () => {
+  const hook = pauseOnProviderAbuse({ now: () => clock.at });
+  await inWorkspace(W, async (tx) => {
+    await hook(tx, { capability: "com.trydirex.linkedin/social.post", credentialId }, "abuse");
+    await hook(tx, { capability: SEND, credentialId: null }, "abuse");
+    await hook(tx, { capability: SEND, credentialId }, "sending_limit");
+    expect((await pauseOf(tx, credentialId))!.pausedAt).toBeNull();
+    // A Placement check and the unsubscribe-header probe go from the Mailbox too.
+    for (const capability of ["com.trydirex.gmail/placement.send", "com.trydirex.gmail/mailbox.probe"]) {
+      await hook(tx, { capability, credentialId }, "abuse");
+      expect((await pauseOf(tx, credentialId))!.pauseReason).toBe("provider_abuse");
+      await clearPause(tx, credentialId, clock.at);
+    }
   });
 });
 

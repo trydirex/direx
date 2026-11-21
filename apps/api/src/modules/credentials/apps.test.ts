@@ -6,6 +6,7 @@ import type { AppProvider, Provider } from "./adapters/provider";
 import { firstApp, singleAppSource, type AppSource, type OAuthApp } from "./application/apps";
 import { createVault } from "./application/secrets";
 import { vaultFromEnv } from "./index";
+import { appClient } from "../../../../../test/db";
 import { vaultDb } from "./test-helpers";
 
 const { q, newWorkspace, close } = vaultDb();
@@ -165,4 +166,39 @@ test("an installed extension's apps come after the Workspace's own and before th
 
   platform.apps = [];
   expect(await vault.appOwner(ws, "net")).toBe("sign_in");
+});
+
+test("a slow extension is called with no Workspace transaction open, on connect and on refresh", async () => {
+  process.env.DIREX_MASTER_KEY = "11".repeat(32);
+  const { ws, owner } = await newWorkspace();
+  // Another session on the same role sees the vault's: one left idle in a transaction would show here.
+  const watcher = await appClient();
+  const openWhileCalled: number[] = [];
+  const vault = vaultFromEnv({ baseURL: "http://direx.test" }, undefined, {
+    appProviders: [template],
+    identify: async () => ({ accountId: "acct-1", accountLabel: "Ana", scopes: ["a"] }),
+    platformApps: async () => {
+      const { rows } = await watcher.query<{ n: number }>(
+        "select count(*)::int as n from pg_stat_activity where datname = current_database() and state like 'idle in transaction%' and pid <> pg_backend_pid()",
+      );
+      openWhileCalled.push(rows[0]!.n);
+      await new Promise((r) => setTimeout(r, 200));
+      return [{ clientId: "platform-id", clientSecret: "platform-secret" }];
+    },
+  });
+  try {
+    expiresIn = 1;
+    const r = await connect(vault as ReturnType<typeof setup>, ws, owner);
+    expiresIn = 3600;
+    expect(r).toEqual({ clientId: "platform-id", reason: null });
+    const connectCalls = openWhileCalled.length;
+    expect(connectCalls).toBeGreaterThan(0);
+
+    const [credential] = await vault.list(ws);
+    expect(await vault.credentials(ws, credential!.id, { consumer: "query" })).toMatchObject({ accessToken: "token" });
+    expect(openWhileCalled.length).toBeGreaterThan(connectCalls);
+    expect(openWhileCalled.every((n) => n === 0)).toBe(true);
+  } finally {
+    await watcher.end();
+  }
 });

@@ -807,6 +807,14 @@ test("a provider refusing an email as abuse pauses its Mailbox until someone who
   await ledger.run(W, next);
   expect(await stateOf(next)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
 
+  const probe = "com.trydirex.gmail/mailbox.probe";
+  const { spec } = await plugins.prepare(W, probe, { to: ["me@acme.test"], subject: "Direx Mailbox check", text: "This is an automatic check from Direx." });
+  const { action } = await ledger.createAction(W, { idempotencyKey: crypto.randomUUID(), capability: probe, dedupe: "queryable", spec, actor: { userId: owner }, credentialId });
+  await ledger.submitForApproval(W, action.id, { userId: owner });
+  await ledger.approve(W, action.id, { approverId: approverIdFromSession(owner), draftVersion: action.draftVersion, snapshot: [{ kind: "credential", id: credentialId, version: "me@acme.test" }] });
+  await ledger.run(W, action.id);
+  expect(await stateOf(action.id)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });
+
   const contributor = (await addMember(cookie, W, "contributor")).cookie;
   const resumeAs = (who: string) => call(`/api/w/${W}/outreach/mailboxes/${credentialId}/pause`, who, { method: "PUT", body: { paused: false } });
   expect((await resumeAs(contributor)).status).toBe(403);
@@ -814,6 +822,8 @@ test("a provider refusing an email as abuse pauses its Mailbox until someone who
   expect(await pauses()).toEqual([]);
   await ledger.run(W, next);
   expect(await stateOf(next)).toMatchObject({ state: "sent" });
+  await ledger.run(W, action.id);
+  expect(await stateOf(action.id)).toMatchObject({ state: "sent" });
 });
 
 test("only an abuse refusal of a Mailbox's own email pauses it", async () => {

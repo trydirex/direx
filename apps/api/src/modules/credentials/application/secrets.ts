@@ -77,7 +77,8 @@ export type CreateInput = {
 export type VaultDeps = {
   rootKey: RootKey;
   now: () => Date;
-  providers?: Provider[];
+  /** Fixed client pairs take precedence over the app lookup. Their default owner is the deployment. */
+  providers?: (Provider & { appOwner?: Exclude<AppOwner, "workspace"> })[];
   /** Providers whose client pair comes from the Workspace's own app, then `appSources`. */
   appProviders?: AppProvider[];
   /** Where an app comes from when the Workspace has none of its own, in order. */
@@ -108,7 +109,8 @@ export function createVault(deps: VaultDeps) {
   const keys = keyring(deps.rootKey, now);
   const appProviders = deps.appProviders ?? [];
   const appSources = deps.appSources ?? [];
-  const templateFor = (connection: string | null) => providers.find((p) => p.connection === connection) ?? appProviders.find((p) => p.connection === connection);
+  const fixedProviderFor = (connection: string | null) => providers.find((p) => p.connection === connection);
+  const templateFor = (connection: string | null) => fixedProviderFor(connection) ?? appProviders.find((p) => p.connection === connection);
 
   type WorkspaceApp = ClientPair & { ownAppVersion: string };
 
@@ -132,7 +134,7 @@ export function createVault(deps: VaultDeps) {
 
   type ProviderFor = (connection: string | null) => Promise<ConnectProvider | undefined>;
   async function resolveProvider(connection: string | null, app: (connection: string) => Promise<SourcedApp | null>): Promise<ConnectProvider | undefined> {
-    const fixed = providers.find((p) => p.connection === connection);
+    const fixed = fixedProviderFor(connection);
     if (fixed || !connection) return fixed;
     const template = appProviders.find((p) => p.connection === connection);
     if (!template) return undefined;
@@ -445,7 +447,11 @@ export function createVault(deps: VaultDeps) {
   const { issueLink, openLink, claimLink, links } = connect;
 
   /** Who owns the app a new connect would use here, without using it. */
-  const appOwner = async (workspaceId: string, connection: string): Promise<AppOwner | null> => (await currentApp(workspaceId, connection))?.owner ?? null;
+  const appOwner = async (workspaceId: string, connection: string): Promise<AppOwner | null> => {
+    const fixed = fixedProviderFor(connection);
+    if (fixed) return fixed.appOwner ?? "deployment";
+    return (await currentApp(workspaceId, connection))?.owner ?? null;
+  };
 
   /** Whose app a connection would use here: the Workspace's own, or any other owner's. */
   async function appSource(workspaceId: string, connection: string): Promise<"own" | "system" | null> {

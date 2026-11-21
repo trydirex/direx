@@ -2,7 +2,7 @@
 // Who owns the app a connection uses: the Workspace's own app, then each app source in order.
 import { afterAll, expect, test } from "vitest";
 import { masterRootKey } from "./adapters/crypto";
-import type { AppProvider } from "./adapters/provider";
+import type { AppProvider, Provider } from "./adapters/provider";
 import { firstApp, singleAppSource, type AppSource, type OAuthApp } from "./application/apps";
 import { createVault } from "./application/secrets";
 import { vaultDb } from "./test-helpers";
@@ -58,12 +58,13 @@ test("a single-app source holds nothing when its lookup finds nothing", async ()
   expect(await s.apps({ workspaceId: "w", connection: "other" })).toEqual([]);
 });
 
-function setup(appSources: AppSource[]) {
+function setup(appSources: AppSource[], providers: Provider[] = []) {
   return createVault({
     rootKey: masterRootKey(Buffer.alloc(32, 7)),
     now: () => new Date(),
     appProviders: [template],
     appSources,
+    providers,
     identify: async () => ({ accountId: "acct-1", accountLabel: "Ana", scopes: ["a"] }),
     callbackUrl: "http://direx.test/api/connections/callback",
     timeoutMs: 500,
@@ -111,4 +112,25 @@ test("with no source holding an app, the connection is unknown", async () => {
     expect(await vault.appSource(ws, "net")).toBeNull();
     expect(await connect(vault, ws, owner)).toEqual({ clientId: null, reason: "unknown_connection" });
   }
+});
+
+test("a fixed provider uses and reports its deployment app even when a Workspace app exists", async () => {
+  const { ws, owner } = await newWorkspace();
+  const calls: string[] = [];
+  const vault = setup([source("platform", [app("platform")], calls)], [
+    { ...template, clientId: "fixed", clientSecret: "fixed-secret" },
+  ]);
+  const expectFixed = async () => {
+    expect(await vault.appOwner(ws, "net")).toBe("deployment");
+    expect(await vault.appSource(ws, "net")).toBe("system");
+    tokenClients.length = 0;
+    expect(await connect(vault, ws, owner)).toEqual({ clientId: "fixed", reason: null });
+    expect(tokenClients).toEqual(["fixed"]);
+    expect(calls).toEqual([]);
+  };
+
+  await expectFixed();
+  const own = await vault.create({ workspaceId: ws, actorUserId: owner, scope: "workspace", kind: "basic", key: "oauth_app:net", name: "Our app", meta: { username: "own-id" }, value: { password: "own-secret" } });
+  expect(own.ok).toBe(true);
+  await expectFixed();
 });

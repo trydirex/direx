@@ -39,7 +39,7 @@ export function vaultFromEnv(
   const vault = createVault({
     rootKey: cfg.rootKey ?? rootKeyFromEnv(),
     now: () => new Date(),
-    providers: google ? googleApps.map((p) => ({ ...p, ...google })) : [],
+    providers: google ? googleApps.map((p) => ({ ...p, ...google, appOwner: "sign_in" })) : [],
     appProviders: [...appProviders, ...googleAppProviders],
     callbackUrl: `${cfg.baseURL}/api/connections/callback`,
     onReady,

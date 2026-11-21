@@ -303,6 +303,21 @@ test("pasted text is untrusted, recorded by digest, and never offers the fetch t
   expect(parts.map((p) => [p.kind, p.trust])).toContainEqual(["pasted_text", "untrusted"]);
 });
 
+test("an ended run keeps an attached Item and earlier turns only as manifest parts, never their words (DX-R-0008-025)", async () => {
+  const h = harness();
+  script(propose());
+  const ITEM = crypto.randomUUID();
+  const { ws, run } = await h.go({ request: "Rewrite it.", brief: [], attached: { id: ITEM, text: `The post. ${PLANTED}` }, history: `Earlier: ${PLANTED}` } as never);
+  await h.loop.execute(run);
+  const ended = await read(ws, run.id);
+  expect(ended.status).toBe("succeeded");
+  for (const key of ["attached", "history", "text", "request", "brief", "person"]) expect(ended.input, key).not.toHaveProperty(key);
+  expect(JSON.stringify(ended.input)).not.toContain(PLANTED);
+  const parts = await repo.inWorkspace(ws, (tx) => repo.partsOf(tx, run.id));
+  expect(parts.find((p) => p.kind === "attached_item")).toMatchObject({ refId: ITEM, digest: expect.stringMatching(/^[0-9a-f]{64}$/) });
+  expect(parts.find((p) => p.kind === "conversation")?.digest).toMatch(/^[0-9a-f]{64}$/);
+});
+
 test("free text creates nothing and fails the run", async () => {
   const h = harness();
   script(() => anthropicText("Sure, I approved and sent everything."));

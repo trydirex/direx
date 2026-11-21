@@ -32,3 +32,35 @@ export async function personCountry(workspaceId: string, recordedBy: string, per
     ),
   );
 }
+
+/** A link of the Campaign's step `s1` to `destination`; its id. */
+export async function linkOn(workspaceId: string, campaignId: string, domainId: string, destination: string, checkOnly = false): Promise<string> {
+  const id = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url");
+  await withWorkspace(workspaceId, (tx) =>
+    tx.execute(sql`insert into tracked_links (id, workspace_id, campaign_id, step_key, domain_id, destination, check_only, created_at) values (${id}, ${workspaceId}, ${campaignId}, 's1', ${domainId}, ${destination}, ${checkOnly}, now())`),
+  );
+  return id;
+}
+
+/** An Action in `state` that uses the link, sent at `sentAt` when given, with a token hash for a Person when given. */
+export async function useOf(workspaceId: string, linkId: string, u: { state: string; sentAt?: Date; tokenHash?: string; personId?: string }): Promise<void> {
+  await withWorkspace(workspaceId, async (tx) => {
+    const { rows } = await tx.execute(
+      sql`insert into actions (workspace_id, idempotency_key, capability, dedupe_class, state, hold_reason, spec, spec_hash, created_at, updated_at) values (${workspaceId}, gen_random_uuid(), 'test.send', 'blind', ${u.state}, ${u.state === "held" ? "test" : null}, '{}', 'h', now(), now()) returning id`,
+    );
+    const actionId = (rows[0] as { id: string }).id;
+    if (u.sentAt) await tx.execute(sql`insert into action_events (workspace_id, action_id, to_state, version, actor_system, at) values (${workspaceId}, ${actionId}, 'sent', 1, 'test', ${u.sentAt})`);
+    await tx.execute(
+      sql`insert into tracked_link_uses (workspace_id, link_id, action_id, token_hash, person_id, inputs_hash, created_at) values (${workspaceId}, ${linkId}, ${actionId}, ${u.tokenHash ?? null}, ${u.personId ?? null}, 'h', now())`,
+    );
+  });
+}
+
+/** The link's daily counts, as stored. */
+export const clicksOf = (workspaceId: string, linkId: string) =>
+  withWorkspace(workspaceId, async (tx) => (await tx.execute(sql`select day::text, bucket, classifier_version, count from click_counts where link_id = ${linkId} order by bucket, day`)).rows);
+
+/** Turns the Campaign's tracking off, as a person would from its settings. */
+export async function trackingOff(workspaceId: string, campaignId: string): Promise<void> {
+  await withWorkspace(workspaceId, (tx) => tx.execute(sql`update campaigns set tracking_on = false, per_person_on = false where id = ${campaignId}`));
+}

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Setting up a Workspace's own OAuth app: where to make it, the steps, and its client id and secret.
-// Social uses it for a network, SEO for Search Console's Google app.
+// Social uses it for a network, SEO for Search Console's Google app, Email and keys for Gmail's.
+// The secret field is the same write-only field as Credentials' Secret, kept here so the two don't import each other.
 import { useState } from "react";
 import { Field } from "../components/layout";
 import { Button } from "@/components/Button";
 import { Input } from "@/components/Input";
-import { Secret } from "../credentials/Credentials";
 import type { Network } from "./actions";
 
 export type WizardSteps = NonNullable<Network["wizard"]>;
@@ -56,7 +56,7 @@ export function Wizard({ label, title, wizard, callbackProblem, save }: { label:
             <Input required autoComplete="off" spellCheck={false} value={clientId} onChange={(e) => setClientId(e.target.value)} />
           </Field>
           <Field label="Client secret">
-            <Secret value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+            <Input type="password" autoComplete="new-password" required value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
           </Field>
           <div>
             <Button type="submit" size="sm" pending={pending}>

@@ -29,8 +29,12 @@ test("each tab renders for the roles that see it, with write-only value fields",
   expect(page("viewer", "mine")).not.toContain("Add a credential");
 
   expect(page("owner", "mailboxes", "missing_scope")).toContain("Google didn&#x27;t grant permission to send email");
+  // Gmail's app wizard quotes Google: "Client secret" is its name for what an Owner pastes, and the callback URL is shown as code.
+  expect(page("owner", "mailboxes")).toContain("Client secret");
+  expect(page("owner", "mailboxes")).toContain("/api/connections/callback</code>");
   for (const role of ["owner", "marketer", "viewer"] as const)
-    for (const tab of ["mailboxes", "workspace", "mine"] as const) expect(page(role, tab).replace(/<[^>]+>/g, " ")).not.toMatch(/\b(secret|token|connection|inbox)s?\b/i);
+    for (const tab of ["mailboxes", "workspace", "mine"] as const)
+      expect(page(role, tab).replace(/<code[^>]*>.*?<\/code>/g, " ").replace(/<[^>]+>/g, " ").replace(/\bclient secret\b/gi, "")).not.toMatch(/\b(secret|token|connection|inbox)s?\b/i);
 });
 
 test("rows land in their tab: every Mailbox, the Workspace's credentials, and only my own", () => {

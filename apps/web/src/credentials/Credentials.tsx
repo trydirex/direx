@@ -24,7 +24,9 @@ import { momentWords } from "../campaigns/actions";
 import { latestPlacement, Placement } from "./Placement";
 import { PlacementJoin } from "./PlacementJoin";
 import { WorkspacePlugins } from "./WorkspacePlugins";
-import { networksQuery } from "../social/actions";
+import { networksQuery, saveApp } from "../social/actions";
+import { Wizard } from "../social/Wizard";
+import { gmailAppSteps } from "../seo/actions";
 import {
   add,
   checkAgain,
@@ -134,7 +136,8 @@ export function Credentials(p: { workspace: S["MyWorkspace"]; me: string; tab?: 
   const seeded = p.credentials ?? p.providers ?? p.services ?? p.checks;
   const seed = <T,>(x: T[] | undefined) => x ?? (seeded ? [] : undefined);
   const credentials = useQuery({ ...credentialsQuery(workspace.id), initialData: seed(p.credentials) });
-  const providers = useQuery({ ...mailboxProvidersQuery(workspace.id), initialData: seed(p.providers) }).data ?? [];
+  const providerList = useQuery({ ...mailboxProvidersQuery(workspace.id), initialData: seed(p.providers) }).data;
+  const providers = providerList ?? [];
   const services = useQuery({ ...keyServicesQuery(workspace.id), initialData: seed(p.services) }).data ?? [];
   const existingProviders = useQuery({ ...existingMailboxProvidersQuery(workspace.id), initialData: seed(p.providers) }).data ?? [];
   const checks = useQuery({ ...mailboxChecksQuery(workspace.id), initialData: seed(p.checks) }).data ?? [];
@@ -182,6 +185,19 @@ export function Credentials(p: { workspace: S["MyWorkspace"]; me: string; tab?: 
     );
   }
 
+  const gmail = providers.find((x) => x.connection === GMAIL);
+  const gmailInline = mayConnect && !!gmail;
+  const gmailApp = (
+    <GmailApp
+      workspaceId={workspace.id}
+      provider={gmail}
+      app={credentials.data?.find((c) => c.scope === "workspace" && c.key === GMAIL_APP)}
+      accounts={credentials.data?.filter((c) => c.kind === "oauth2" && c.connection === GMAIL).length ?? 0}
+      manage={manage}
+      settle={settle}
+    />
+  );
+
   const rowsOf = (all: Credential[]) => split(all, me, networks, services.map((s) => s.connection), existingProviders.map((x) => x.connection));
   const may = (c: Credential, mayChange: boolean) => ({ workspaceId: workspace.id, c, mayChange, mayRotate: mayChange && c.kind !== "oauth2" && (c.scope === "workspace" || c.ownerUserId === me), settle });
   const row = (c: Credential, mailbox: boolean, mayChange: boolean) => <Row key={c.id} mailbox={mailbox} {...may(c, mayChange)} />;
@@ -211,11 +227,13 @@ export function Credentials(p: { workspace: S["MyWorkspace"]; me: string; tab?: 
                   >
                     {provider.label}
                   </Button>
+                  {provider.connection === GMAIL && gmailApp}
                   {open === provider.connection && <MailboxForm workspaceId={workspace.id} provider={provider} done={async () => void (await reload())} />}
                 </div>
               ))}
             </div>
           )}
+          {providerList && !gmailInline && gmailApp}
           {loaded((all) => {
             const mailboxes = rowsOf(all).mailboxes;
             const waiting = mailboxes.filter((c) => checks.find((k) => k.credentialId === c.id)?.state !== "passed").length;
@@ -394,6 +412,78 @@ function List({ rows, empty, hint, render }: { rows: Credential[]; empty: string
 type Settle = (code: string | null) => Promise<boolean>;
 
 type Can = { workspaceId: string; c: Credential; mayChange: boolean; mayRotate: boolean; settle: Settle };
+
+const GMAIL = "google";
+const GMAIL_APP = `oauth_app:${GMAIL}`;
+
+/**
+ * Which Google app Gmail connects through, and for an Owner or Admin a way to set, change or remove the
+ * Workspace's own. A token works only with the app that issued it, so before any of the three, with
+ * Gmail accounts connected, the page says each will need reconnecting. The secret is never shown.
+ */
+function GmailApp(p: { workspaceId: string; provider?: MailboxProvider; app?: Credential; accounts: number; manage: boolean; settle: Settle }) {
+  const { workspaceId, app, manage, accounts } = p;
+  const [ask, setAsk] = useState<{ confirm: string; act: () => Promise<string | null> }>();
+  const going = useAction();
+  const own = !!app || p.provider?.app === "own";
+  if (!own && p.provider && !manage) return null;
+
+  // ponytail: the callback is read from this page's address, which is DIREX_BASE_URL unless a proxy rewrites it; send it in the providers response if that bites.
+  const steps = gmailAppSteps(`${location.origin}/api/connections/callback`);
+  const create = (f: { clientId: string; clientSecret: string }) => saveApp(workspaceId, { connection: GMAIL, label: "Gmail" }, f);
+  const drop = () => remove(workspaceId, app!.id);
+  const run = (confirm: string, act: () => Promise<string | null>) =>
+    going.run(async () => {
+      if ((await p.settle(await act())) && confirm === "Save") toast.add({ title: "Saved." });
+      setAsk(undefined);
+      return null;
+    });
+  const first = async (confirm: string, act: () => Promise<string | null>) => void (accounts ? setAsk({ confirm, act }) : await run(confirm, act));
+  const clientId = typeof app?.meta.username === "string" ? app.meta.username : undefined;
+
+  return (
+    <div className="flex w-full flex-col items-start gap-3 text-sm">
+      {own ? (
+        <>
+          <p>
+            Gmail connects through your own Google app.{clientId && ` Client ID: ${clientId}`}
+          </p>
+          {manage && app && (
+            <>
+              {/* Change is remove then create, so the client id and the secret can both change. */}
+              <Wizard label="Google Cloud" title="Change" wizard={steps} save={(f) => first("Save", async () => (await drop()) ?? (await create(f)))} />
+              <Button size="sm" variant="outline" aria-label="Remove your own Google app" pending={going.pending} onClick={() => void first("Remove", drop)}>
+                Remove
+              </Button>
+            </>
+          )}
+        </>
+      ) : (
+        <>
+          {!p.provider && <p className="text-muted-foreground">{manage ? "Gmail can't connect until a Google app is set up." : "Gmail can't connect until an Owner or Admin sets up a Google app."}</p>}
+          {manage && <Wizard label="Google Cloud" title="Use your own Google app" wizard={steps} save={(f) => first("Save", () => create(f))} />}
+        </>
+      )}
+      {ask && (
+        <section aria-label="Gmail accounts to reconnect" className="flex flex-col items-start gap-3 rounded-card border border-border p-4">
+          <p role="status">
+            {accounts === 1
+              ? "Your 1 Gmail account will need reconnecting once. Until it is, its scheduled email waits."
+              : `Your ${accounts} Gmail accounts will need reconnecting once. Until each one is, its scheduled email waits.`}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" pending={going.pending} onClick={() => void run(ask.confirm, ask.act)}>
+              {ask.confirm}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setAsk(undefined)}>
+              Cancel
+            </Button>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
 
 /** A Workspace's own OAuth app, kept as a username and password: its client id and client secret. */
 const ownApp = (c: Credential) => c.scope === "workspace" && c.kind === "basic" && c.key.startsWith("oauth_app:");

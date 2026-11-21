@@ -53,6 +53,20 @@ export const googleAppSteps = (callbackUrl: string) => ({
   ],
 });
 
+/** How to make a Workspace's own Google app for Gmail. The callback URL is the one every Google connect returns to. */
+export const gmailAppSteps = (callbackUrl: string) => ({
+  consoleUrl: "https://console.cloud.google.com/apis/credentials",
+  callbackUrl,
+  scopes: ["https://www.googleapis.com/auth/gmail.modify"],
+  steps: [
+    "Create a Google Cloud project, or pick one you already have.",
+    "Turn on the Gmail API for that project.",
+    "Set up the OAuth consent screen. Choose Internal if your Gmail addresses belong to a Google Workspace organisation. For personal Gmail, choose External and set the publishing status to In production. Never leave it in Testing: Google stops an app in Testing from connecting after 7 days.",
+    "Create an OAuth client ID of type Web application, with the callback URL below as an authorized redirect URI.",
+    "Paste its client ID and client secret here.",
+  ],
+});
+
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 
 const key = (workspaceId: string, ...rest: string[]) => inWorkspace(workspaceId, "seo", ...rest);

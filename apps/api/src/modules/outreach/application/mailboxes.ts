@@ -5,7 +5,7 @@
 // and halves on any of those warnings, a person's pause aside.
 import type { Ledger } from "../../ledger";
 import { MAILBOX_PROBE, PLACEMENT_EFFECTS } from "../../plugins";
-import { clearPause, halveRampOf, latestSends, pauseOf, pausedMailboxes, rampOf, setPause, setRamp } from "../adapters/pauses";
+import { clearPause, halveRampOf, latestSends, lockRamp, pauseOf, pausedMailboxes, rampOf, setPause, setRamp } from "../adapters/pauses";
 import { inWorkspace, type OutreachTx } from "../adapters/repo";
 import { sweepRamp } from "../domain/ramp";
 import { PAUSE_WINDOW, shouldPause } from "../domain/sending";
@@ -54,6 +54,8 @@ export const slowOnSendingLimit =
 export async function sweepRamps(mailboxes: readonly { workspaceId: string; credentialId: string }[], now: Date): Promise<void> {
   for (const m of mailboxes) {
     await inWorkspace(m.workspaceId, async (tx) => {
+      // Read the ramp and its counts after any warning holding the row has committed.
+      if (!await lockRamp(tx, m.credentialId)) return;
       const state = await rampOf(tx, m.credentialId);
       if (!state) return;
       const next = sweepRamp(state, now);

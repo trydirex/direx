@@ -56,6 +56,14 @@ export async function halveRampOf(tx: OutreachTx, credentialId: string, at: Date
     .where(and(live(credentialId), isNotNull(credentials.rampLimit)));
 }
 
+/** Locks the ramp row against warning updates until the sweep transaction ends. */
+export async function lockRamp(tx: OutreachTx, credentialId: string): Promise<boolean> {
+  const [row] = await tx.select({ id: credentials.id }).from(credentials)
+    .where(and(live(credentialId), isNotNull(credentials.rampLimit)))
+    .for("no key update");
+  return !!row;
+}
+
 /** A Mailbox's ramp with its emails sent and bounced since its clean days began, or undefined when it has none. */
 export async function rampOf(tx: OutreachTx, credentialId: string): Promise<RampState | undefined> {
   const [row] = await tx

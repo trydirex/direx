@@ -46,6 +46,11 @@ async function mailbox(established = false) {
   return row!.id as string;
 }
 const ramp = async (id: string) => (await q("select ramp_limit from credentials where id = $1", [id]))[0]!.ramp_limit as number | null;
+const sentMail = (id: string, at: Date) => q(
+  `insert into actions (workspace_id, idempotency_key, capability, dedupe_class, state, credential_id, first_dispatched_at, spec, spec_hash, created_at, updated_at)
+   values ($1, gen_random_uuid(), $2, 'queryable', 'sent', $3, $4, '{}'::jsonb, 'h', now(), now()) returning id`,
+  [W, SEND, id, at],
+);
 const perDay = (slots: Date[]) => {
   const days = new Map<string, number>();
   for (const d of slots) days.set(d.toISOString().slice(0, 10), (days.get(d.toISOString().slice(0, 10)) ?? 0) + 1);
@@ -95,11 +100,7 @@ test("the sweep grows a ramp after two clean days with an email sent, and a boun
   await sweepRamps([{ workspaceId: W, credentialId: id }], now);
   expect(await ramp(id)).toBe(20);
 
-  const [sent] = await q(
-    `insert into actions (workspace_id, idempotency_key, capability, dedupe_class, state, credential_id, first_dispatched_at, spec, spec_hash, created_at, updated_at)
-     values ($1, gen_random_uuid(), $2, 'queryable', 'sent', $3, $4, '{}'::jsonb, 'h', now(), now()) returning id`,
-    [W, SEND, id, new Date(now.getTime() - DAY)],
-  );
+  const [sent] = await sentMail(id, new Date(now.getTime() - DAY));
   await sweepRamps([{ workspaceId: W, credentialId: id }], now);
   expect(await ramp(id)).toBe(30);
   expect(await inWorkspace(W, (tx) => rampOf(tx, id))).toMatchObject({ ramp: 30, cleanSince: now, sent: 0, bounced: 0 });
@@ -115,4 +116,32 @@ test("the sweep grows a ramp after two clean days with an email sent, and a boun
   const old = await mailbox(true);
   await sweepRamps([{ workspaceId: W, credentialId: old }], later);
   expect(await ramp(old)).toBeNull();
+});
+
+test("a sending limit committed during the sweep preserves the reduced ramp and its clean days", async () => {
+  const id = await mailbox();
+  const now = new Date();
+  const warnedAt = new Date(now.getTime() - 1000);
+  await q("update credentials set ramp_limit = 40, ramp_clean_since = $2 where id = $1", [id, new Date(now.getTime() - 3 * DAY)]);
+  await sentMail(id, new Date(now.getTime() - DAY));
+
+  const warning = await ownerClient();
+  let sweep: Promise<void> | undefined;
+  try {
+    await warning.query("begin");
+    const { rows: [blocker] } = await warning.query(
+      "update credentials set ramp_limit = 20, ramp_clean_since = $2 where id = $1 returning pg_backend_pid() as pid",
+      [id, warnedAt],
+    );
+    sweep = sweepRamps([{ workspaceId: W, credentialId: id }], now);
+    await expect.poll(async () => (await q(
+      "select exists(select from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as waiting",
+      [blocker.pid],
+    ))[0]!.waiting).toBe(true);
+    await warning.query("commit");
+  } finally {
+    await warning.end();
+    await sweep;
+  }
+  expect(await inWorkspace(W, (tx) => rampOf(tx, id))).toMatchObject({ ramp: 20, cleanSince: warnedAt });
 });

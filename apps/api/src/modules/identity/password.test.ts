@@ -181,6 +181,32 @@ test("the sign-in rate limit counts in the database, so every API process sees t
   }
 });
 
+test("overlapping sign-ins through two API processes neither lose a count nor get past the limit", async () => {
+  const other = testIdentity({ devMode: false });
+  // Sign-in allows 3 attempts per address per 10 seconds. These addresses are outside the other tests' range too.
+  const burst = (ip: string, n: number) =>
+    Promise.all(Array.from({ length: n }, async (_, i) => (await signIn(i % 2 ? other : prod, newEmail(), "wrong password here", ip)).status));
+  const fresh = "203.0.113.252|/sign-in/email";
+  const nearFull = "203.0.113.253|/sign-in/email";
+  const owner = await ownerClient();
+  const countOf = async (key: string) => (await owner.query("select count from auth.rate_limit where key = $1", [key])).rows.map((r) => r.count);
+  try {
+    await owner.query("delete from auth.rate_limit where key = any($1)", [[fresh, nearFull]]);
+
+    // A new address: every request races to create the same row, and each one still counts once.
+    expect(await burst("203.0.113.252", 3)).toEqual([401, 401, 401]);
+    expect(await countOf(fresh)).toEqual([3]);
+
+    // An address with one attempt left: exactly one more gets through, the rest are refused, none fail.
+    await owner.query("insert into auth.rate_limit (key, count, last_request) values ($1, 2, $2)", [nearFull, Date.now()]);
+    expect((await burst("203.0.113.253", 5)).sort()).toEqual([401, 429, 429, 429, 429]);
+    expect(await countOf(nearFull)).toEqual([3]);
+  } finally {
+    await owner.query("delete from auth.rate_limit where key = any($1)", [[fresh, nearFull]]);
+    await owner.end();
+  }
+});
+
 test("in dev nothing is rate limited, so the table stays empty for that address", async () => {
   const ip = `192.0.2.${Math.floor(Math.random() * 250) + 1}`;
   for (let i = 0; i < 4; i++) expect((await signIn(dev, newEmail(), "wrong password here", ip)).status).toBe(401);

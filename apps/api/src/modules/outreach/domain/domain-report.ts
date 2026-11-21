@@ -41,15 +41,22 @@ const records = (txt: string[][]) => txt.map((chunks) => chunks.join(""));
 
 function spfOf(r: Lookup<string[][]>, provider: MailProvider | null): DomainReport["spf"] {
   if (!r.ok) return r.missing ? "missing" : "unknown";
-  const spf = records(r.value).find((t) => /^v=spf1(\s|$)/i.test(t.trim()));
+  const spfs = records(r.value).filter((t) => /^v=spf1(\s|$)/i.test(t.trim()));
+  if (spfs.length > 1) return "unknown"; // SPF receivers treat multiple records as a permanent error.
+  const [spf] = spfs;
   if (!spf) return "missing";
-  if (provider && !spf.toLowerCase().split(/\s+/).includes(`include:${SPF_INCLUDE[provider]}`)) return "no_provider_include";
+  if (provider) {
+    const include = `include:${SPF_INCLUDE[provider]}`;
+    if (!spf.toLowerCase().split(/\s+/).some((term) => term === include || term === `+${include}`)) return "no_provider_include";
+  }
   return "pass";
 }
 
 function dmarcOf(r: Lookup<string[][]>): DomainReport["dmarc"] {
   if (!r.ok) return r.missing ? "missing" : "unknown";
-  const dmarc = records(r.value).find((t) => /^v=DMARC1\s*;/i.test(t.trim()));
+  const policies = records(r.value).filter((t) => /^v=DMARC1\s*;/i.test(t.trim()));
+  if (policies.length !== 1) return "missing";
+  const [dmarc] = policies;
   const policy = dmarc?.match(/(?:^|;)\s*p\s*=\s*(none|quarantine|reject)\s*(?:;|$)/i)?.[1]?.toLowerCase();
   return (policy as DomainReport["dmarc"] | undefined) ?? "missing";
 }

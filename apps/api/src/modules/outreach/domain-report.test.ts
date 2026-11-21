@@ -35,6 +35,32 @@ test("a Google Workspace domain with SPF, DKIM and DMARC passes", async () => {
   expect(authenticated(r)).toBe(true);
 });
 
+test("multiple SPF records cannot authenticate a domain, even when the provider is unknown", async () => {
+  const zone = { ...GOOD, "acme.test": [...GOOD["acme.test"], "v=spf1 include:spf.protection.outlook.com -all"] };
+  for (const provider of ["google", null] as const) {
+    const r = await report(zone, { provider });
+    expect(r.spf).toBe("unknown");
+    expect(authenticated(r)).toBe(false);
+  }
+});
+
+test.each([["+", "pass"], ["-", "no_provider_include"], ["~", "no_provider_include"], ["?", "no_provider_include"]])(
+  "an SPF include with qualifier %s reports %s",
+  async (qualifier, status) => {
+    const r = await report({ ...GOOD, "acme.test": ["google-site-verification=x", `v=spf1 ${qualifier}include:_spf.google.com ~all`] });
+    expect(r.spf).toBe(status);
+  },
+);
+
+test("multiple DMARC records are discarded, but unrelated TXT records do not count", async () => {
+  const unrelated = "site-verification=x";
+  const zone = { ...GOOD, "_dmarc.acme.test": [unrelated, ...GOOD["_dmarc.acme.test"]] };
+  expect((await report(zone)).dmarc).toBe("quarantine");
+  const r = await report({ ...zone, "_dmarc.acme.test": [...zone["_dmarc.acme.test"], "v=DMARC1; p=reject"] });
+  expect(r.dmarc).toBe("missing");
+  expect(authenticated(r)).toBe(false);
+});
+
 test("each record missing, or answered with an error, says which", async () => {
   expect(await report({})).toMatchObject({ spf: "missing", dkim: "not_found", dmarc: "missing" });
   expect(await report({ ...GOOD, "acme.test": ["v=spf1 include:spf.protection.outlook.com -all"] })).toMatchObject({ spf: "no_provider_include" });

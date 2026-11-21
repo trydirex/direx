@@ -47,3 +47,12 @@ starts, so no search or verification vendor is paid.
 - Asking a provider whether an earlier send went out keeps running. That never sends.
 - An email that may already have gone out (an unknown outcome being sent again) is held as
   unknown, not as operator_hold, and waits for a person after the lift.
+
+## The suspension drill
+
+`apps/api/src/modules/outreach/hold-drill.test.ts` runs in CI against GreenMail. An Organization
+with two Workspaces approves 20 emails, two dispatchers send them, and an Organization hold lands
+after the sixth. It checks that nothing whose dispatch started after the hold reached GreenMail,
+that the rest wait as operator_hold, and that an opt-out recorded during the hold still stops that
+Person once the hold is lifted. Run the same steps by hand on a staging server before a release that
+changes the Dispatcher, and record the time from the hold to the last delivery.

@@ -448,11 +448,13 @@ export function dispatcher(deps: DispatcherDeps) {
   // held as operator_hold, before any key is fetched or any plugin is called. A hold, not a block, so
   // a mistaken one costs nothing: lifting it resumes them through every check. A resend after an
   // unknown outcome may already have gone out, so it stays held as unknown, for a person.
-  async function stopForOperator(workspaceId: string, actionId: string, scope: string): Promise<Pass> {
-    await inWorkspace(workspaceId, async (tx) => {
+  async function stopForOperator(workspaceId: string, actionId: string): Promise<Pass> {
+    return inWorkspace(workspaceId, async (tx): Promise<Pass> => {
       const at = deps.now();
       const row = await lockAction(tx, actionId);
-      if (!row || !dueWork(row, at)) return;
+      if (!row || !dueWork(row, at)) return "done";
+      const scope = await operatorHold(tx, workspaceId);
+      if (!scope) return "again";
       const unknown = row.outcomeUnknownAt !== null;
       await transition(
         tx,
@@ -461,8 +463,8 @@ export function dispatcher(deps: DispatcherDeps) {
         SYSTEM,
         at,
       );
+      return "done";
     });
-    return "done";
   }
 
   async function pass(workspaceId: string, actionId: string): Promise<Pass> {
@@ -485,7 +487,7 @@ export function dispatcher(deps: DispatcherDeps) {
       return reconcile(workspaceId, peek);
     }
     // After reconcile, which only asks the provider whether an earlier send went out.
-    if (operator && dueWork(peek, at)) return stopForOperator(workspaceId, actionId, operator);
+    if (operator && dueWork(peek, at)) return stopForOperator(workspaceId, actionId);
 
     // Before the lock: fetching keys may reach a key service. Only the claim and the dispatch
     // check verify an approval, so recovery and expiry still run when the keys won't load.

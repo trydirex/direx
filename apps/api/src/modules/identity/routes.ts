@@ -63,7 +63,7 @@ const createOrgRoute = createRoute({
     201: json(z.object({ organization: Organization, workspace: Workspace }), "The new Organization and its first Workspace"),
     400: json(ErrorBody, "Invalid request"),
     401: json(ErrorBody, "Not signed in"),
-    403: json(ErrorBody, "server_admins_only: on this server only a Server admin creates Organizations"),
+    403: json(ErrorBody, "cannot_create_organization: this server's Admission doesn't let the caller create one (on self-host, only a Server admin does)"),
   },
 });
 
@@ -208,8 +208,9 @@ export function identityRoutes(auth: () => Auth, baseURL: () => string, admissio
     .openapi(createOrgRoute, async (c) => {
       const s = await readSession(auth, c);
       if (!s) return c.json({ error: "not_signed_in" }, 401);
-      // On self-host outside dev, only a Server admin (DX-R-0024-008).
-      if (!(await admission().canCreateOrganization(s.user.id))) return c.json({ error: "server_admins_only" }, 403);
+      // On self-host outside dev, only a Server admin (DX-R-0024-008). The code names no rule, as a
+      // supplied Admission has its own.
+      if (!(await admission().canCreateOrganization(s.user.id))) return c.json({ error: "cannot_create_organization" }, 403);
       const { name, workspaceName } = c.req.valid("json");
       return c.json(await createOrganization(s.user.id, { orgName: name, workspaceName }), 201);
     })

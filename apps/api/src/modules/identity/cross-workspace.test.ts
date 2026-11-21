@@ -204,6 +204,7 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "POST /api/w/:workspaceId/mailboxes/:credentialId/check": { path: `/api/w/${w2}/mailboxes/${credentialId}/check`, body: { probeWording: "2026-11-05" } },
   "GET /api/w/:workspaceId/outreach/mailbox-checks": { path: `/api/w/${w2}/outreach/mailbox-checks` },
   "GET /api/w/:workspaceId/outreach/mailbox-pauses": { path: `/api/w/${w2}/outreach/mailbox-pauses` },
+  "GET /api/w/:workspaceId/outreach/mailboxes/:credentialId/domain": { path: `/api/w/${w2}/outreach/mailboxes/${anyItem}/domain` },
   "GET /api/w/:workspaceId/credentials": { path: `/api/w/${w2}/credentials` },
   "POST /api/w/:workspaceId/credentials": {
     path: `/api/w/${w2}/credentials`,
@@ -511,7 +512,7 @@ test("a member of W1 gets 404 on every W2 route; W2's Owner does not", async () 
   for (const key of Object.keys(CASES)) {
     // A Person the route doesn't know is its own 404, inside the Workspace, so give the Owner a real refusal.
     // So is a key W2 never stored, which is all replacing and checking one can reach with no worker's plugins.
-    if (key.endsWith("/outreach/emails") || key.includes("/outreach/replies/") || key.includes("/outreach/people/:personId") || key.includes("/outreach/holds/:holdId") || key.includes("/outreach/hold-hook/:hookId") || key.includes("/campaigns/:id") || key.includes("/campaigns/dms/:dmId") || key.includes("/prospecting/runs/:id") || key.includes("/newsletter/issues/:itemId") || key.includes("/newsletter/keys/:credentialId") || key.includes("/social/accounts/:accountId") || key.includes("/media/:id") || key.endsWith("/link-image") || key.includes("/mailboxes/:credentialId/pace") || key.includes("/outreach/mailboxes/:credentialId/pause") || key.includes("/mailboxes/:credentialId/placement")) continue;
+    if (key.endsWith("/outreach/emails") || key.includes("/outreach/replies/") || key.includes("/outreach/people/:personId") || key.includes("/outreach/holds/:holdId") || key.includes("/outreach/hold-hook/:hookId") || key.includes("/campaigns/:id") || key.includes("/campaigns/dms/:dmId") || key.includes("/prospecting/runs/:id") || key.includes("/newsletter/issues/:itemId") || key.includes("/newsletter/keys/:credentialId") || key.includes("/social/accounts/:accountId") || key.includes("/media/:id") || key.endsWith("/link-image") || key.includes("/mailboxes/:credentialId/pace") || key.includes("/outreach/mailboxes/:credentialId/pause") || key.includes("/outreach/mailboxes/:credentialId/domain") || key.includes("/mailboxes/:credentialId/placement")) continue;
     // A docs source W2 never imported is its own 404; saving its mapping is refused first as not connected.
     if (key.includes("/docs/sources/:sourceId/write-back") && !key.startsWith("PUT ")) continue;
     if (key === "PUT /api/w/:workspaceId/key-services/:connection" || key.endsWith("/key-services/:connection/check")) continue;

@@ -97,10 +97,10 @@ export async function claimServer(token?: string): Promise<string | null> {
   return error ? linkCode(response, error.error) : null;
 }
 
-/** A new Organization with its first Workspace; the Workspace's id, or null when refused. */
-export async function createOrg(name: string, workspaceName: string): Promise<string | null> {
-  const { data } = await api.POST("/api/orgs", { body: { name, workspaceName } });
-  return data?.workspace.id ?? null;
+/** A new Organization with its first Workspace; the Workspace's id or the API error code. */
+export async function createOrg(name: string, workspaceName: string): Promise<{ workspaceId: string } | { error: string }> {
+  const result = await api.POST("/api/orgs", { body: { name, workspaceName } }).catch(() => undefined);
+  return result?.data ? { workspaceId: result.data.workspace.id } : { error: result?.error?.error ?? "failed" };
 }
 
 /** A password for an account that signs in by email link, Google or Microsoft. Returns the API's error code, or null when it worked. */

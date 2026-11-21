@@ -22,8 +22,8 @@ export type CapacityPort = {
   placeIn(tx: ItemsTx, workspaceId: string, t: PlaceTarget, now: Date): Promise<Placed>;
   reserveIn(tx: ItemsTx, workspaceId: string, actionId: string, slot: Date, now: Date): Promise<CapacityResult>;
   reserve(workspaceId: string, actionId: string, slot: Date, opts?: { now?: Date }): Promise<CapacityResult>;
-  /** Atomically place and reserve, optionally checking the slot before inserting. Undefined uses the usual flow. */
-  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: (slot: Date) => Promise<"ok" | "unavailable" | "not_found">): Promise<{ slot: Date; result: CapacityResult | { kind: "unavailable" } } | undefined>;
+  /** Atomically place and reserve, optionally checking the slot on the same transaction before inserting. Undefined uses the usual flow. */
+  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: (tx: ItemsTx, slot: Date) => Promise<"ok" | "unavailable" | "not_found">): Promise<{ slot: Date; result: CapacityResult | { kind: "unavailable" } } | undefined>;
   nextTime(workspaceId: string, actionId: string, from: Date, opts?: { now?: Date }): Promise<Date | null>;
 };
 

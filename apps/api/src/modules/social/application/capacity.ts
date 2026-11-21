@@ -5,6 +5,7 @@
 import { storedSpec } from "@direx/plugin-sdk/host";
 import { warn, type CapacityPort, type CapacityResult, type PlaceTarget, type Placed } from "../../items/index";
 import { actionStates } from "../../ledger/index";
+import { withGroupRetry } from "../../people";
 import { counts, mailboxDay, nextDay } from "../../schedule";
 import { healthOf, inWorkspace, insertReservation, lockAccount, newestReservationFor, newestReservationsAround, paceRowOf, postActionOf, workspaceZone, type SocialTx } from "../adapters/repo";
 import { capOf, FLOOR } from "../domain/budget";
@@ -106,11 +107,11 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
         return action ? nextPostTimeIn(tx, workspaceId, actionId, action, from, opts?.now ?? new Date()) : from;
       }),
     reserveAutomatic: (workspaceId, actionId, wanted, now, checkSlot) =>
-      inWorkspace(workspaceId, async (tx) => {
+      withGroupRetry(workspaceId, async (tx) => {
         const action = await postActionOf(tx, actionId);
         if (!action) return { slot: wanted, result: { kind: "not_found" } };
         const slot = await nextPostTimeIn(tx, workspaceId, actionId, action, wanted, now);
-        const check = await checkSlot?.(slot);
+        const check = await checkSlot?.(tx, slot);
         if (check && check !== "ok") return { slot, result: { kind: check } };
         // The account lock acquired in placement stays held through the reservation.
         return { slot, result: await reservePostIn(tx, workspaceId, actionId, action, slot, now) };

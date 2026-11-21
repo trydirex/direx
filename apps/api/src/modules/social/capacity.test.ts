@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A post's place on its Social account's day (ADR 0038): placed inside the account's hours and gap,
 // counted against its budget, refused to a person on a spent day, and safe under many writers.
-import { describe, expect, it } from "vitest";
+import { closeDb } from "@direx/db";
+import { closeAuthDb } from "@direx/db/auth";
+import { describe, expect, it, vi } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { createVault, credentialLabel, rootKeyFromEnv } from "../credentials/index";
 import { routeCapacity } from "../items/index";
@@ -31,12 +33,12 @@ async function world() {
   const addAccount = (target: string) => q("insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values ($1, $2, 'testnet', 'page', $3, 'Page')", [w.W, credentialId, target]);
   await addAccount("acct-1");
   const spec = (target: string) => ({ text: "hello", followUps: [], target });
-  const post = (plannedAt: Date, placement: "auto" | "exact" = "auto", target = "acct-1") =>
+  const post = (plannedAt: Date, placement: "auto" | "exact" = "auto", target = "acct-1", personId?: string) =>
     w.items.createActionItem(w.W, {
       idempotencyKey: crypto.randomUUID(),
       capability: PUBLISH,
       dedupe: "blind",
-      spec: spec(target),
+      spec: { ...spec(target), ...(personId && { touch: { personId, touchClass: "cold" } }) },
       credentialId,
       actor: person,
       placement,
@@ -140,9 +142,11 @@ describe("a Social account's day", () => {
     await w.done();
   });
 
-  it("resumes concurrent late posts at spaced slots after a full day", async () => {
+  it("resumes concurrent late posts at spaced slots after a full day with a two-connection pool", async () => {
     const w = await world();
-    const posts = [await w.submit(await w.post(tomorrow(10))), await w.submit(await w.post(tomorrow(10)))];
+    const posts = await Promise.all(Array.from({ length: 2 }, async () =>
+      w.submit(await w.post(tomorrow(10), "auto", "acct-1", await w.newPerson())),
+    ));
     const ids = await Promise.all(posts.map(async (post) => {
       expect(await w.items.approve(w.W, post.id, post.revision, w.who)).toMatchObject({ ok: true });
       return actionIdOf(w.W, post.id);
@@ -151,13 +155,27 @@ describe("a Social account's day", () => {
     await w.post(new Date(w.clock.at.getTime() + HOUR), "exact");
     // This fixture has no publishing effect; start at the late hold the dispatcher would record.
     await w.q("update actions set state = 'held', hold_reason = 'late', next_attempt_at = null where id = any($1::uuid[])", [ids]);
-    const results = await Promise.all(posts.map((post) => w.items.resume(w.W, post.id, person)));
-    expect(results.every((result) => result.ok)).toBe(true);
-    const slots = (await w.reserved("2026-11-05")).sort((a, b) => a.getTime() - b.getTime());
-    expect(slots).toHaveLength(2);
-    expect(offPace(slots[0]!, PACE, "UTC", [slots[1]!])).toBeNull();
-    expect(offPace(slots[1]!, PACE, "UTC", [slots[0]!])).toBeNull();
-    await w.done();
+    await closeAuthDb();
+    await closeDb();
+    vi.stubEnv("DIREX_DB_POOL_MAX", "2");
+    try {
+      const results = await Promise.all(posts.map((post) => w.items.resume(w.W, post.id, person)));
+      expect(results.every((result) => result.ok)).toBe(true);
+      const slots = (await w.reserved("2026-11-05")).sort((a, b) => a.getTime() - b.getTime());
+      expect(slots).toHaveLength(2);
+      expect(offPace(slots[0]!, PACE, "UTC", [slots[1]!])).toBeNull();
+      expect(offPace(slots[1]!, PACE, "UTC", [slots[0]!])).toBeNull();
+      const touches = await w.q(
+        "select distinct on (action_id) slot from touch_reservations where action_id = any($1::uuid[]) order by action_id, created_at desc",
+        [ids],
+      );
+      expect(touches.map((row) => row.slot)).toEqual(expect.arrayContaining(slots));
+    } finally {
+      vi.unstubAllEnvs();
+      await closeAuthDb();
+      await closeDb();
+      await w.done();
+    }
   });
 
   it("keeps concurrent automatic redates apart on the same account and refuses those past the day's budget", async () => {

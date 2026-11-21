@@ -4,7 +4,7 @@
 export type { CapName, TouchClass } from "./domain/caps";
 export { CAPS, CAPS_BY_CLASS, counts } from "./domain/caps";
 export { touchCheck } from "./application/check";
-export { reserveTouch, type ReserveResult } from "./application/reserve";
+export { reserveTouch, reserveTouchIn, type ReserveResult } from "./application/reserve";
 export { lockMailboxDay, mailboxDayCheck, mailboxDays, nextMailboxTime, planMailbox, PROVIDER_CEILING, reserveMailbox, reserveMailboxIn, type MailboxDay, type MailboxReserveResult } from "./application/mailbox";
 export { scheduleRoutes } from "./routes";
 export { mailboxPace, setMailboxPace, setTimeZone, timeZoneOf } from "./application/settings";

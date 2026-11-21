@@ -3,7 +3,7 @@
 // one, at the next send slot free for its Person, so the Touch check matches and the caps still hold.
 // One Workspace notice counts what is late and resumes the late emails together; posts go one by one.
 import type { Actor, Ledger } from "../../ledger";
-import { reserveTouch } from "../../schedule";
+import { reserveTouch, reserveTouchIn } from "../../schedule";
 import { inWorkspace, itemIdByAction, setPlannedAt, type ItemsTx } from "../adapters/repo";
 import type { CapacityPort } from "./capacity";
 import type { ItemKind } from "./items";
@@ -20,9 +20,9 @@ const SEARCH_HOURS = 14 * 24;
 export async function nextFreeSlot(capacity: CapacityPort, workspaceId: string, actionId: string, from: Date): Promise<Date | null> {
   const end = from.getTime() + SEARCH_HOURS * HOUR;
   for (let next = from; next.getTime() <= end; ) {
-    const placed = await capacity.reserveAutomatic?.(workspaceId, actionId, next, from, async (slot) => {
+    const placed = await capacity.reserveAutomatic?.(workspaceId, actionId, next, from, async (tx, slot) => {
       if (slot.getTime() > end) return "unavailable";
-      const touch = await reserveTouch(workspaceId, actionId, slot, { now: from });
+      const touch = await reserveTouchIn(tx, workspaceId, actionId, slot, from);
       return touch.kind === "not_found" ? "not_found" : touch.kind === "full" ? "unavailable" : "ok";
     });
     if (placed) {
@@ -87,13 +87,17 @@ export function lateSends(d: { ledger: Ledger; now: () => Date; settleGroupIn: S
     });
   }
 
-  /** Sends one held Action that is past its time at its Person's next free slot, in the caller's transaction. */
-  async function resumeLateIn(tx: ItemsTx, workspaceId: string, actionId: string, actor: Actor, heldFor?: string) {
-    const slot = await nextFreeSlot(d.capacity, workspaceId, actionId, d.now());
-    if (!slot) return { ok: false, reason: "no_free_slot" } as const;
+  async function resumeAtIn(tx: ItemsTx, workspaceId: string, actionId: string, actor: Actor, slot: Date, heldFor?: string) {
     const itemId = await itemIdByAction(tx, actionId);
     if (itemId) await setPlannedAt(tx, itemId, slot, d.now());
     return d.ledger.resumeIn(tx, workspaceId, actionId, actor, { ...(heldFor && { heldFor }), dueAt: slot });
+  }
+
+  async function resumeLate(workspaceId: string, actionId: string, actor: Actor) {
+    // The search runs its own transactions; release those connections before opening the Item write.
+    const slot = await nextFreeSlot(d.capacity, workspaceId, actionId, d.now());
+    if (!slot) return { ok: false, reason: "no_free_slot" } as const;
+    return inWorkspace(workspaceId, (tx) => resumeAtIn(tx, workspaceId, actionId, actor, slot));
   }
 
   /**
@@ -111,8 +115,11 @@ export function lateSends(d: { ledger: Ledger; now: () => Date; settleGroupIn: S
         const tally = { resumed: 0, skipped: 0, failed: 0 };
         for (const late of await d.ledger.lateEmailsIn(tx)) {
           if (d.actionPermission?.(late.capability) !== undefined) tally.skipped++;
-          else if ((await resumeLateIn(tx, item.workspaceId, late.id, actor, "late")).ok) tally.resumed++;
-          else tally.failed++;
+          else {
+            const slot = await nextFreeSlot(d.capacity, item.workspaceId, late.id, d.now());
+            if (slot && (await resumeAtIn(tx, item.workspaceId, late.id, actor, slot, "late")).ok) tally.resumed++;
+            else tally.failed++;
+          }
         }
         tallies.set(item.id, tally);
         return { ok: true };
@@ -128,5 +135,5 @@ export function lateSends(d: { ledger: Ledger; now: () => Date; settleGroupIn: S
     await refreshIn(tx, workspaceId, note);
   }
 
-  return { kind, refreshIn, resumeLateIn, afterApplied };
+  return { kind, refreshIn, resumeLate, afterApplied };
 }

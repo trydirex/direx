@@ -4,7 +4,7 @@
 // it is in use.
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import { createVault, dataDir, ensureRootKey, migrationsPending, rootKeyFromEnv, type MigrationState } from "./modules/credentials/index";
+import { createVault, dataDir, ensureRootKey, migrationsPending, rootKeyFromEnv, type MigrationState, type RootKey } from "./modules/credentials/index";
 import { ensureSystemWorkspace, readSystemSecret, setSystemSecret, suppressionHasher } from "./modules/credentials/system-secrets";
 import { authConfigFromEnv, isDevOrTest, type AuthConfig } from "./modules/identity/index";
 import { diskStore, parseS3Url, s3Store } from "./modules/media/index";
@@ -60,12 +60,13 @@ export const withClientIp =
     return fetch(req);
   };
 
-export async function loadDeployment(env: Env = process.env, log: (line: string) => void = console.log): Promise<AuthConfig> {
+/** `supplied` is the root key from runServer's extensions; without one the key comes from env, a file, or a first run. */
+export async function loadDeployment(env: Env = process.env, log: (line: string) => void = console.log, supplied?: RootKey): Promise<AuthConfig> {
   // First, so a refused split start never generates a root key file (ADR 0027 rule 005).
-  assertRoleAllowed(roleFromEnv(env), deploymentFromEnv(env), env);
+  assertRoleAllowed(roleFromEnv(env), deploymentFromEnv(env), env, supplied !== undefined);
   refuseRetiredEnv(env);
   refusePendingMigrations(await migrationsPending());
-  const rootKey = await ensureRootKey(env, log);
+  const rootKey = await ensureRootKey(env, log, supplied);
   const vault = createVault({ rootKey, now: () => new Date() });
   await ensureSystemWorkspace();
 
@@ -90,8 +91,8 @@ export async function storedSmtpUrl(env: Env = process.env): Promise<string | nu
 }
 
 /** Where uploaded files go on object storage, or null to keep them on disk. Read once, at start. */
-export async function mediaS3Url(env: Env = process.env): Promise<string | null> {
-  const vault = createVault({ rootKey: await ensureRootKey(env, () => undefined), now: () => new Date() });
+export async function mediaS3Url(env: Env = process.env, supplied?: RootKey): Promise<string | null> {
+  const vault = createVault({ rootKey: await ensureRootKey(env, () => undefined, supplied), now: () => new Date() });
   const url = await readSystemSecret(vault, "media.s3", "startup");
   assertSharedMedia(roleFromEnv(env), url);
   return url;

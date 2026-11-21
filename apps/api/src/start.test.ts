@@ -2,7 +2,11 @@
 // The programs as a package that adds extensions starts them: with no discovery the server gets the
 // default that refuses, and a supplied one reaches prospecting through its worker. The worker alone
 // refuses to start (ADR 0027).
+import { mkdtempSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "vitest";
+import { rootKeyFromEnv } from "./modules/credentials/index";
 import type { Discovery } from "./modules/extensions/index";
 import { app, createApp, runServer, runWorker, startServer } from "./main";
 import { compose, type WorkerOptions } from "./worker";
@@ -27,6 +31,25 @@ test("the server starts with the default discovery, or with one it is given", { 
     expect(await extended.discovery.search("w", ["dentists"], 10)).toEqual([found]);
   } finally {
     await extended.stop();
+  }
+});
+
+test("a supplied root key runs the server with no key in env, and one the deployment never ran with refuses", { timeout: 30_000 }, async () => {
+  const recorded = rootKeyFromEnv(process.env);
+  const saved = { key: process.env.DIREX_MASTER_KEY, dir: process.env.DIREX_DATA_DIR };
+  // No key anywhere a fallback could find one: an empty data dir, and none in env.
+  delete process.env.DIREX_MASTER_KEY;
+  process.env.DIREX_DATA_DIR = mkdtempSync(join(tmpdir(), "direx-supplied-"));
+  try {
+    const supplied = await runServer({ rootKey: recorded });
+    await supplied.stop();
+    expect(readdirSync(process.env.DIREX_DATA_DIR)).not.toContain("master.key");
+    const stranger = rootKeyFromEnv({ DIREX_MASTER_KEY: "05".repeat(32) });
+    await expect(runServer({ rootKey: stranger })).rejects.toThrow(`this process has root key ${stranger.id}`);
+  } finally {
+    process.env.DIREX_MASTER_KEY = saved.key;
+    if (saved.dir === undefined) delete process.env.DIREX_DATA_DIR;
+    else process.env.DIREX_DATA_DIR = saved.dir;
   }
 });
 

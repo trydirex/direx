@@ -33,8 +33,13 @@ export async function rootKeyProblem(env: Record<string, string | undefined> = p
 export async function ensureRootKey(
   env: Record<string, string | undefined> = process.env,
   log: (line: string) => void = console.log,
+  supplied?: RootKey,
 ): Promise<RootKey> {
-  if (!rootKeyConfigured(env)) {
+  // A key from an extension (a KMS, say) is the only one: a second source in env would leave which key runs to chance.
+  if (supplied && (env.DIREX_MASTER_KEY || env.DIREX_MASTER_KEY_FILE)) {
+    throw new Error("a root key was supplied to runServer, so DIREX_MASTER_KEY and DIREX_MASTER_KEY_FILE must be unset");
+  }
+  if (!supplied && !rootKeyConfigured(env)) {
     const recorded = await withWorkspace(NO_WORKSPACE, readDeploymentRootKey);
     const path = defaultKeyPath(env);
     if (recorded) {
@@ -45,7 +50,7 @@ export async function ensureRootKey(
       log(`Generated a new root key at ${path}. Back this file up separately from the database: without it, no stored credential can be read.`);
     }
   }
-  const root = rootKeyFromEnv(env);
+  const root = supplied ?? rootKeyFromEnv(env);
   const recorded = await withWorkspace(NO_WORKSPACE, (tx) => recordDeploymentRootKey(tx, root.id, new Date()));
   if (recorded !== root.id) throw new Error(`this process has root key ${root.id}, but this deployment ran with ${recorded}. Restore the original key`);
   return root;

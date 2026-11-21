@@ -382,6 +382,22 @@ test("the vault from env connects the Google apps its composition root passes, w
   expect(await vaultFromEnv({ baseURL: "http://localhost:3000" }, undefined, { googleApps: [GOOGLE_SEARCH_CONSOLE_PROVIDER] }).start(a)).toEqual({ ok: false, reason: "unknown_connection" });
 });
 
+test("the vault from env uses a root key its caller supplies, with none in env", async () => {
+  const a = { workspaceId: crypto.randomUUID(), userId: crypto.randomUUID(), connection: "google_search_console" };
+  const fixture = masterRootKey(Buffer.alloc(32, 0x11));
+  const purposes: string[] = [];
+  const rootKey = { ...fixture, derive: (purpose: string) => (purposes.push(purpose), fixture.derive(purpose)) };
+  const saved = process.env.DIREX_MASTER_KEY;
+  delete process.env.DIREX_MASTER_KEY;
+  try {
+    const vault = vaultFromEnv({ baseURL: "http://localhost:3000", google: { clientId: "id-1", clientSecret: "secret-1" }, rootKey }, undefined, { googleApps: [GOOGLE_SEARCH_CONSOLE_PROVIDER] });
+    expect((await vault.start(a)).ok).toBe(true);
+    expect(purposes.length).toBeGreaterThan(0);
+  } finally {
+    process.env.DIREX_MASTER_KEY = saved;
+  }
+});
+
 test("Search Console uses the Workspace's own Google app, else the sign-in pair, and is unknown with neither", async () => {
   process.env.DIREX_MASTER_KEY = "11".repeat(32);
   const { ws, owner } = await newWorkspace();

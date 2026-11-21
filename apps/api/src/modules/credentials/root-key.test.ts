@@ -100,6 +100,26 @@ test("a different key refuses to start and names both ids", async () => {
   await expect(refusal).rejects.toThrow(original);
 });
 
+test("a supplied key is checked against the recorded one like a key from env, and generates nothing", async () => {
+  const recorded = rootKeyFromEnv(env);
+  const bare = { DIREX_DATA_DIR: dataDir() };
+  const lines: string[] = [];
+  expect(await ensureRootKey(bare, (l) => lines.push(l), recorded)).toBe(recorded);
+  expect(lines).toEqual([]);
+  expect(existsSync(join(bare.DIREX_DATA_DIR, "master.key"))).toBe(false);
+  const other = masterRootKey(Buffer.alloc(32, 7));
+  const refusal = ensureRootKey(bare, () => undefined, other);
+  await expect(refusal).rejects.toThrow(other.id);
+  await expect(refusal).rejects.toThrow(recorded.id);
+});
+
+test("a supplied key refuses to start while env also names one, so only one key can run", async () => {
+  const recorded = rootKeyFromEnv(env);
+  for (const named of [{ DIREX_MASTER_KEY: "11".repeat(32) }, { DIREX_MASTER_KEY_FILE: file }]) {
+    await expect(ensureRootKey(named, () => undefined, recorded)).rejects.toThrow("a root key was supplied to runServer, so DIREX_MASTER_KEY and DIREX_MASTER_KEY_FILE must be unset");
+  }
+});
+
 test("a lost key refuses to start and generates nothing", async () => {
   rmSync(file);
   await expect(ensureRootKey(env)).rejects.toThrow(/no root key found.*Restore its key file/);

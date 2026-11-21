@@ -20,6 +20,7 @@ const LABELS: Record<string, string> = {
   workspace_paused: "sending is paused",
   mailbox_paused: "this email account is paused",
   workspace_deleted: "the Workspace was deleted",
+  operator_hold: "whoever runs this Direx stopped sending",
   suppressed: "this Person opted out",
   hard_bounced: "this address doesn't exist",
   reply_unread: "a reply hasn't been read yet",

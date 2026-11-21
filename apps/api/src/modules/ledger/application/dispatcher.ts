@@ -23,6 +23,7 @@ import {
   inWorkspace,
   liveApproval,
   lockAction,
+  operatorHold,
   readAction,
   transition,
   workspaceDeleted,
@@ -107,6 +108,9 @@ export function dispatcher(deps: DispatcherDeps) {
   // Approval, signature, spec, snapshot and live checks, run at claim and again at
   // dispatch, inside the transaction that holds the row.
   async function verifyAll(tx: LedgerTx, row: ActionRow, keys: WorkspaceKeys): Promise<CheckResult> {
+    // First, under the row lock: a hold committed before this point stops the Action, whatever else holds it.
+    const operator = await operatorHold(tx, row.workspaceId);
+    if (operator) return hold("operator_hold", operator);
     const approval = await liveApproval(tx, row.id);
     if (!approval) return hold("approval_invalid", "no live approval");
     const snapshot = approval.snapshot as SnapshotEntry[];
@@ -440,8 +444,35 @@ export function dispatcher(deps: DispatcherDeps) {
     return "done";
   }
 
+  // Whoever runs this Direx holds the Workspace, its Organization or the deployment: due Actions are
+  // held as operator_hold, before any key is fetched or any plugin is called. A hold, not a block, so
+  // a mistaken one costs nothing: lifting it resumes them through every check. A resend after an
+  // unknown outcome may already have gone out, so it stays held as unknown, for a person.
+  async function stopForOperator(workspaceId: string, actionId: string): Promise<Pass> {
+    return inWorkspace(workspaceId, async (tx): Promise<Pass> => {
+      const at = deps.now();
+      const row = await lockAction(tx, actionId);
+      if (!row || !dueWork(row, at)) return "done";
+      const scope = await operatorHold(tx, workspaceId);
+      if (!scope) return "again";
+      const unknown = row.outcomeUnknownAt !== null;
+      await transition(
+        tx,
+        row,
+        { state: "held", reason: unknown ? "outcome_unknown" : "operator_hold", detail: unknown ? "operator_hold" : scope, set: { nextAttemptAt: null } },
+        SYSTEM,
+        at,
+      );
+      return "done";
+    });
+  }
+
   async function pass(workspaceId: string, actionId: string): Promise<Pass> {
-    const { peek, deleted } = await inWorkspace(workspaceId, async (tx) => ({ peek: await readAction(tx, actionId), deleted: await workspaceDeleted(tx) }));
+    const { peek, deleted, operator } = await inWorkspace(workspaceId, async (tx) => ({
+      peek: await readAction(tx, actionId),
+      deleted: await workspaceDeleted(tx),
+      operator: await operatorHold(tx, workspaceId),
+    }));
     // Gone, or another workspace's id: the job is done and never retried another way.
     if (!peek) return "done";
     const at = deps.now();
@@ -455,6 +486,8 @@ export function dispatcher(deps: DispatcherDeps) {
     ) {
       return reconcile(workspaceId, peek);
     }
+    // After reconcile, which only asks the provider whether an earlier send went out.
+    if (operator && dueWork(peek, at)) return stopForOperator(workspaceId, actionId);
 
     // Before the lock: fetching keys may reach a key service. Only the claim and the dispatch
     // check verify an approval, so recovery and expiry still run when the keys won't load.

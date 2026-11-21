@@ -47,13 +47,16 @@ function toPost(p: PostView): Post {
   return { id: p.uri, accountId: p.author.did, kind, createdAt: iso(r.createdAt), text: r.text ?? "", links: [...new Set(links)], permalink };
 }
 
-async function get<T>(h: SocialHttp, path: string, missing?: T): Promise<T> {
+async function get<T>(h: SocialHttp, path: string, missing?: { repo: string; value: T }): Promise<T> {
   const r = await send(h, path, { method: "GET" });
   if (r.status === 429) {
     const told = r.headers.has("ratelimit-reset") || r.headers.has("retry-after");
     throw new PluginError("rate_limited", "Bluesky asked to wait", { status: 429, ...(told && { waitMs: waitFrom(r.headers, Date.now(), 0) }) });
   }
-  if (missing !== undefined && (r.status === 400 || r.status === 404) && r.body?.error === "RecordNotFound") return missing;
+  if (missing) {
+    if ((r.status === 400 || r.status === 404) && r.body?.error === "RecordNotFound") return missing.value;
+    if (r.status === 400 && r.body?.error === "InvalidRequest" && r.body.message === `Could not find repo: ${missing.repo}`) return missing.value;
+  }
   if (r.status >= 300) throw new SocialHttpError(r.status);
   return r.body as T;
 }
@@ -63,7 +66,7 @@ async function lookupRepost(h: SocialHttp, id: string): Promise<Post | null> {
   if (!match) throw new PluginError("provider_error", "Bluesky gave no valid repost record URI");
   const [, repo, rkey] = match;
   const q = new URLSearchParams({ repo: repo!, collection: REPOST, rkey: rkey! });
-  const raw = await get<unknown>(h, `/xrpc/com.atproto.repo.getRecord?${q}`, RECORD_MISSING);
+  const raw = await get<unknown>(h, `/xrpc/com.atproto.repo.getRecord?${q}`, { repo: repo!, value: RECORD_MISSING });
   if (raw === RECORD_MISSING) return null;
   const record = repostRecord.safeParse(raw);
   if (!record.success || record.data.uri !== id) throw new PluginError("provider_error", "Bluesky gave an invalid repost record");
@@ -104,7 +107,12 @@ export async function blueskyPosts(h: SocialHttp, raw: unknown, c: Credential | 
   for (const f of page.feed) {
     const time = Date.parse(sortAt(f));
     if (time <= sinceMs) continue;
-    const post = f.reason?.$type === "app.bsky.feed.defs#reasonRepost" ? await lookupRepost(h, f.reason.uri ?? "") : toPost(f.post);
+    let post: Post | null;
+    if (f.reason?.$type === "app.bsky.feed.defs#reasonRepost") {
+      post = f.reason.uri === undefined ? null : await lookupRepost(h, f.reason.uri);
+    } else {
+      post = toPost(f.post);
+    }
     if (post) posts.push(post);
     watermark = Math.max(watermark, time);
   }

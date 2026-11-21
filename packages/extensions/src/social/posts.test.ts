@@ -103,8 +103,29 @@ test("Bluesky: listed reposts round-trip without a session and only a missing re
   expect(b.calls.every((c) => c.method === "GET" && c.auth === null)).toBe(true);
 });
 
-test("Bluesky: an unidentified repost cannot masquerade as the original post", async () => {
+test("Bluesky: a missing repost repo is omitted while other invalid requests still fail", async () => {
+  const deletedDid = "did:plc:deleted";
+  const deletedRepost = `at://${deletedDid}/app.bsky.feed.repost/x1`;
+  addRepost(repost);
+  b.failNext.push(Response.json({ error: "InvalidRequest", message: `Could not find repo: ${deletedDid}` }, { status: 400 }));
+  expect(ids(await read(bsky, { ids: [deletedRepost, repost] }, null))).toEqual([repost]);
+
+  b.failNext.push(Response.json({ error: "InvalidRequest", message: `Could not find repo: ${did}` }, { status: 400 }));
+  await expect(read(bsky, { ids: [deletedRepost] }, null)).rejects.toMatchObject({ reason: "provider_error", status: 400 });
+});
+
+test("Bluesky: a repost without a URI is omitted and the rest of the page is returned", async () => {
   addRepost(undefined);
+  b.feed.push(item("own", "2026-11-20T10:00:00.000Z"), item("older", "2026-11-20T09:00:00.000Z"));
+  const out = await read(bsky, { limit: 2 }, login);
+  expect(ids(out)).toEqual([uri("own")]);
+  expect(JSON.parse(out.newest!)).toEqual({ since: repostReason.indexedAt });
+  expect(b.paths()).toEqual(["/xrpc/app.bsky.feed.getAuthorFeed"]);
+  expect(ids(await read(bsky, { cursor: out.next, limit: 2 }, login))).toEqual([uri("older")]);
+});
+
+test("Bluesky: an explicitly malformed repost URI remains a provider error", async () => {
+  addRepost("");
   await expect(read(bsky, { limit: 5 }, login)).rejects.toMatchObject({ reason: "provider_error", message: expect.stringContaining("repost record URI") });
   expect(b.paths()).toEqual(["/xrpc/app.bsky.feed.getAuthorFeed"]);
 });

@@ -4,7 +4,7 @@
 // the Mailbox's plugin; a DM's in the transaction that makes the DM. Uses are written with the message.
 // A link no use points at never redirects.
 import { createHash, randomBytes } from "node:crypto";
-import { campaignTracking, countryOf, inWorkspace, insertUses, linkDestination, linkFor, type TrackingTx, type UseTarget } from "../adapters/repo";
+import { campaignTracking, countryOf, destinationOf, inWorkspace, insertUses, linkDestination, linkFor, type TrackingTx, type UseTarget } from "../adapters/repo";
 import { rewriteLinks } from "../domain/rewrite";
 
 /** Which Campaign step a message belongs to; the Campaign says whether and where it tracks. */
@@ -81,3 +81,19 @@ export const recordUses = (tx: TrackingTx, workspaceId: string, itemId: string, 
 
 /** Records the fixed links as used by an Action or a DM, in the transaction that wrote it. */
 export const recordUsesOf = (tx: TrackingTx, workspaceId: string, target: Exclude<UseTarget, { itemId: string }>, fixed: FixedLinks, now: Date) => insertUses(tx, workspaceId, target, fixed.inputsHash, fixed.uses, now);
+
+/**
+ * Where a tracked link of this Workspace goes, or the URL itself when it isn't one. A link card is read
+ * from the destination, never through the redirect, which an unapproved post's link doesn't answer.
+ */
+export async function trackedDestination(workspaceId: string, url: string): Promise<string> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return url;
+  }
+  const linkId = TRACKED_PATH.exec(u.pathname)?.[1];
+  if (u.protocol !== "https:" || !linkId) return url;
+  return (await inWorkspace(workspaceId, (tx) => destinationOf(tx, u.hostname, linkId))) ?? url;
+}

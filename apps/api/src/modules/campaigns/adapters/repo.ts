@@ -6,7 +6,7 @@ import { campaignActions, campaignDms, campaignOutcomes, campaignPeople, campaig
 import { replySignals } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
 import { socialPosts } from "@direx/db/schema-social";
-import { trackingDomains } from "@direx/db/schema-tracking";
+import { trackedLinks, trackedLinkUses, trackingDomains } from "@direx/db/schema-tracking";
 import type { VisibleState } from "../../items";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQLWrapper } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -339,12 +339,21 @@ export function postCounts(tx: CampaignsTx, campaignId: string) {
 
 export async function campaignOfAction(tx: CampaignsTx, actionId: string) {
   const [row] = await tx
-    .select({ pausedAt: campaigns.pausedAt, status: campaignPeople.status, planChanged: planChangeUndecided(campaignActions.campaignId, campaignActions.stepKey) })
+    .select({ campaignId: campaignActions.campaignId, personId: campaignActions.personId, pausedAt: campaigns.pausedAt, status: campaignPeople.status, planChanged: planChangeUndecided(campaignActions.campaignId, campaignActions.stepKey) })
     .from(campaignActions)
     .innerJoin(campaigns, eq(campaigns.id, campaignActions.campaignId))
     .innerJoin(campaignPeople, and(eq(campaignPeople.campaignId, campaignActions.campaignId), eq(campaignPeople.personId, campaignActions.personId)))
     .where(eq(campaignActions.actionId, actionId));
   return row ?? campaignOfPost(tx, actionId);
+}
+
+/** Only recipient uses made for this Action. The caller matches them against the fixed text. */
+export function recipientLinkUses(tx: CampaignsTx, actionId: string) {
+  return tx.select({ linkId: trackedLinkUses.linkId, tokenHash: trackedLinkUses.tokenHash, hostname: trackingDomains.hostname, inputsHash: trackedLinkUses.inputsHash })
+    .from(trackedLinkUses)
+    .innerJoin(trackedLinks, eq(trackedLinks.id, trackedLinkUses.linkId))
+    .innerJoin(trackingDomains, eq(trackingDomains.id, trackedLinks.domainId))
+    .where(and(eq(trackedLinkUses.actionId, actionId), isNotNull(trackedLinkUses.tokenHash)));
 }
 
 /** The step and joining time behind an Action, for standing rules. */

@@ -32,7 +32,9 @@ const plugins = loadPlugins({
   confinement: "none",
   log: () => {},
 });
+let afterClaim: ((actionId: string) => Promise<void>) | undefined;
 const { clock, ledger } = await testLedger({
+  onStep: async (step, id) => { if (step === "claim") await afterClaim?.(id); },
   effects: plugins.effects,
   resolvers: { credential: credentialLabel, fact: factVersion, template: templateVersion, step_output: stepOutputVersion },
   checks: [workspaceLive(), outreachFloors(async () => true, () => clock.at), campaignCheck(), approverMayApprove(), touchCheck({ effects: plugins.effects, now: () => clock.at }), credentialReady],
@@ -156,7 +158,7 @@ const made = async (id: string) => ok(await make(id)).results;
 const actionOf = async (itemId: string) => (await q("select action_id from items where id = $1", [itemId]))[0].action_id as string;
 const message = (i: number) => Buffer.from(Buffer.from(fake.sent[i]!.raw, "base64url").toString().split("\r\n\r\n")[1]!, "base64").toString();
 
-test("once a Campaign tracks links, its new email drafts carry tracked links, and a US Person's carry a token and the line", async () => {
+test.each(["before claim", "after claim"])("tracking disabled %s holds a draft with recipient links", async (when) => {
   const id = await ready();
   ok(await write(id, { subject: "Hi {{firstName}}", text: "Hello {{firstName}}, see https://acme.example/offer." }));
   const [before] = await addPeople(id, [person({ first: "Ana" })]);
@@ -175,12 +177,38 @@ test("once a Campaign tracks links, its new email drafts carry tracked links, an
   ok(await campaigns.setTracking(W, id, { on: true, domainId: d.id, wordingVersion: 1, userId: owner }));
   ok(await campaigns.setPerPerson(W, id, { on: true, wordingVersion: 1, userId: owner }));
   const [after] = await addPeople(id, [person({ first: "Bo" })]);
-  ok(await make(id));
+  const itemId = (await made(id)).find((draft) => draft.personId === after)!.itemId!;
   const host = d.hostname.replaceAll(".", "\\.");
   // Ana's draft was fixed before; Bo's, made after, carries a token (US, stated) and says so above the stop line.
   expect(await textOf(before!)).toContain("see https://acme.example/offer.");
   expect(await textOf(after!)).toMatch(new RegExp(`^Hello Bo, see https://${host}/t/[A-Za-z0-9_-]{22}/[A-Za-z0-9_-]{43}\\.`));
   expect(await textOf(after!)).toContain("Links in this email are tracked per recipient to measure engagement.\nReply");
+
+  expect((await approve({ id: itemId })).status).toBe(200);
+  const action = await actionOf(itemId);
+  const disable = async () => { ok(await campaigns.setPerPerson(W, id, { on: false, userId: owner })); };
+  if (when === "before claim") await disable();
+  else afterClaim = async (claimed) => { if (claimed === action) await disable(); };
+  try {
+    expect(await sendsAtSlot(action)).toBe(0);
+  } finally {
+    afterClaim = undefined;
+  }
+  expect(await holdOf(action)).toMatchObject({ state: "held", hold_reason: "tracking_changed" });
+  expect(await textOf(after!)).toContain("/t/");
+  expect(await textOf(after!)).toContain("tracked per recipient");
+
+  // Refreshing from the template fixes new bytes and invalidates the previous approval.
+  expect(await write(id, { subject: "Hi {{firstName}}", text: "Hello {{firstName}}, see https://acme.example/offer." }, 1)).toMatchObject({ failed: [] });
+  expect(await textOf(after!)).toMatch(new RegExp(`^Hello Bo, see https://${host}/t/[A-Za-z0-9_-]{22}\\.`));
+  expect(await textOf(after!)).not.toContain("tracked per recipient");
+  expect(await items.view(W, itemId)).toMatchObject({ state: "needs_approval" });
+  expect(await sendsAtSlot(action)).toBe(0);
+  expect((await approve({ id: itemId })).status).toBe(200);
+  const sent = await sendsAtSlot(action);
+  const final = await holdOf(action);
+  expect(final, JSON.stringify(final)).toMatchObject({ state: "sent" });
+  expect(sent).toBe(1);
 });
 
 test("refusals before any draft: no template, no Mailbox, no campaign", async () => {

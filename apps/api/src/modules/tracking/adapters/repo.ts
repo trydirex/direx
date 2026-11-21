@@ -55,6 +55,16 @@ export async function deleteDomain(tx: TrackingTx, id: string): Promise<void> {
   await tx.delete(trackingDomains).where(eq(trackingDomains.id, id));
 }
 
+/** Where this Workspace's link on this host goes, or undefined when it has no such link. */
+export async function destinationOf(tx: TrackingTx, hostname: string, linkId: string): Promise<string | undefined> {
+  const [row] = await tx
+    .select({ destination: trackedLinks.destination })
+    .from(trackedLinks)
+    .innerJoin(trackingDomains, and(eq(trackingDomains.workspaceId, trackedLinks.workspaceId), eq(trackingDomains.id, trackedLinks.domainId)))
+    .where(and(eq(trackedLinks.id, linkId), eq(trackingDomains.hostname, hostname)));
+  return row?.destination;
+}
+
 /** A Campaign's two switches and its tracking domain, or undefined when there is no such Campaign. */
 export async function campaignTracking(tx: TrackingTx, campaignId: string) {
   const [row] = await tx

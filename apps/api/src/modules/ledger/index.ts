@@ -11,7 +11,7 @@ import { inWorkspace, markOperatorHoldsReleased, operatorHoldsToRelease, type Le
 
 export type { Actor, ActionRow, ActionState, EventRow, LedgerTx, Triage } from "./adapters/ledger-repo";
 /** Reads Actions' live states without a lock, for modules that derive state from them. */
-export { readActionStates as actionStates, isOwnProbe, isPlacementMessage, isPlacementSend, sentByCorrelation, sentTo } from "./adapters/ledger-repo";
+export { operatorHold, readActionStates as actionStates, isOwnProbe, isPlacementMessage, isPlacementSend, sentByCorrelation, sentTo } from "./adapters/ledger-repo";
 export type { ApproverId, Refusal, Result } from "./application/actions";
 export { APPROVAL_TTL_MS, approverIdFromSession } from "./application/actions";
 export { utcMonth, withBudget, type BudgetKind, type BudgetScope } from "./adapters/budget-repo";

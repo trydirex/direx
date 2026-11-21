@@ -7,6 +7,7 @@ import type { Vault } from "../../credentials/index";
 import { warn, type Items, type ItemKind, type Warning } from "../../items/index";
 import type { Media } from "../../media/index";
 import { mailboxDay } from "../../schedule";
+import { fixLinks, recordUses, trackedDestination, type FixedLinks, type TrackingInput } from "../../tracking/index";
 import { specHash, type Actor, type Check } from "../../ledger/index";
 import type { Plugins, Prepared as PreparedSpec } from "../../plugins/index";
 import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, replacePost, runByOf, specOfAction, workspaceZone, type SocialTx } from "../adapters/repo";
@@ -54,7 +55,8 @@ export type PostTarget = {
 export type DraftStep = { campaignId: string; stepKey: string; title: string; plannedAt: Date };
 export type PostResult = { connection: string; networkId: string | null; ok: boolean; itemId?: string; mode?: "publish" | "manual"; reason?: string; detail?: string };
 /** A prepared post, with the text the network will show. */
-type Prepared = PreparedSpec & { text: string | undefined };
+// `asked` is the text the plugin was given: the person's words with their tracked links, if any.
+type Prepared = PreparedSpec & { text: string | undefined; asked: string; links: FixedLinks | null };
 
 export type PostsDeps = {
   plugins: () => Pick<Plugins, "socialFor" | "prepare" | "capabilityVersion">;
@@ -160,12 +162,16 @@ export function createPosts(deps: PostsDeps) {
     return { ok: true, mode: "publish", n, account, video, images, provider: provider as { publish: string; dedupe: NonNullable<typeof provider.dedupe> }, links: status("links") === "available" } as const;
   }
 
-  async function prepared(workspaceId: string, t: PostTarget, r: { provider: { publish: string }; links: boolean; video: { ref: object } | null; images: { ref: object }[] }) {
+  async function prepared(workspaceId: string, t: PostTarget, r: { provider: { publish: string }; links: boolean; video: { ref: object } | null; images: { ref: object }[] }, step: TrackingInput | null = null): Promise<Prepared> {
+    // A Campaign step's post carries the step's tracked links, the same for every reader (ADR 0035
+    // rule 012), unless its Network drops links anyway. Follow-up comments keep theirs as written.
+    const links = step && r.links ? await fixLinks(workspaceId, { ...step, personId: null, text: t.text, now: now() }) : null;
+    const asked = links?.text ?? t.text;
     // A text post's input has no media, so its approval hash is as it was before video and images.
     const media = r.video ? { media: [r.video.ref] } : r.images.length ? { media: r.images.map((i) => i.ref), alt: r.images.map((_, i) => t.alt?.[i] ?? "") } : {};
-    const input = { text: t.text, followUps: t.followUps ?? [], target: t.networkId, links: r.links, ...media };
+    const input = { text: asked, followUps: t.followUps ?? [], target: t.networkId, links: r.links, ...media };
     const p = await deps.plugins().prepare(workspaceId, r.provider.publish, input);
-    return { ...p, text: storedSpec("social.publish", p.spec).text };
+    return { ...p, text: storedSpec("social.publish", p.spec).text, asked, links };
   }
 
   /**
@@ -199,7 +205,7 @@ export function createPosts(deps: PostsDeps) {
     } catch (e) {
       return { ...base, ok: false, reason: "refused_by_network", detail: refusal(e) };
     }
-    if (!r.links && p.text !== t.text) warnings.push(warn("unspecified", LINKS_REMOVED));
+    if (!r.links && p.text !== p.asked) warnings.push(warn("unspecified", LINKS_REMOVED));
     const version = deps.plugins().capabilityVersion(r.provider.publish);
     const item = await deps.items().createActionItem(workspaceId, {
       idempotencyKey: `social:calendar:${crypto.randomUUID()}`,
@@ -301,12 +307,13 @@ export function createPosts(deps: PostsDeps) {
 
         let p: Prepared;
         try {
-          p = await prepared(workspaceId, t, r);
+          p = await prepared(workspaceId, t, r, { campaignId: step.campaignId, stepKey: step.stepKey });
         } catch (e) {
           results.push({ ...base, ok: false, reason: "refused_by_network", detail: refusal(e) });
           continue;
         }
-        if (!r.links && p.text !== t.text) warnings.push(warn("unspecified", LINKS_REMOVED));
+        if (!r.links && p.text !== p.asked) warnings.push(warn("unspecified", LINKS_REMOVED));
+        const links = p.links;
         const version = deps.plugins().capabilityVersion(r.provider.publish);
         const snapshot = [...(version ? [{ kind: "capability", id: r.provider.publish, version }] : []), ...cited];
         if (existing) {
@@ -328,7 +335,11 @@ export function createPosts(deps: PostsDeps) {
             results.push({ ...base, ok: true, itemId: existing.itemId, mode: "publish" });
             continue;
           }
-          const revised = await deps.items().reviseActionItem(workspaceId, existing.itemId, { spec: p.spec, actor, placement: "auto", details: { ...details, snapshot } });
+          const revised = await inWorkspace(workspaceId, async (tx) => {
+            const done = await deps.items().reviseActionItemIn(tx, workspaceId, existing.itemId, { spec: p.spec, actor, placement: "auto", details: { ...details, snapshot } });
+            if (done.ok && links) await recordUses(tx, workspaceId, existing.itemId, links, now());
+            return done;
+          });
           results.push(revised.ok ? { ...base, ok: true, itemId: existing.itemId, mode: "publish" } : { ...base, ok: false, reason: revised.reason });
           continue;
         }
@@ -343,7 +354,10 @@ export function createPosts(deps: PostsDeps) {
             actor,
             placement: "auto",
             details: { ...details, snapshot },
-          }, (tx, itemId, actionId) => record(tx, itemId, actionId));
+          }, async (tx, itemId, actionId) => {
+            await record(tx, itemId, actionId);
+            if (links) await recordUses(tx, workspaceId, itemId, links, now());
+          });
           await deps.items().submitItem(workspaceId, item.id, actor);
           results.push({ ...base, ok: true, itemId: item.id, mode: "publish" });
         } catch (e) {
@@ -390,13 +404,18 @@ export function createPosts(deps: PostsDeps) {
       }
       let p: Prepared;
       try {
-        p = await prepared(workspaceId, t, r);
+        p = await prepared(workspaceId, t, r, row.campaignId ? { campaignId: row.campaignId, stepKey: row.stepKey } : null);
       } catch (e) {
         return { ok: false, reason: "refused_by_network", detail: refusal(e) };
       }
-      if (!r.links && p.text !== text) warnings.push(warn("unspecified", LINKS_REMOVED));
+      if (!r.links && p.text !== p.asked) warnings.push(warn("unspecified", LINKS_REMOVED));
       const version = deps.plugins().capabilityVersion(r.provider.publish);
-      const revised = await deps.items().reviseActionItem(workspaceId, itemId, { spec: p.spec, actor, details: { title, warnings, snapshot: [...(version ? [{ kind: "capability", id: r.provider.publish, version }] : []), ...cited] } });
+      const links = p.links;
+      const revised = await inWorkspace(workspaceId, async (tx) => {
+        const done = await deps.items().reviseActionItemIn(tx, workspaceId, itemId, { spec: p.spec, actor, details: { title, warnings, snapshot: [...(version ? [{ kind: "capability", id: r.provider.publish, version }] : []), ...cited] } });
+        if (done.ok && links) await recordUses(tx, workspaceId, itemId, links, now());
+        return done;
+      });
       return revised.ok ? { ok: true, ...(p.count && { count: p.count }) } : { ok: false, reason: revised.reason };
     },
 
@@ -460,7 +479,9 @@ export type ReadImage = (url: string) => Promise<{ bytes: Buffer } | null>;
 export async function postAppearance(workspaceId: string, itemId: string, networks: readonly SocialNetworkInfo[], o: { text?: string | null; readPreview?: ReadPreview; readImage?: ReadImage; now?: Date } = {}) {
   const [row] = await inWorkspace(workspaceId, (tx) => postOfItem(tx, itemId));
   if (!row) return null;
-  const url = o.text ? firstLink(o.text) : null;
+  // A tracked link's card is its destination's, read without going through the redirect.
+  const shown = o.text ? firstLink(o.text) : null;
+  const url = shown && (await trackedDestination(workspaceId, shown));
   let link = null;
   if (url && o.readPreview) {
     const now = o.now ?? new Date();

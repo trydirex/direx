@@ -12,7 +12,8 @@ import { YOUTUBE_SCOPES } from "./social/youtube/provider";
 export type SocialAvailability = "available" | "awaiting_approval" | "not_built" | "not_available";
 
 export type NetworkFeature = {
-  key: "publish" | "links" | "follow_ups" | "video" | "image" | "analytics" | "comments";
+  /** `read`: Direx reads the account's own published posts as outside posts (ADR 0039). */
+  key: "publish" | "links" | "follow_ups" | "video" | "image" | "analytics" | "comments" | "read";
   /** Set once the module behind this feature is built on this network. */
   built: boolean;
   /** Granted scopes it needs; a missing one offers a reconnect. */
@@ -38,6 +39,8 @@ export type SocialNetworkInfo = {
   noDailyHealth?: boolean;
   /** Posts a month per Workspace on Direx's own app, because Direx pays for each. */
   monthlyPostLimit?: number;
+  /** How many days this network's posts may be kept as outside posts (ADR 0039). */
+  outsidePostDays?: number;
   /** The most characters one post takes, counted in code points. A post copied by hand has no plugin to count it, so this warns before approval. */
   postLimit?: number;
   /** The network's rules treat one text on several of its accounts as spam, so it warns. */

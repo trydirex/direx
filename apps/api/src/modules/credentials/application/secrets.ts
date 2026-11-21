@@ -6,6 +6,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { RootKey } from "../adapters/crypto";
 import { refreshTokens, revokeWithoutClient, renewToken, revokeToken, type AppProvider, type ClientPair, type Provider } from "../adapters/provider";
+import { firstApp, type AppOwner, type AppSource, type OAuthApp } from "./apps";
 import {
   findCredential,
   insertCredential,
@@ -76,11 +77,12 @@ export type CreateInput = {
 export type VaultDeps = {
   rootKey: RootKey;
   now: () => Date;
-  providers?: Provider[];
-  /** Providers whose client pair comes from the Workspace's own app, then `systemApp`. */
+  /** Fixed client pairs take precedence over the app lookup. Their default owner is the deployment. */
+  providers?: (Provider & { appOwner?: Exclude<AppOwner, "workspace"> })[];
+  /** Providers whose client pair comes from the Workspace's own app, then `appSources`. */
   appProviders?: AppProvider[];
-  /** The deployment's own app for a connection, if it has one. */
-  systemApp?: (connection: string) => Promise<ClientPair | null>;
+  /** Where an app comes from when the Workspace has none of its own, in order. */
+  appSources?: readonly AppSource[];
   identify?: Identify;
   /** The fixed OAuth redirect, `<base URL>/api/connections/callback`. */
   callbackUrl?: string;
@@ -106,7 +108,9 @@ export function createVault(deps: VaultDeps) {
   const timeoutMs = deps.timeoutMs ?? 10_000;
   const keys = keyring(deps.rootKey, now);
   const appProviders = deps.appProviders ?? [];
-  const templateFor = (connection: string | null) => providers.find((p) => p.connection === connection) ?? appProviders.find((p) => p.connection === connection);
+  const appSources = deps.appSources ?? [];
+  const fixedProviderFor = (connection: string | null) => providers.find((p) => p.connection === connection);
+  const templateFor = (connection: string | null) => fixedProviderFor(connection) ?? appProviders.find((p) => p.connection === connection);
 
   type WorkspaceApp = ClientPair & { ownAppVersion: string };
 
@@ -119,42 +123,52 @@ export function createVault(deps: VaultDeps) {
     return value && clientId ? { clientId, clientSecret: value.password, ownAppVersion: `${row.id}:${row.version}` } : null;
   }
 
+  /** The app a new connect would use: the Workspace's own, else the first source's. */
+  type SourcedApp = ClientPair & { owner: AppOwner; ownAppVersion?: string };
+  const readOwnApp = (workspaceId: string, connection: string) =>
+    withWorkspace(workspaceId, (tx) => workspaceApp(tx, workspaceId, connection));
+  const sourcedApp = async (ownApp: WorkspaceApp | null, outside: () => Promise<OAuthApp | null>): Promise<SourcedApp | null> =>
+    ownApp ? { ...ownApp, owner: "workspace" } : outside();
+  const currentApp = async (workspaceId: string, connection: string) =>
+    sourcedApp(await readOwnApp(workspaceId, connection), () => firstApp(appSources, { workspaceId, connection }));
+
   type ProviderFor = (connection: string | null) => Promise<ConnectProvider | undefined>;
-  async function resolveProvider(connection: string | null, ownApp: (connection: string) => Promise<WorkspaceApp | null>, systemApp: VaultDeps["systemApp"]): Promise<ConnectProvider | undefined> {
-    const fixed = providers.find((p) => p.connection === connection);
+  async function resolveProvider(connection: string | null, app: (connection: string) => Promise<SourcedApp | null>): Promise<ConnectProvider | undefined> {
+    const fixed = fixedProviderFor(connection);
     if (fixed || !connection) return fixed;
     const template = appProviders.find((p) => p.connection === connection);
     if (!template) return undefined;
-    const pair = (await ownApp(connection)) ?? (await systemApp?.(connection));
-    return pair ? { ...template, ...pair } : undefined;
+    const found = await app(connection);
+    if (!found) return undefined;
+    const { clientId, clientSecret, ownAppVersion } = found;
+    return { ...template, clientId, clientSecret, ...(ownAppVersion === undefined ? {} : { ownAppVersion }) };
   }
-
-  const readOwnApp = (workspaceId: string, connection: string) =>
-    withWorkspace(workspaceId, (tx) => workspaceApp(tx, workspaceId, connection));
 
   const providerFor = (workspaceId: string, connection: string | null) =>
-    resolveProvider(connection, (name) => readOwnApp(workspaceId, name), deps.systemApp);
+    resolveProvider(connection, (name) => currentApp(workspaceId, name));
 
-  class NeedSystemApp extends Error {
-    constructor(readonly connection: string) { super("Read the system app outside the Workspace transaction"); }
+  class NeedSourcedApp extends Error {
+    constructor(readonly connection: string) { super("Read the app sources outside the Workspace transaction"); }
   }
 
-  // A server app may itself need a vault checkout in the system Workspace. Release this
-  // connection before reading it, then retry from the start (including readiness, lock
-  // and own-app precedence). The lookup must be requested before any provider call or write.
+  // A source may itself need a vault checkout, as the deployment app does in the system
+  // Workspace. Release this connection before reading the sources, then retry from the start
+  // (including readiness, lock and own-app precedence). The lookup must be requested before
+  // any provider call or write.
   async function withProviderWorkspace<T>(workspaceId: string, run: (tx: WorkspaceTx, provider: ProviderFor) => Promise<T>): Promise<T> {
-    const fallback = new Map<string, ClientPair | null>();
+    const fallback = new Map<string, OAuthApp | null>();
     for (;;) {
       try {
         return await withWorkspace(workspaceId, (tx) =>
-          run(tx, (connection) => resolveProvider(connection, (name) => workspaceApp(tx, workspaceId, name),
-            deps.systemApp && (async (name) => {
-              if (!fallback.has(name)) throw new NeedSystemApp(name);
+          run(tx, (connection) => resolveProvider(connection, async (name) =>
+            sourcedApp(await workspaceApp(tx, workspaceId, name), async () => {
+              if (!appSources.length) return null;
+              if (!fallback.has(name)) throw new NeedSourcedApp(name);
               return fallback.get(name) ?? null;
             }))));
       } catch (e) {
-        if (!(e instanceof NeedSystemApp)) throw e;
-        fallback.set(e.connection, (await deps.systemApp?.(e.connection)) ?? null);
+        if (!(e instanceof NeedSourcedApp)) throw e;
+        fallback.set(e.connection, await firstApp(appSources, { workspaceId, connection: e.connection }));
       }
     }
   }
@@ -432,10 +446,17 @@ export function createVault(deps: VaultDeps) {
   };
   const { issueLink, openLink, claimLink, links } = connect;
 
-  /** Whose app a connection would use here, without using it. */
+  /** Who owns the app a new connect would use here, without using it. */
+  const appOwner = async (workspaceId: string, connection: string): Promise<AppOwner | null> => {
+    const fixed = fixedProviderFor(connection);
+    if (fixed) return fixed.appOwner ?? "deployment";
+    return (await currentApp(workspaceId, connection))?.owner ?? null;
+  };
+
+  /** Whose app a connection would use here: the Workspace's own, or any other owner's. */
   async function appSource(workspaceId: string, connection: string): Promise<"own" | "system" | null> {
-    if (await readOwnApp(workspaceId, connection)) return "own";
-    return (await deps.systemApp?.(connection)) ? "system" : null;
+    const owner = await appOwner(workspaceId, connection);
+    return owner === null ? null : owner === "workspace" ? "own" : "system";
   }
 
   /** A network said this token no longer works. A reconnect makes it active again and resumes held work. */
@@ -471,7 +492,7 @@ export function createVault(deps: VaultDeps) {
     return timingSafeEqual(Buffer.from(signature, "hex"), createHmac("sha256", r.value.value).update(body).digest());
   }
 
-  const vault = { appSource, markNeedsReauth, setMeta, approvalKeys: approvalKeyStore(keys, now), memberKeys: memberKeyStore(keys, now), create, rotate, remove, list, find, events, start: connect.start, callback, connectionOf: connect.connectionOf, issueLink, openLink, claimLink, links, linkCallback, credentials, verifyHmac };
+  const vault = { appOwner, appSource, markNeedsReauth, setMeta, approvalKeys: approvalKeyStore(keys, now), memberKeys: memberKeyStore(keys, now), create, rotate, remove, list, find, events, start: connect.start, callback, connectionOf: connect.connectionOf, issueLink, openLink, claimLink, links, linkCallback, credentials, verifyHmac };
   resolvers.set(vault, resolve);
   return vault;
 }

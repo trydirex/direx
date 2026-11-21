@@ -2,7 +2,7 @@
 // generate through the real AI SDK against a fake provider over real HTTP, as the app role.
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { z } from "zod";
-import { appClient, insertAuthUser } from "../../../../../test/db";
+import { appClient, insertAuthUser, ownerClient } from "../../../../../test/db";
 import { withBudget } from "../ledger/index";
 import type { Keys } from "./adapters/keys";
 import * as repo from "./adapters/repo";
@@ -154,6 +154,25 @@ test("a key that was only refused may run again once the limit clears", async ()
   expect(await cloud().generate({ ...req, run: tiny })).toMatchObject({ refusal: "run_cap" });
   expect(await cloud().generate({ ...req, run: { ...tiny, costCapMicros: 1_000_000n } })).toMatchObject({ ok: true });
   expect(await q(ws, "select status, refusal from model_calls")).toEqual([{ status: "completed", refusal: null }]);
+});
+
+test("an operator hold refuses the Workspace's calls before any dispatch, but still reads replies for opt-outs", async () => {
+  const ws = await newWorkspace();
+  const owner = await ownerClient();
+  try {
+    await owner.query("select system.set_operator_hold('workspace', $1, 'abuse', 'cli:ops')", [ws]);
+    fake.respondWith(() => anthropicText("OK"));
+    const before = fake.received.length;
+    const held = await cloud().generate(request(ws));
+    expect(held).toMatchObject({ ok: false, refusal: "operator_hold" });
+    expect(fake.received.length).toBe(before);
+    expect(await call(ws, held.callId)).toMatchObject({ status: "refused", refusal: "operator_hold", reservation_id: null });
+    expect(await cloud().generate(request(ws, { purpose: "optout_detect" }))).toMatchObject({ ok: true });
+    await owner.query("select system.lift_operator_hold('workspace', $1, 'cli:ops')", [ws]);
+    expect(await cloud().generate(request(ws))).toMatchObject({ ok: true });
+  } finally {
+    await owner.end();
+  }
 });
 
 test("the API key appears in no row or result, even when the provider echoes it", async () => {

@@ -9,6 +9,7 @@ import { createBlueskyPlugin } from "./bluesky/plugin";
 import { createFacebookPlugin } from "./facebook/plugin";
 import { createInstagramPlugin } from "./instagram/plugin";
 import { createThreadsPlugin } from "./threads/plugin";
+import { socialManifest } from "./http";
 import { createXPlugin } from "./x/plugin";
 
 const seen: { path: string; body: string }[] = [];
@@ -110,6 +111,18 @@ test("every OAuth network has a plugin, a provider and a descriptor, and only th
   for (const p of plugins) expect(p.manifest.capabilities.map((c) => c.name)).toEqual(["instagram", "linkedin_page", "tiktok", "youtube"].includes(p.manifest.connections[0]!.key) ? reads : [...reads, "social.publish"]);
   expect(socialProviders().map((p) => p.connection).sort()).toEqual(connections.filter((c) => c !== "bluesky"));
   for (const c of connections) expect(socialNetworks().map((n) => n.connection)).toContain(c);
+});
+
+test("socialManifest declares social.posts only when asked, and is otherwise unchanged", () => {
+  const m = { id: "com.example.net", connection: "net", hosts: ["api.example.com"] };
+  const reads = [
+    { kind: "query", name: "social.identity", connection: "net" },
+    { kind: "query", name: "social.health", connection: "net" },
+  ];
+  const today = { id: m.id, apiVersion: 1, version: "0.1.0", minHostVersion: "0.1.0", trust: "first_party", connections: [{ key: "net", auth: "oauth2" }], egress: { hosts: m.hosts }, capabilities: reads };
+  expect(socialManifest(m)).toStrictEqual(today);
+  expect(socialManifest({ ...m, posts: false })).toStrictEqual(today);
+  expect(socialManifest({ ...m, posts: true })).toStrictEqual({ ...today, capabilities: [...reads, { kind: "query", name: "social.posts", connection: "net" }] });
 });
 
 test("the list has 21 networks, without Skool, Reddit closed, and nothing marked available", () => {

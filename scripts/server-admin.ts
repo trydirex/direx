@@ -9,6 +9,11 @@
 //   bun run server-admin purge --replay <file> [--confirm]
 //                                               after a restore, purges again every Workspace whose
 //                                               receipt is in the file, one JSON receipt per line
+//   bun run server-admin hold (--org <id> | --workspace <id> | --deployment) --reason <text>
+//                                               stops sending there until lifted; no member can lift it
+//   bun run server-admin lift (--org <id> | --workspace <id> | --deployment)
+//                                               lifts it: what it held is checked again and resumes
+//   bun run server-admin holds                  lists the live operator holds
 // The link is printed here and nowhere else. Agents never read, print or pass it on (DX-R-0024-006).
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -22,6 +27,9 @@ const USAGE = [
   "       bun run server-admin <email>",
   "       bun run server-admin purge <workspace-id> [--confirm]",
   "       bun run server-admin purge --replay <receipts file> [--confirm]",
+  "       bun run server-admin hold (--org <id> | --workspace <id> | --deployment) --reason <text>",
+  "       bun run server-admin lift (--org <id> | --workspace <id> | --deployment)",
+  "       bun run server-admin holds",
 ].join("\n");
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -89,6 +97,53 @@ const MAX_HOURS = 72;
 
 const codeOf = (e: unknown) => (e as { code?: string }).code;
 
+type HoldOpts = { org?: string; workspace?: string; deployment?: boolean; reason?: string };
+const HOLD_COMMANDS = new Set(["hold", "lift", "holds"]);
+
+/** Operator holds (docs/operator-holds.md): set, lift or list them. Returns the exit code. */
+async function holdCommand(command: string, values: HoldOpts, args: number, db: Db, o: { print: (line: string) => void; actor: string }): Promise<number> {
+  const { print } = o;
+  const usage = () => {
+    print(USAGE);
+    return 2;
+  };
+  if (args !== 1) return usage();
+  if (command === "holds") {
+    if (values.org !== undefined || values.workspace !== undefined || values.deployment || values.reason !== undefined) return usage();
+    const { rows } = await db.query("select scope, target, reason, set_by, set_at from system.operator_holds where lifted_at is null order by set_at");
+    if (!rows.length) print("No operator holds are live.");
+    for (const r of rows) print(`${r.scope}${r.target ? ` ${r.target}` : ""}: ${r.reason} (set by ${r.set_by}, ${new Date(r.set_at as string).toISOString()})`);
+    return 0;
+  }
+  const picked: [string, string | null][] = [];
+  if (values.org !== undefined) picked.push(["organization", values.org]);
+  if (values.workspace !== undefined) picked.push(["workspace", values.workspace]);
+  if (values.deployment) picked.push(["deployment", null]);
+  const reason = values.reason?.trim();
+  const [scope, target] = picked[0] ?? [];
+  if (picked.length !== 1 || (target !== null && !UUID.test(target!)) || (command === "hold") !== (reason !== undefined)) return usage();
+  const named = target ? `${scope} ${target}` : "the deployment";
+  if (command === "hold") {
+    if (!reason || reason.length > 500) {
+      print("--reason must say why, in at most 500 characters. Only operators read it.");
+      return 2;
+    }
+    let made: unknown;
+    try {
+      made = (await db.query("select system.set_operator_hold($1, $2, $3, $4) as id", [scope, target, reason, o.actor])).rows[0]!.id;
+    } catch (e) {
+      if (codeOf(e) !== "DX404") throw e;
+      print(`No ${scope} has that id.`);
+      return 1;
+    }
+    print(made ? `Held ${named}. Nothing it has due sends, and no model runs for it, until you lift the hold.` : `${named} was already held. Nothing changed.`);
+    return 0;
+  }
+  const lifted = (await db.query("select system.lift_operator_hold($1, $2, $3) as lifted", [scope, target, o.actor])).rows[0]!.lifted;
+  print(lifted ? `Lifted the hold on ${named}. What it held is checked again and resumes within a minute.` : `${named} has no live hold. Nothing changed.`);
+  return lifted ? 0 : 1;
+}
+
 /** Runs one command; returns the exit code. Every line goes through `print`. */
 export async function serverAdmin(
   args: string[],
@@ -101,13 +156,31 @@ export async function serverAdmin(
     parsed = parseArgs({
       args,
       allowPositionals: true,
-      options: { invite: { type: "boolean" }, hours: { type: "string" }, confirm: { type: "boolean" }, replay: { type: "string" } },
+      options: {
+        invite: { type: "boolean" },
+        hours: { type: "string" },
+        confirm: { type: "boolean" },
+        replay: { type: "string" },
+        org: { type: "string" },
+        workspace: { type: "string" },
+        deployment: { type: "boolean" },
+        reason: { type: "string" },
+      },
     });
   } catch {
     print(USAGE);
     return 2;
   }
   const { values, positionals } = parsed;
+  const holdOption = values.org !== undefined || values.workspace !== undefined || values.deployment || values.reason !== undefined;
+  const hold = HOLD_COMMANDS.has(positionals[0] ?? "");
+  if (hold || holdOption) {
+    if (!hold || values.invite || values.hours !== undefined || values.confirm || values.replay !== undefined) {
+      print(USAGE);
+      return 2;
+    }
+    return holdCommand(positionals[0]!, values, positionals.length, db, { print, actor: opts.actor ?? "cli" });
+  }
 
   if (positionals[0] === "purge" && !values.invite && values.hours === undefined)
     return purgeCommand(values, positionals, db, { print, actor: opts.actor ?? "cli", deps: opts.purge });

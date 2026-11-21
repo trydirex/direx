@@ -672,6 +672,10 @@
     "0163_agent_drift_incidents.sql": {
       "sha256": "c0c4fa9d53bd2976334d052f4ccfd4b3ee0f8b7341ee1a42cdfd96be8344df6a",
       "description": "Adds agent_drift_incidents: one row per agent version and measure (rejections or citations) whose rate rose past the ADR 0008 rule 026 line, with both rates and run counts, under forced Workspace RLS, with UPDATE and DELETE revoked from the app"
+    },
+    "0164_drift_workspaces.sql": {
+      "sha256": "de35d25d6e894d203693384889a933f63a15a7a9c3d89885ea460ee8ef66bb59",
+      "description": "Adds system.drift_workspaces(): the live Workspaces with an agent proposal whose route is known, ids only, for the daily agent drift check (ADR 0008 rule 026)"
     }
   }
 }

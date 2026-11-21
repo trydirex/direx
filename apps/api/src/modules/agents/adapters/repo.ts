@@ -2,10 +2,11 @@
 // The only writer of agent_runs. A state change locks the row, compares the claim token and
 // bumps it. No network call belongs inside any of this.
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { withWorkspace, type WorkspaceTx } from "@direx/db";
-import { agentCancellations, agentProposals, agentRunEvents, agentRunParts, agentRuns, agentSettingRevisions, agentSettings } from "@direx/db/schema-agents";
+import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
+import { agentCancellations, agentDriftIncidents, agentProposals, agentRunEvents, agentRunParts, agentRuns, agentSettingRevisions, agentSettings } from "@direx/db/schema-agents";
 import type { ManifestPart } from "../domain/manifest";
 import { aggregateDigest } from "./digest";
+import { isCitation, isQuality } from "../domain/quality";
 import { canMove, hasEnded, isIncomplete, type RunStatus } from "../domain/states";
 
 export type RunTx = WorkspaceTx;
@@ -205,3 +206,83 @@ export const recentRuns = (tx: WorkspaceTx, limit: number, agent?: string) =>
 export const partsOf = (tx: WorkspaceTx, id: string) => tx.select().from(agentRunParts).where(eq(agentRunParts.runId, id)).orderBy(asc(agentRunParts.seq));
 export const eventsOf = (tx: WorkspaceTx, id: string) => tx.select().from(agentRunEvents).where(eq(agentRunEvents.runId, id)).orderBy(asc(agentRunEvents.seq));
 export const proposalsOf = (tx: WorkspaceTx, id: string) => tx.select().from(agentProposals).where(eq(agentProposals.runId, id));
+
+/** One agent version on one route in a Workspace, counted for the drift check (ADR 0008 rule 026). */
+export type VersionCounts = {
+  agent: string;
+  definitionVersion: number;
+  routeHash: string;
+  firstRunAt: Date;
+  /** Runs with at least one proposal. */
+  runs: number;
+  proposals: number;
+  qualityRejections: number;
+  /** Runs with a citation refusal or a recorded `citation` event. */
+  citationRuns: number;
+  /** The median words changed in approved Items these proposals became, and how many were measured. */
+  editMedian: number | null;
+  edited: number;
+};
+
+type VersionKey = { agent: string; version: number; route: string };
+const keyOf = (r: VersionKey) => `${r.agent}\u0000${r.version}\u0000${r.route}`;
+
+/**
+ * Every agent version and route in this Workspace with its counts. Proposals from before routes were
+ * hashed are left out. Codes are classified here, by the domain's lists, so the SQL holds none.
+ * review_decisions belongs to items and is only read: an approved Item's edit distance, through item_id.
+ */
+export async function versionCounts(tx: WorkspaceTx): Promise<VersionCounts[]> {
+  const { rows: codes } = await tx.execute<VersionKey & { code: string | null; n: number }>(sql`
+    select r.agent, r.definition_version as version, p.route_hash as route, p.rejection_code as code, count(*)::int as n
+    from agent_proposals p join agent_runs r on r.workspace_id = p.workspace_id and r.id = p.run_id
+    where p.route_hash is not null
+    group by 1, 2, 3, 4`);
+  const tally = new Map<string, { proposals: number; qualityRejections: number }>();
+  for (const c of codes) {
+    const t = tally.get(keyOf(c)) ?? { proposals: 0, qualityRejections: 0 };
+    t.proposals += c.n;
+    if (c.code && isQuality(c.code)) t.qualityRejections += c.n;
+    tally.set(keyOf(c), t);
+  }
+  const citing = [...new Set(codes.flatMap((c) => (c.code && isCitation(c.code) ? [c.code] : [])))];
+  const cited = citing.length ? sql`p.rejection_code in (${sql.join(citing.map((c) => sql`${c}`), sql`, `)})` : sql`false`;
+  const { rows } = await tx.execute<VersionKey & { runs: number; first_run_at: string | Date; citation_runs: number; edit_median: number | null; edited: number }>(sql`
+    select r.agent, r.definition_version as version, p.route_hash as route,
+      count(distinct r.id)::int as runs,
+      min(r.created_at) as first_run_at,
+      (count(distinct r.id) filter (where ${cited} or exists (
+        select 1 from agent_run_events e where e.workspace_id = r.workspace_id and e.run_id = r.id and e.kind = 'citation'
+      )))::int as citation_runs,
+      percentile_cont(0.5) within group (order by d.edit_distance) as edit_median,
+      count(d.edit_distance)::int as edited
+    from agent_proposals p
+    join agent_runs r on r.workspace_id = p.workspace_id and r.id = p.run_id
+    left join review_decisions d on d.workspace_id = p.workspace_id and d.item_id = p.item_id
+      and d.decision in ('approve', 'edit_approve') and d.edit_distance is not null
+    where p.route_hash is not null
+    group by 1, 2, 3`);
+  return rows.map((r) => ({
+    agent: r.agent,
+    definitionVersion: r.version,
+    routeHash: r.route,
+    firstRunAt: new Date(r.first_run_at),
+    runs: r.runs,
+    ...tally.get(keyOf(r))!,
+    citationRuns: r.citation_runs,
+    editMedian: r.edit_median === null ? null : Number(r.edit_median),
+    edited: r.edited,
+  }));
+}
+
+/** True when this version and measure had no incident yet, so its Owners haven't been told. */
+export async function openDriftIncident(tx: WorkspaceTx, row: typeof agentDriftIncidents.$inferInsert): Promise<boolean> {
+  const made = await tx.insert(agentDriftIncidents).values(row).onConflictDoNothing().returning({ id: agentDriftIncidents.id });
+  return made.length > 0;
+}
+
+/** The live Workspaces with a proposal whose route is known, across Workspaces, for the drift check. Ids only. */
+export async function driftWorkspaces(): Promise<string[]> {
+  const { rows } = await withSystem((tx) => tx.execute<{ workspace_id: string }>(sql`select workspace_id from system.drift_workspaces()`));
+  return rows.map((r) => r.workspace_id);
+}

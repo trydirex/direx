@@ -6,6 +6,7 @@
 // "Check again" can finish it; a stored `unknown` is asked again, which the vendor doesn't charge for.
 // Every check is stored with its time and its cost on the run that found the company.
 import { verifyAddressOutput, type QueryInput, type VerificationResult, type VerifyAddressOutput } from "@direx/plugin-sdk";
+import { operatorHold } from "../../ledger/index";
 import type { QueryId } from "../../plugins/index";
 import { beforePaidCheck } from "../adapters/mail-records";
 import { inWorkspace } from "../adapters/repo";
@@ -33,7 +34,7 @@ export function verifyThrough(d: { query: VerifyQuery; capability: QueryId<"emai
   };
 }
 
-type Check = { refused: true } | { refused: false; result: VerificationResult; costMicros: number; connected: boolean };
+type Check = { refused: true; reason: "operator_hold" | "vendor" } | { refused: false; result: VerificationResult; costMicros: number; connected: boolean };
 export type VerifyOutcome = { status: "done" | "not_accepted" | "not_connected" | "refused"; checked: number; guessesKept: number };
 
 /** Null and a stored unknown both still need an answer. */
@@ -48,13 +49,15 @@ export function createVerifier(deps: { verify: VerifyAddress; now?: () => Date; 
   async function checkOnce(workspaceId: string, email: string): Promise<Check> {
     const free = await beforePaidCheck(email, deps.resolveMx);
     if (free) return { refused: false, result: free, costMicros: 0, connected: true };
+    // Queued jobs and retries must check again at the boundary where they can pay a vendor.
+    if (await inWorkspace(workspaceId, (tx) => operatorHold(tx, workspaceId))) return { refused: true, reason: "operator_hold" };
     let out: VerifyAddressOutput | null;
     try {
       out = await deps.verify(workspaceId, email);
     } catch (e) {
       // The message may carry the address or the vendor's words, so only the kind of failure is logged.
       log(`prospecting: a verification call was refused (${(e as Error).name}), so nothing is stored`);
-      return { refused: true };
+      return { refused: true, reason: "vendor" };
     }
     return out ? { refused: false, result: out.result, costMicros: out.costMicros, connected: true } : { refused: false, result: "unknown", costMicros: 0, connected: false };
   }
@@ -149,9 +152,10 @@ export function createVerifier(deps: { verify: VerifyAddress; now?: () => Date; 
 
   /**
    * The current result of each kept address of an accepted company among `addressIds`, checking again
-   * any that is unknown or older than 30 days first. An id missing from the answer isn't sendable.
+   * any that is unknown or older than 30 days first. An id missing from completed results isn't
+   * sendable. An operator hold instead defers the batch.
    */
-  async function freshResults(workspaceId: string, addressIds: string[]): Promise<Map<string, VerificationResult>> {
+  async function freshResults(workspaceId: string, addressIds: string[]) {
     const rows = await inWorkspace(workspaceId, (tx) => keptAddresses(tx, addressIds));
     const out = new Map<string, VerificationResult>();
     for (const r of rows) {
@@ -162,11 +166,14 @@ export function createVerifier(deps: { verify: VerifyAddress; now?: () => Date; 
       }
       const c = await check(workspaceId, r.email);
       // A refused check isn't an answer: the address stays as it was and isn't sendable now.
-      if (c.refused) continue;
+      if (c.refused) {
+        if (c.reason === "operator_hold") return { status: "operator_hold" } as const;
+        continue;
+      }
       await inWorkspace(workspaceId, (tx) => recordCheck(tx, { addressId: r.id, runId: r.runId, result: c.result, costMicros: c.costMicros, at: now() }));
       out.set(r.id, c.result);
     }
-    return out;
+    return { status: "ready", results: out } as const;
   }
 
   return { verifyCompany, freshResults };

@@ -232,6 +232,7 @@ export const prospectHandovers = pgTable(
     campaignId: uuid("campaign_id").notNull(),
     status: text("status").notNull().default("running"),
     cursor: uuid("cursor"),
+    pendingAddressIds: uuid("pending_address_ids").array(),
     createdBy: uuid("created_by")
       .notNull()
       .references(() => user.id),

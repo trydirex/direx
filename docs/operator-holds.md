@@ -36,9 +36,12 @@ provider call. No Action whose dispatch check starts after the hold commits can 
 already past that check when you commit it may still go: at most one per running dispatch, a few
 per worker.
 
-While a hold is live, the Workspace's model calls are refused as `operator_hold` too, so it drafts
-nothing and spends nothing. An agent run stops at its next model call, and no prospecting run
-starts, so no search or verification vendor is paid.
+While a hold is live, the Workspace's drafting calls are refused as `operator_hold`, and an agent
+run stops at its next model call. New prospecting runs are refused before search starts. Prospecting
+also checks the hold before each paid verification call, including calls from jobs queued before the
+hold. Use **Check again** after lifting the hold to finish refused company checks. A Campaign
+handover that needs paid verification waits and retries its unfinished batch automatically.
+A vendor call already past its hold check can still finish.
 
 ## What it doesn't stop
 
@@ -47,3 +50,12 @@ starts, so no search or verification vendor is paid.
 - Asking a provider whether an earlier send went out keeps running. That never sends.
 - An email that may already have gone out (an unknown outcome being sent again) is held as
   unknown, not as operator_hold, and waits for a person after the lift.
+
+## The suspension drill
+
+`apps/api/src/modules/outreach/hold-drill.test.ts` runs in CI against GreenMail. An Organization
+with two Workspaces approves 20 emails, two dispatchers send them, and an Organization hold lands
+after the sixth. It checks that nothing whose dispatch started after the hold reached GreenMail,
+that the rest wait as operator_hold, and that an opt-out recorded during the hold still stops that
+Person once the hold is lifted. Run the same steps by hand on a staging server before a release that
+changes the Dispatcher, and record the time from the hold to the last delivery.

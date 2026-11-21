@@ -6,8 +6,9 @@ import { personKeys } from "@direx/db/schema";
 import { campaigns } from "@direx/db/schema-campaigns";
 import { personEligibility } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
-import { prospectAddresses, prospectCohorts, prospectHandoverResults, prospectHandovers, prospectSignals } from "@direx/db/schema-prospecting";
-import { and, asc, desc, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
+import { prospectAddresses, prospectCohorts, prospectCompanies, prospectHandoverResults, prospectHandovers, prospectSignals, prospectSnapshots } from "@direx/db/schema-prospecting";
+import { ADDRESS_KINDS } from "../domain/cohort-filter";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 export type HandoverStatus = "added" | "joined" | "conflict" | "left_out";
 export type HandoverResultRow = { addressId: string; status: HandoverStatus; reason: string | null; personId: string | null; conflictItemId: string | null; missing: string[]; basis?: string | null; evidence?: string | null };
@@ -18,6 +19,7 @@ const handoverColumns = {
   campaignId: prospectHandovers.campaignId,
   status: prospectHandovers.status,
   cursor: prospectHandovers.cursor,
+  pendingAddressIds: prospectHandovers.pendingAddressIds,
   createdBy: prospectHandovers.createdBy,
   createdAt: prospectHandovers.createdAt,
   finishedAt: prospectHandovers.finishedAt, failureReason: prospectHandovers.failureReason };
@@ -105,6 +107,28 @@ export async function checkedAt(tx: WorkspaceTx, addressIds: string[]): Promise<
   return new Map(rows.map((r) => [r.id, r.at]));
 }
 
+/** Checkpoint one batch before verification can change who matches the cohort. */
+export async function savePendingBatch(tx: WorkspaceTx, handoverId: string, addressIds: string[]): Promise<void> {
+  await tx.update(prospectHandovers).set({ pendingAddressIds: addressIds }).where(eq(prospectHandovers.id, handoverId));
+}
+
+/** Reload the selected addresses that are still kept at accepted companies. */
+export async function pendingMembers(tx: WorkspaceTx, workspaceId: string, ids: string[]) {
+  const a = prospectAddresses;
+  const c = prospectCompanies;
+  const s = prospectSnapshots;
+  const rows = await tx.select({
+    addressId: a.id, email: a.email, name: a.name, source: a.source, pattern: a.pattern,
+    company: { name: c.name, domain: c.domain, country: c.country },
+    evidence: { pageUrl: s.pageUrl, readAt: a.readAt, snapshotId: a.snapshotId },
+  }).from(a)
+    .innerJoin(c, and(eq(c.workspaceId, a.workspaceId), eq(c.id, a.companyId)))
+    .innerJoin(s, and(eq(s.workspaceId, a.workspaceId), eq(s.id, a.snapshotId)))
+    .where(and(eq(a.workspaceId, workspaceId), inArray(a.id, ids), isNull(a.leftOutReason), inArray(a.kind, [...ADDRESS_KINDS]), eq(c.state, "accepted")))
+    .orderBy(asc(a.id));
+  return rows.map((r) => ({ ...r, evidence: { ...r.evidence, readAt: r.evidence.readAt.toISOString() } }));
+}
+
 export async function saveBatch(tx: WorkspaceTx, b: { workspaceId: string; handoverId: string; results: HandoverResultRow[]; cursor: string; at: Date }): Promise<void> {
   if (b.results.length) {
     await tx
@@ -115,7 +139,7 @@ export async function saveBatch(tx: WorkspaceTx, b: { workspaceId: string; hando
   for (const r of b.results) {
     if (r.status !== "left_out") await tx.update(prospectAddresses).set({ personId: r.personId }).where(eq(prospectAddresses.id, r.addressId));
   }
-  await tx.update(prospectHandovers).set({ cursor: b.cursor }).where(eq(prospectHandovers.id, b.handoverId));
+  await tx.update(prospectHandovers).set({ cursor: b.cursor, pendingAddressIds: null }).where(eq(prospectHandovers.id, b.handoverId));
 }
 
 /** The job gave up: the hand-over stops where it is, saying why. Only a running one changes. */

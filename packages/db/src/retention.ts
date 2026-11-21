@@ -37,6 +37,7 @@ const queue = { class: "infrastructure", appDeletes: true } as const;
 
 export const RETENTION: Readonly<Record<string, Retention>> = {
   "auth.account": account,
+  "auth.rate_limit": account,
   "auth.session": account,
   "auth.user": account,
   "auth.verification": account,

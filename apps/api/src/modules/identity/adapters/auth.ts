@@ -145,7 +145,9 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     // The server sets X-Forwarded-For from the socket (withClientIp in startup.ts), so the rate
     // limit never keys on an address the client chose.
     advanced: { database: { generateId: "uuid" }, ipAddress: { trustedProxies: cfg.trustedProxies ?? [] } },
-    rateLimit: { enabled: !cfg.devMode },
+    // Counts live in auth.rate_limit, not process memory: API processes behind one load balancer
+    // share them, and a restart or deploy doesn't reset an attacker's attempts.
+    rateLimit: { enabled: !cfg.devMode, storage: "database" },
     // Each day of use pushes the end out (ADR 0037 rule 001). No cookie cache: it would let a
     // revoked session, or one past SESSION_CAP_MS, keep working until the cache expired. Better Auth's
     // own fresh-session routes ask for the short step-up window.

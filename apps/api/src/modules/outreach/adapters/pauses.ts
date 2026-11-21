@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Every SQL statement of a Mailbox's pause, which lives in four credential columns beside its pace.
+// Every SQL statement of a Mailbox's pause and ramp, which live in credential columns beside its pace.
 import { actions, credentials } from "@direx/db/schema";
 import { and, desc, eq, gt, isNotNull, isNull, sql } from "drizzle-orm";
+import { RAMP_FLOOR, type RampState } from "../domain/ramp";
 import type { OutreachTx } from "./repo";
 
 export type PauseReason = "bounces" | "provider_abuse" | "person";
@@ -45,4 +46,42 @@ export async function pausedMailboxes(tx: OutreachTx): Promise<{ credentialId: s
     .from(credentials)
     .where(and(isNotNull(credentials.pausedAt), isNull(credentials.deletedAt)));
   return rows.map((r) => ({ credentialId: r.credentialId, pausedAt: r.pausedAt!, reason: r.reason as PauseReason }));
+}
+
+/** Halves a Mailbox's ramp and restarts its clean days. An established Mailbox has no ramp to halve. */
+export async function halveRampOf(tx: OutreachTx, credentialId: string, at: Date): Promise<void> {
+  await tx
+    .update(credentials)
+    .set({ rampLimit: sql`greatest(${RAMP_FLOOR}, ${credentials.rampLimit} / 2)`, rampCleanSince: at })
+    .where(and(live(credentialId), isNotNull(credentials.rampLimit)));
+}
+
+/** Locks the ramp row against warning updates until the sweep transaction ends. */
+export async function lockRamp(tx: OutreachTx, credentialId: string): Promise<boolean> {
+  const [row] = await tx.select({ id: credentials.id }).from(credentials)
+    .where(and(live(credentialId), isNotNull(credentials.rampLimit)))
+    .for("no key update");
+  return !!row;
+}
+
+/** A Mailbox's ramp with its emails sent and bounced since its clean days began, or undefined when it has none. */
+export async function rampOf(tx: OutreachTx, credentialId: string): Promise<RampState | undefined> {
+  const [row] = await tx
+    .select({
+      ramp: credentials.rampLimit,
+      cleanSince: credentials.rampCleanSince,
+      dailyLimit: credentials.dailyLimit,
+      pausedAt: credentials.pausedAt,
+      // Named in full, as in latestSends: inside a select list Drizzle drops the table from a column.
+      sent: sql<number>`(select count(*)::int from actions a where a.credential_id = "credentials"."id" and a.state = 'sent' and a.capability like '%/email.send' and a.first_dispatched_at > "credentials"."ramp_clean_since")`,
+      bounced: sql<number>`(select count(*)::int from reply_signals s join actions a on a.id = s.action_id where s.kind = 'bounce' and a.credential_id = "credentials"."id" and s.received_at > "credentials"."ramp_clean_since")`,
+    })
+    .from(credentials)
+    .where(and(live(credentialId), isNotNull(credentials.rampLimit)));
+  return row && { ramp: row.ramp!, cleanSince: row.cleanSince!, dailyLimit: row.dailyLimit, paused: !!row.pausedAt, sent: row.sent, bounced: row.bounced };
+}
+
+/** Sets a Mailbox's ramp and starts its clean days again. */
+export async function setRamp(tx: OutreachTx, credentialId: string, ramp: number, at: Date): Promise<void> {
+  await tx.update(credentials).set({ rampLimit: ramp, rampCleanSince: at }).where(and(live(credentialId), isNotNull(credentials.rampLimit)));
 }

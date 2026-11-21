@@ -689,7 +689,11 @@
       "sha256": "10efd99eac8ec8b17a600d054b026dc5a2340bb0a857ab30889ac351af248c83",
       "description": "Validate the wider agent_run_events kind check after migration 0166 releases its table lock, allowing event writes during the scan"
     },
-    "0168_auth_rate_limit.sql": {
+    "0168_operator_holds.sql": {
+      "sha256": "34e97757d905a89940d18c837c594c12c317e6a632d2946fff0b562f5e2bcb4c",
+      "description": "Operator holds in schema system: a Workspace, Organization or deployment hold no member can lift, read by the Dispatcher through system.operator_hold_of, released by the worker after a lift, and set or lifted by the owner only"
+    },
+    "0169_auth_rate_limit.sql": {
       "sha256": "47476ac23fac348071e3136c7374a32697d00fe3d21a3ac694cd601df75ecefb",
       "description": "Add auth.rate_limit for Better Auth's rate limit counters, so every API process shares them and a restart keeps them, and grant the app role access"
     }

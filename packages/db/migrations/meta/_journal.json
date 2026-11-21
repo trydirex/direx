@@ -1182,7 +1182,14 @@
       "idx": 168,
       "version": "7",
       "when": 1795240000003,
-      "tag": "0168_auth_rate_limit",
+      "tag": "0168_operator_holds",
+      "breakpoints": true
+    },
+    {
+      "idx": 169,
+      "version": "7",
+      "when": 1795240000004,
+      "tag": "0169_auth_rate_limit",
       "breakpoints": true
     }
   ]

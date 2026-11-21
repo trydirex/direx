@@ -377,8 +377,11 @@ test("the vault from env connects the Google apps its composition root passes, w
   const google = { clientId: "id-1", clientSecret: "secret-1" };
   // A fixture key, so the test doesn't depend on the machine having one.
   process.env.DIREX_MASTER_KEY = "11".repeat(32);
-  const started = await vaultFromEnv({ baseURL: "http://localhost:3000", google }, undefined, { googleApps: [GOOGLE_SEARCH_CONSOLE_PROVIDER] }).start(a);
+  const vault = vaultFromEnv({ baseURL: "http://localhost:3000", google }, undefined, { googleApps: [GOOGLE_SEARCH_CONSOLE_PROVIDER] });
+  const started = await vault.start(a);
   expect(started.ok && new URL(started.url).searchParams.get("client_id")).toBe("id-1");
+  expect(await vault.appOwner(a.workspaceId, a.connection)).toBe("sign_in");
+  expect(await vault.appSource(a.workspaceId, a.connection)).toBe("system");
   expect(await vaultFromEnv({ baseURL: "http://localhost:3000" }, undefined, { googleApps: [GOOGLE_SEARCH_CONSOLE_PROVIDER] }).start(a)).toEqual({ ok: false, reason: "unknown_connection" });
 });
 

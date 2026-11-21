@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Tracked links in a Campaign step's email, fixed with its text before the hash (ADR 0035 rules 001,
-// 011 to 013). The links are made here, in their own short transaction, so no transaction waits on the
-// Mailbox's plugin; the uses are written with the Action. A link no use points at never redirects.
+// Tracked links in a Campaign step's message, fixed with its text before the hash (ADR 0035 rules 001,
+// 002, 011 to 013). An email's links are made in their own short transaction, so no transaction waits on
+// the Mailbox's plugin; a DM's in the transaction that makes the DM. Uses are written with the message.
+// A link no use points at never redirects.
 import { createHash, randomBytes } from "node:crypto";
-import { campaignTracking, countryOf, inWorkspace, insertUses, linkFor, type TrackingTx } from "../adapters/repo";
+import { campaignTracking, countryOf, inWorkspace, insertUses, linkFor, type TrackingTx, type UseTarget } from "../adapters/repo";
 import { rewriteLinks } from "../domain/rewrite";
 
-/** Which Campaign step an email belongs to; the Campaign says whether and where it tracks. */
+/** Which Campaign step a message belongs to; the Campaign says whether and where it tracks. */
 export type TrackingInput = { campaignId: string; stepKey: string };
 export type FixedLinks = { text: string; perRecipient: boolean; inputsHash: string; uses: { linkId: string; tokenHash: string | null; personId: string | null }[] };
 
@@ -24,37 +25,43 @@ export type TrackingInputs = { perPerson: boolean; marked: boolean; country: str
 export const inputsHash = (i: TrackingInputs) => sha256(JSON.stringify([i.perPerson, i.marked, i.country, i.confidence, i.domainId]));
 
 /**
- * The email's text with each https link replaced by its step's tracked link, and the uses to record,
- * or null when the Campaign doesn't track links now, which leaves the text as written.
+ * The message's text with each https link replaced by its step's tracked link, and the uses to record,
+ * or null when the Campaign doesn't track links now, which leaves the text as written. With no Person
+ * (a DM or a post, rule 012) or for a Placement check (`checkOnly`, rule 002), no link carries a token.
  */
-export function fixLinks(workspaceId: string, a: TrackingInput & { personId: string; text: string; now: Date }): Promise<FixedLinks | null> {
-  return inWorkspace(workspaceId, async (tx) => {
-    const t = await campaignTracking(tx, a.campaignId);
-    if (!t?.trackingOn || !t.domainId || !t.hostname || !MAKES_LINKS.has(t.state!)) return null;
-    const who = await countryOf(tx, a.personId);
-    // No Person can be marked "Don't count my clicks" until marks exist (spec §9), so none is.
-    const inputs: TrackingInputs = { perPerson: t.perPersonOn, marked: false, country: who?.country ?? null, confidence: who?.confidence ?? null, domainId: t.domainId };
-    const perPerson = inputs.perPerson && !inputs.marked && inputs.country === PER_PERSON_COUNTRY && inputs.confidence === "stated";
-    const urls = new Map<string, string>();
-    const uses: FixedLinks["uses"] = [];
-    for (const destination of rewriteLinks(a.text, () => null).destinations) {
-      // A link already on this domain, as in text edited from a fixed draft, isn't wrapped again.
-      if (new URL(destination).hostname === t.hostname) continue;
-      const linkId = await linkFor(tx, { id: randomBytes(16).toString("base64url"), workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, domainId: t.domainId, destination, now: a.now });
-      const secret = perPerson ? token() : null;
-      urls.set(destination, `https://${t.hostname}/t/${linkId}${secret ? `/${secret}` : ""}`);
-      uses.push({ linkId, tokenHash: secret && sha256(secret), personId: secret && a.personId });
-    }
-    let perRecipient = false;
-    const { text } = rewriteLinks(a.text, (destination) => {
-      const replacement = urls.get(destination);
-      const output = new URL(replacement ?? destination);
-      if (output.hostname === t.hostname && RECIPIENT_PATH.test(output.pathname)) perRecipient = true;
-      return replacement ?? null;
-    });
-    return { text, perRecipient, inputsHash: inputsHash(inputs), uses };
+export async function fixLinksIn(tx: TrackingTx, workspaceId: string, a: TrackingInput & { personId: string | null; text: string; now: Date; checkOnly?: boolean }): Promise<FixedLinks | null> {
+  const t = await campaignTracking(tx, a.campaignId);
+  if (!t?.trackingOn || !t.domainId || !t.hostname || !MAKES_LINKS.has(t.state!)) return null;
+  const checkOnly = a.checkOnly ?? false;
+  const who = a.personId && !checkOnly ? await countryOf(tx, a.personId) : undefined;
+  // No Person can be marked "Don't count my clicks" until marks exist (spec §9), so none is.
+  const inputs: TrackingInputs = { perPerson: t.perPersonOn, marked: false, country: who?.country ?? null, confidence: who?.confidence ?? null, domainId: t.domainId };
+  const perPerson = a.personId !== null && !checkOnly && inputs.perPerson && !inputs.marked && inputs.country === PER_PERSON_COUNTRY && inputs.confidence === "stated";
+  const urls = new Map<string, string>();
+  const uses: FixedLinks["uses"] = [];
+  for (const destination of rewriteLinks(a.text, () => null).destinations) {
+    // A link already on this domain, as in text edited from a fixed draft, isn't wrapped again.
+    if (new URL(destination).hostname === t.hostname) continue;
+    const linkId = await linkFor(tx, { id: randomBytes(16).toString("base64url"), workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, domainId: t.domainId, destination, checkOnly, now: a.now });
+    const secret = perPerson ? token() : null;
+    urls.set(destination, `https://${t.hostname}/t/${linkId}${secret ? `/${secret}` : ""}`);
+    uses.push({ linkId, tokenHash: secret && sha256(secret), personId: secret && a.personId });
+  }
+  let perRecipient = false;
+  const { text } = rewriteLinks(a.text, (destination) => {
+    const replacement = urls.get(destination);
+    const output = new URL(replacement ?? destination);
+    if (output.hostname === t.hostname && RECIPIENT_PATH.test(output.pathname)) perRecipient = true;
+    return replacement ?? null;
   });
+  return { text, perRecipient, inputsHash: inputsHash(inputs), uses };
 }
 
+/** fixLinksIn in its own transaction, for an email whose plugin is asked next. */
+export const fixLinks = (workspaceId: string, a: Parameters<typeof fixLinksIn>[2]) => inWorkspace(workspaceId, (tx) => fixLinksIn(tx, workspaceId, a));
+
 /** Records the fixed links as used by the Item's Action, in the transaction that wrote it. */
-export const recordUses = (tx: TrackingTx, workspaceId: string, itemId: string, fixed: FixedLinks, now: Date) => insertUses(tx, workspaceId, itemId, fixed.inputsHash, fixed.uses, now);
+export const recordUses = (tx: TrackingTx, workspaceId: string, itemId: string, fixed: FixedLinks, now: Date) => insertUses(tx, workspaceId, { itemId }, fixed.inputsHash, fixed.uses, now);
+
+/** Records the fixed links as used by an Action or a DM, in the transaction that wrote it. */
+export const recordUsesOf = (tx: TrackingTx, workspaceId: string, target: Exclude<UseTarget, { itemId: string }>, fixed: FixedLinks, now: Date) => insertUses(tx, workspaceId, target, fixed.inputsHash, fixed.uses, now);

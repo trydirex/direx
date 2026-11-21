@@ -152,6 +152,71 @@ test("signed in, /claim opens the claim page for the held token", async () => {
   expect(await screen.findByRole("heading", { level: 1, name: "Claim this server" })).toBeTruthy();
 });
 
+const SIGNUP = `/signup/${"b".repeat(64)}`;
+
+test("a sign-up link opens on sign-up, holds its code first, and mails a return path without it", async () => {
+  serveNewServer(null);
+  const hold = Promise.withResolvers<Response>();
+  const sent = vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => (path === "/api/admission/token" ? hold.promise : Response.json({ token: null })));
+  open(SIGNUP);
+  expect(await screen.findByRole("heading", { name: "Sign up for Direx" })).toBeTruthy();
+  await userEvent.type(screen.getByLabelText("Email"), "sam@example.com");
+  await userEvent.type(screen.getByLabelText(/^Password/), "a long enough password");
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  expect(sent).toHaveBeenCalledWith("/api/admission/token", expect.objectContaining({ body: JSON.stringify({ token: "b".repeat(64) }) }));
+  // Sign-up waits for the cookie, so the server's Admission sees the code.
+  expect(sent.mock.calls.some(([path]) => path === "/api/auth/sign-up/email")).toBe(false);
+  hold.resolve(Response.json({ ok: true }));
+  await waitFor(() => expect(sent).toHaveBeenCalledWith("/api/auth/sign-up/email", expect.anything()));
+  const body = JSON.parse(String(sent.mock.calls.find(([path]) => path === "/api/auth/sign-up/email")![1]!.body));
+  expect(body.callbackURL).toBe("/");
+});
+
+test.each(["HTTP error", "network error"])("a sign-up link retries a hold after a %s", async (failure) => {
+  serveNewServer(null);
+  const hold = Promise.withResolvers<Response>();
+  const sent = vi.spyOn(globalThis, "fetch").mockImplementationOnce(() => hold.promise)
+    .mockImplementation(async () => Response.json({ ok: true }));
+  open(SIGNUP);
+  await userEvent.type(await screen.findByLabelText("Email"), "sam@example.com");
+  const sendLink = screen.getByRole("button", { name: "Email me a sign-in link" });
+  await userEvent.click(sendLink);
+  if (failure === "HTTP error") hold.resolve(new Response(null, { status: 503 }));
+  else hold.reject(new Error("Offline"));
+  expect((await screen.findByRole("alert")).textContent).toContain("We couldn't save the code from your link. Try again.");
+  expect(sent.mock.calls.map(([path]) => path)).toEqual(["/api/admission/token"]);
+
+  await userEvent.click(sendLink);
+  expect(await screen.findByText(/Check sam@example.com for a sign-in link/)).toBeTruthy();
+  expect(sent.mock.calls.map(([path]) => path)).toEqual(["/api/admission/token", "/api/admission/token", "/api/auth/sign-in/magic-link"]);
+  expect(sent.mock.calls[1]![1]!.body).toBe(sent.mock.calls[0]![1]!.body);
+});
+
+test("a sign-up link's email link also returns to / and not to the code", async () => {
+  serveNewServer(null);
+  const hold = Promise.withResolvers<Response>();
+  const sent = vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => (path === "/api/admission/token" ? hold.promise : Response.json({})));
+  open(SIGNUP);
+  await userEvent.type(await screen.findByLabelText("Email"), "sam@example.com");
+  await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
+  expect(sent.mock.calls.map(([path]) => path)).toEqual(["/api/admission/token"]);
+  hold.resolve(Response.json({ ok: true }));
+  await waitFor(() => expect(sent.mock.calls.map(([path]) => path)).toEqual(["/api/admission/token", "/api/auth/sign-in/magic-link"]));
+  expect(sent.mock.calls[1]![1]!.body).toBe(JSON.stringify({ email: "sam@example.com", callbackURL: "/", errorCallbackURL: "/" }));
+});
+
+test("a sign-up link on a self-hosted server nobody has set up explains the setup link instead", async () => {
+  serveNewServer("needs_link");
+  open(SIGNUP);
+  expect(await screen.findByRole("heading", { name: "This Direx isn't set up yet" })).toBeTruthy();
+});
+
+test("signed in, a sign-up link goes on to the app", async () => {
+  serve(true);
+  const router = open(SIGNUP);
+  await waitFor(() => expect(router.state.location.pathname).toBe(`/w/${W}`));
+});
+
 test("a server with accounts keeps today's sign-in, on the setup link too", async () => {
   serveNewServer(null);
   open(CLAIM);

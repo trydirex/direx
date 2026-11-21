@@ -72,8 +72,18 @@ const replies: ReturnType<typeof createReplies> = createReplies({
 });
 await replies.ensureQueue();
 await boss.createQueue("plugins.poll");
+// Script the HTTP reply, leaving Gmail's response reader and plugin execution in the path.
+let gmailRefusal: { status: number; message: string; reason: string } | undefined;
+const gmailFetch: typeof fetch = Object.assign(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+  if (gmailRefusal && init?.method === "POST" && String(input) === `${fake.url}/messages/send`) {
+    const { status, message, reason } = gmailRefusal;
+    gmailRefusal = undefined;
+    return Response.json({ error: { code: status, message, errors: [{ reason }] } }, { status });
+  }
+  return fetch(input, init);
+}, { preconnect: fetch.preconnect });
 const plugins = loadPlugins({
-  sources: [{ mode: "in_process", plugin: createGmailPlugin({ baseUrl: fake.url, timeoutMs: 1000 }) }],
+  sources: [{ mode: "in_process", plugin: createGmailPlugin({ baseUrl: fake.url, timeoutMs: 1000, fetch: gmailFetch }) }],
   credentials: async () => ({ accessToken: fake.token, expiresAt: "" }),
   confinement: "none",
   log: () => {},
@@ -82,13 +92,8 @@ const plugins = loadPlugins({
     if (!e.custom && e.trigger === EMAIL_RECEIVED) await replies.intake(tx, e);
   },
 });
-// The provider's refusal of the next email, when a test scripts one; otherwise the fake Gmail answers.
-let providerRefuses: "sending_limit" | "abuse" | null = null;
-const gmailSend = plugins.effects[SEND]!;
-const execute: typeof gmailSend.execute = async (spec, ctx) =>
-  providerRefuses ? { kind: "refused", permanent: false, retryable: true, detail: "550 5.7.1 Message rejected as spam", providerLimit: providerRefuses } : gmailSend.execute(spec, ctx);
 const { clock, ledger } = await testLedger({
-  effects: { ...plugins.effects, [SEND]: { ...gmailSend, execute } },
+  effects: plugins.effects,
   resolvers: { credential: credentialLabel },
   checks: [workspaceLive(), outreachFloors(async () => repliesBeingRead), approverMayApprove(), touchCheck({ effects: plugins.effects, now: () => clock.at }), credentialReady],
   now: () => clock.at,
@@ -786,23 +791,28 @@ test("a stale bounce pause cannot undo a resume; person pauses still work", asyn
   });
 });
 
-test("a provider refusing an email as abuse pauses its Mailbox until someone who approves resumes it; a sending limit pauses nothing", async () => {
+test("a provider refusing an email as abuse pauses its Mailbox until someone who approves resumes it; other refusals do not pause it", async () => {
   const pauses = async () => (await post<{ pauses: { credentialId: string; reason: string }[] }>("/outreach/mailbox-pauses", undefined, "GET")).body.pauses;
   expect(await pauses()).toEqual([]);
-  providerRefuses = "sending_limit";
+  gmailRefusal = { status: 403, reason: "userRateLimitExceeded", message: "User-rate limit exceeded." };
   const limited = await approved((await addPerson()).personId);
   await ledger.run(W, limited);
   expect(await stateOf(limited)).toMatchObject({ state: "held", holdReason: "provider_rejected" });
   expect(await pauses()).toEqual([]);
 
-  providerRefuses = "abuse";
+  gmailRefusal = { status: 403, reason: "domainPolicy", message: "The domain policy has disabled Gmail access." };
+  const forbidden = await approved((await addPerson()).personId);
+  await ledger.run(W, forbidden);
+  expect(await stateOf(forbidden)).toMatchObject({ state: "held", holdReason: "provider_rejected" });
+  expect(await pauses()).toEqual([]);
+
+  gmailRefusal = { status: 403, reason: "forbidden", message: "This message was rejected as spam." };
   const refused = await approved((await addPerson()).personId);
   await ledger.run(W, refused);
   expect(await stateOf(refused)).toMatchObject({ state: "held", holdReason: "provider_rejected" });
   expect(await pauses()).toEqual([expect.objectContaining({ credentialId, reason: "provider_abuse" })]);
 
   // However it was approved, nothing else goes from the Mailbox, even once the provider would take it.
-  providerRefuses = null;
   const next = await approved((await addPerson()).personId);
   await ledger.run(W, next);
   expect(await stateOf(next)).toMatchObject({ state: "held", holdReason: "mailbox_paused" });

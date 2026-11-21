@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Database-level guarantees of agent runs, as direx_app inside one Workspace.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import type pg from "pg";
 import { withWorkspace } from "../src/index";
@@ -108,4 +110,26 @@ test("another Workspace sees none of it", async () => {
     expect((await c.query(`select 1 from ${table}`)).rows).toEqual([]);
   }
   await c.query("select set_config('app.workspace_id', $1, false)", [W]);
+});
+
+test("migration 0162 drops attached and history from ended runs only, and runs twice safely (DX-R-0008-025)", async () => {
+  const update = readFileSync(join(import.meta.dirname, "../migrations/0162_drop_run_input_text.sql"), "utf8");
+  // A temp table comes first on the search path, so the statement runs as written against it.
+  await c.query("create temp table agent_runs (id int, ended_at timestamptz, input jsonb)");
+  try {
+    await c.query(`insert into agent_runs values
+      (1, now(), '{"attached": {"id": "i", "text": "words"}, "history": "earlier", "target": {"id": null}}'),
+      (2, null, '{"attached": {"id": "i", "text": "words"}, "history": "earlier"}'),
+      (3, now(), '{"writeUp": {"campaignId": "c"}}')`);
+    await c.query(update);
+    await c.query(update);
+    const { rows } = await c.query("select id, input from agent_runs order by id");
+    expect(rows).toEqual([
+      { id: 1, input: { target: { id: null } } },
+      { id: 2, input: { attached: { id: "i", text: "words" }, history: "earlier" } },
+      { id: 3, input: { writeUp: { campaignId: "c" } } },
+    ]);
+  } finally {
+    await c.query("drop table pg_temp.agent_runs");
+  }
 });

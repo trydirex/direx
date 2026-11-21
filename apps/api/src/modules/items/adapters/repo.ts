@@ -6,6 +6,7 @@ import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { actions, factVersions, facts as factsTable, itemEvents, items, reviewDecisions } from "@direx/db/schema";
 import { agentProposals, agentRunParts, agentRuns } from "@direx/db/schema-agents";
 import { agentLessonVersions, agentRunLessons } from "@direx/db/schema-lessons";
+import { trackedLinkUses, trackedLinks, trackingDomains } from "@direx/db/schema-tracking";
 import type { Actor } from "../../ledger";
 import { orderOf, type ListOrder, type ListPoint } from "../domain/list-cursor";
 import type { LedgerState, OwnState, VisibleState } from "../domain/state";
@@ -173,6 +174,16 @@ export async function itemIdByAction(tx: ItemsTx, actionId: string): Promise<str
 export async function readItem(tx: ItemsTx, id: string): Promise<JoinedItem | undefined> {
   const [row] = await tx.select(JOINED).from(items).leftJoin(actions, onAction).where(eq(items.id, id));
   return row as JoinedItem | undefined;
+}
+
+/** Each tracked link an Action has used, with the hostname it is served on. A revise adds uses and keeps old ones. */
+export function readTrackedLinks(tx: ItemsTx, actionId: string) {
+  return tx
+    .selectDistinct({ id: trackedLinks.id, hostname: trackingDomains.hostname, destination: trackedLinks.destination })
+    .from(trackedLinkUses)
+    .innerJoin(trackedLinks, and(eq(trackedLinks.workspaceId, trackedLinkUses.workspaceId), eq(trackedLinks.id, trackedLinkUses.linkId)))
+    .innerJoin(trackingDomains, and(eq(trackingDomains.workspaceId, trackedLinks.workspaceId), eq(trackingDomains.id, trackedLinks.domainId)))
+    .where(eq(trackedLinkUses.actionId, actionId));
 }
 
 /**

@@ -188,6 +188,8 @@ const CASES: Record<string, { path: string; body?: unknown }> = {
   "PUT /api/w/:workspaceId/social/accounts/:accountId/limits": { path: `/api/w/${w2}/social/accounts/${anyItem}/limits`, body: { links: 1 } },
   "PUT /api/w/:workspaceId/social/accounts/:accountId/about": { path: `/api/w/${w2}/social/accounts/${anyItem}/about`, body: { runBy: "Bio", angle: null } },
   "POST /api/w/:workspaceId/social/accounts/:accountId/established": { path: `/api/w/${w2}/social/accounts/${anyItem}/established` },
+  "GET /api/w/:workspaceId/social/accounts/:accountId/pace": { path: `/api/w/${w2}/social/accounts/${anyItem}/pace` },
+  "PUT /api/w/:workspaceId/social/accounts/:accountId/pace": { path: `/api/w/${w2}/social/accounts/${anyItem}/pace`, body: { postingFrom: 540, postingUntil: 1020, postingWeekends: false, gapMinutes: 90 } },
   "PUT /api/w/:workspaceId/campaigns/:id/steps/:key/posts": { path: `/api/w/${w2}/campaigns/${anyItem}/steps/first/posts`, body: { plannedAt: "2026-11-03T09:00:00.000Z", targets: [{ connection: "x", credentialId: null, networkId: null, text: "Hi" }] } },
   "GET /api/w/:workspaceId/social/networks": { path: `/api/w/${w2}/social/networks` },
   "GET /api/w/:workspaceId/social/accounts": { path: `/api/w/${w2}/social/accounts` },

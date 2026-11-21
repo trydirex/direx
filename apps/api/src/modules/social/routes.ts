@@ -191,6 +191,30 @@ const establishedRoute = createRoute({
   request: { params: account },
   responses: { 200: done, 409: json(z.object({ error: z.string() }), "Only an account still at the floor and not paused can start higher"), ...errors },
 });
+// An account's pace (ADR 0038), in minutes from midnight in the Workspace's time zone; null means the network's default.
+const Pace = z.object({ from: z.number().int(), until: z.number().int(), weekends: z.boolean(), gapMinutes: z.number().int() }).openapi("SocialPace");
+const OwnPace = z
+  .strictObject({
+    postingFrom: z.number().int().min(0).max(1439).nullable(),
+    postingUntil: z.number().int().min(1).max(1440).nullable(),
+    postingWeekends: z.boolean().nullable(),
+    gapMinutes: z.number().int().min(0).max(720).nullable(),
+  })
+  .openapi("SocialOwnPace");
+const paceRoute = createRoute({
+  method: "get",
+  path: "/api/w/{workspaceId}/social/accounts/{accountId}/pace",
+  ...read,
+  request: { params: account },
+  responses: { 200: json(z.object({ own: OwnPace, defaults: Pace, pace: Pace, timeZone: z.string() }).openapi("SocialPaceView"), "The account's pace"), ...errors },
+});
+const setPaceRoute = createRoute({
+  method: "put",
+  path: "/api/w/{workspaceId}/social/accounts/{accountId}/pace",
+  middleware: [requirePermission("credential.manage")],
+  request: { params: account, body: { content: { "application/json": { schema: OwnPace } } } },
+  responses: { 200: done, ...errors },
+});
 const limit = (max: number) => z.number().int().min(0).max(max).nullable().optional();
 const limitsRoute = createRoute({
   method: "put",
@@ -252,6 +276,16 @@ export function socialRoutes({ social, posts }: { social: () => Social; posts?: 
   app.openapi(unpauseRoute, async (c) => {
     const r = await unpauseById(who(c, c.req.valid("param").accountId));
     return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, 404);
+  });
+  app.openapi(paceRoute, async (c) => {
+    const { accountId } = c.req.valid("param");
+    const found = await social().pace(c.get("member").workspaceId, accountId);
+    return found ? c.json(found, 200) : c.json({ error: "not_found" }, 404);
+  });
+  app.openapi(setPaceRoute, async (c) => {
+    const m = c.get("member");
+    const r = await social().setPace(m.workspaceId, c.req.valid("param").accountId, c.req.valid("json"), m.userId);
+    return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, r.reason === "not_found" ? 404 : 400);
   });
   app.openapi(limitsRoute, async (c) => {
     const r = await setLowerLimits(who(c, c.req.valid("param").accountId), c.req.valid("json"));

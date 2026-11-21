@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { actions, credentials, items, workspaces } from "@direx/db/schema";
-import { socialAccountHealth, socialAccounts, socialPosts, socialReservations } from "@direx/db/schema-social";
+import { socialAccountHealth, socialAccounts, socialPaceChanges, socialPosts, socialReservations } from "@direx/db/schema-social";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, not, or, sql } from "drizzle-orm";
 
 export const inWorkspace = withWorkspace;
@@ -304,4 +304,25 @@ export async function newestReservationFor(tx: WorkspaceTx, actionId: string): P
 
 export async function insertReservation(tx: WorkspaceTx, r: { workspaceId: string; actionId: string; day: string; slot: Date; createdAt: Date } & Account): Promise<void> {
   await tx.insert(socialReservations).values(r);
+}
+
+// --- Pace settings (ADR 0038) ---
+
+/** An account's own pace columns; null means its network's default. */
+export type OwnPace = { postingFrom: number | null; postingUntil: number | null; postingWeekends: boolean | null; gapMinutes: number | null };
+
+const OWN_PACE = { postingFrom: socialAccounts.postingFrom, postingUntil: socialAccounts.postingUntil, postingWeekends: socialAccounts.postingWeekends, gapMinutes: socialAccounts.gapMinutes };
+
+/** An account's network and own pace, locked when `forUpdate`, or null when there is no such account. */
+export async function paceById(tx: WorkspaceTx, id: string, forUpdate = false) {
+  const q = tx.select({ connection: socialAccounts.connection, credentialId: socialAccounts.credentialId, networkId: socialAccounts.networkId, ...OWN_PACE }).from(socialAccounts).where(eq(socialAccounts.id, id));
+  const [row] = await (forUpdate ? q.for("update") : q);
+  return row ?? null;
+}
+
+/** Sets an account's own pace and records who changed it from what to what. */
+export async function writePace(tx: WorkspaceTx, workspaceId: string, row: { credentialId: string; networkId: string } & OwnPace, accountId: string, next: OwnPace, changedBy: string, at: Date): Promise<void> {
+  await tx.update(socialAccounts).set(next).where(eq(socialAccounts.id, accountId));
+  const before = { postingFrom: row.postingFrom, postingUntil: row.postingUntil, postingWeekends: row.postingWeekends, gapMinutes: row.gapMinutes };
+  await tx.insert(socialPaceChanges).values({ workspaceId, credentialId: row.credentialId, networkId: row.networkId, before, after: next, changedBy, changedAt: at });
 }

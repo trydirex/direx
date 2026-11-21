@@ -15,6 +15,7 @@ import {
   moveOwnState,
   itemIdByAction,
   readItem,
+  readTrackedLinks,
   readWrittenFrom,
   reviseOwnContent,
   setItemWarnings,
@@ -96,6 +97,21 @@ export type WrittenFrom = {
   /** Its Run was given the Workspace's Tone. */
   voice: boolean;
 };
+/**
+ * The tracked links in what would go out, in the order they appear, each with the destination it redirects
+ * to as a browser opens it, host in punycode (ADR 0035 rule 003). A use left by an earlier revision whose
+ * link the text no longer has isn't shown. Token links match on their link part; tokens aren't stored.
+ */
+async function trackedIn(workspaceId: string, actionId: string, content: unknown) {
+  if (!content || typeof content !== "object" || !("text" in content) || typeof content.text !== "string") return [];
+  const { text } = content;
+  const rows = await inWorkspace(workspaceId, (tx) => readTrackedLinks(tx, actionId));
+  return rows
+    .map((r) => ({ url: `https://${r.hostname}/t/${r.id}`, destination: new URL(r.destination).href }))
+    .filter((l) => text.includes(l.url))
+    .sort((a, b) => text.indexOf(a.url) - text.indexOf(b.url));
+}
+
 /** What a draft was written from, as recorded, or null when nothing was: a person's own Item has no source to show. */
 async function writtenFrom(workspaceId: string, item: ItemRow): Promise<WrittenFrom | null> {
   const cited = ((item.snapshot ?? []) as { kind: string; id: string; version: string }[]).filter((e) => e.kind === "fact").map((e) => ({ id: e.id, version: Number(e.version) }));
@@ -341,7 +357,8 @@ export function itemStore({ ledger, kinds, now, capacity, onSubmitted, ruleAppro
       const undoer = kinds[row.item.kind]?.undo;
       const undo = undoer && row.item.state === "applied" ? await undoer.check(row.item) : null;
       const shownAs = (await appearance?.(workspaceId, { itemId: id, workArea: row.item.workArea, credentialId: action?.credentialId ?? null, content })) ?? null;
-      return { item: toView(row), content, timeline: entries, ruleGrantedBy: rule?.by ?? null, ruleWrittenBy: rule?.writtenBy ?? null, recipient: notes, appearance: shownAs, writtenFrom: await writtenFrom(workspaceId, row.item), undo };
+      const links = row.item.actionId ? await trackedIn(workspaceId, row.item.actionId, content) : [];
+      return { item: toView(row), content, timeline: entries, ruleGrantedBy: rule?.by ?? null, ruleWrittenBy: rule?.writtenBy ?? null, recipient: notes, appearance: shownAs, writtenFrom: await writtenFrom(workspaceId, row.item), undo, trackedLinks: links };
     },
 
     setTriage: (workspaceId: string, id: string, t: Parameters<typeof setTriageIn>[2]) => inWorkspace(workspaceId, (tx) => setTriageIn(tx, id, t)),

@@ -118,12 +118,14 @@ const WrittenFrom = z
     voice: z.boolean(),
   })
   .openapi("ItemWrittenFrom");
+/** A tracked link in the text (its token left off) and where it redirects, host in punycode. */
+const TrackedLink = z.object({ url: z.string(), destination: z.string() }).openapi("ItemTrackedLink");
 const getRoute = createRoute({
   method: "get",
   path: "/api/w/{workspaceId}/items/{id}",
   middleware: [requirePermission("workspace.read")],
   request: { params: one },
-  responses: { 200: json(z.object({ item: Item, content: z.unknown(), timeline: z.array(TimelineEntry), ruleGrantedBy: z.string().nullable(), ruleWrittenBy: z.string().nullable().optional(), recipient: Recipient.nullable().optional(), appearance: Appearance.nullable().optional(), writtenFrom: WrittenFrom.nullable().optional(), undo: z.object({ ok: z.boolean(), reason: z.string().optional() }).nullable().optional() }), "One Item"), ...errors },
+  responses: { 200: json(z.object({ item: Item, content: z.unknown(), timeline: z.array(TimelineEntry), ruleGrantedBy: z.string().nullable(), ruleWrittenBy: z.string().nullable().optional(), recipient: Recipient.nullable().optional(), appearance: Appearance.nullable().optional(), writtenFrom: WrittenFrom.nullable().optional(), undo: z.object({ ok: z.boolean(), reason: z.string().optional() }).nullable().optional(), trackedLinks: z.array(TrackedLink).optional() }), "One Item"), ...errors },
 });
 const ratesRoute = createRoute({
   method: "get",
@@ -241,7 +243,7 @@ export function itemRoutes({ items }: { items: () => Items }) {
     .openapi(getRoute, async (c) => {
       const d = await items().detail(c.get("member").workspaceId, c.req.valid("param").id);
       if (!d) return c.json({ error: "not_found" }, 404);
-      return c.json({ item: toJson(d.item), content: d.content, timeline: d.timeline.map((e) => ({ ...e, at: e.at.toISOString() })), ruleGrantedBy: d.ruleGrantedBy, ruleWrittenBy: d.ruleWrittenBy, recipient: d.recipient, appearance: d.appearance, writtenFrom: d.writtenFrom && { ...d.writtenFrom, run: d.writtenFrom.run && { ...d.writtenFrom.run, at: d.writtenFrom.run.at.toISOString() } }, undo: d.undo }, 200);
+      return c.json({ item: toJson(d.item), content: d.content, timeline: d.timeline.map((e) => ({ ...e, at: e.at.toISOString() })), ruleGrantedBy: d.ruleGrantedBy, ruleWrittenBy: d.ruleWrittenBy, recipient: d.recipient, appearance: d.appearance, writtenFrom: d.writtenFrom && { ...d.writtenFrom, run: d.writtenFrom.run && { ...d.writtenFrom.run, at: d.writtenFrom.run.at.toISOString() } }, undo: d.undo, trackedLinks: d.trackedLinks }, 200);
     })
     .openapi(approveRoute, async (c) => {
       const m = c.get("member");

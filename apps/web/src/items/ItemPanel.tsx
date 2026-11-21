@@ -183,8 +183,29 @@ export function FeedText(p: { network: string; text: string }) {
   );
 }
 
+type TrackedLink = components["schemas"]["ItemTrackedLink"];
+/** Where each tracked link in the text really goes, so an approver never approves a link blind (ADR 0035 rule 003). */
+function TrackedLinks({ links }: { links: TrackedLink[] }) {
+  if (!links.length) return null;
+  return (
+    <section aria-label="Tracked links" className="flex flex-col gap-2 border-t border-border pt-3 text-sm">
+      <p className="font-medium">Tracked links</p>
+      <ul className="flex flex-col gap-2">
+        {links.map((l) => (
+          <li key={l.url} className="flex min-w-0 flex-col">
+            <span className="truncate text-muted-foreground">{l.url}</span>
+            <span className="break-all">Goes to {l.destination}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /** `linkImage` is where Direx serves the picture of a post's link card, when it has one. */
-export function Content({ content, appearance, linkImage, mediaUrl, spans, showRaw }: { content: unknown; appearance?: Appearance | null; linkImage?: string; mediaUrl?: (mediaId: string) => string;
+export function Content({ content, appearance, linkImage, mediaUrl, spans, showRaw, trackedLinks }: { content: unknown; appearance?: Appearance | null; linkImage?: string; mediaUrl?: (mediaId: string) => string;
+  /** The tracked links in the text, with their destinations. */
+  trackedLinks?: TrackedLink[] | undefined;
   /** An email's words compared with its step's email: what was written for this person is marked, the rest dimmed. */
   spans?: Span[] | null;
   /** The stored form under a Raw toggle, for owners and admins. */
@@ -273,6 +294,7 @@ export function Content({ content, appearance, linkImage, mediaUrl, spans, showR
         {line("Subject", <span className="font-medium">{content.subject}</span>)}
       </dl>
       <div className="border-t border-border pt-3 wrap-break-word whitespace-pre-wrap">{marked(content.text, spans)}</div>
+      <TrackedLinks links={trackedLinks ?? []} />
       {rawToggle}
     </section>
   );
@@ -614,7 +636,7 @@ export function ItemPanel(p: { workspaceId: string; id: string; role: Role; onCh
           ) : editing && postEditable ? (
             <PostEditor text={post.text} network={post.network} approve={mayApprove(p.role)} pending={pending} onSave={(text, andApprove) => void act(async () => saved(await editPost(p.workspaceId, i.id, text), andApprove))} onCancel={() => setEditing(false)} />
           ) : (
-            !POINTERS.has(i.kind) && <Content content={d.content} appearance={d.appearance} spans={d.recipient?.spans} showRaw={p.role === "owner" || p.role === "admin"} linkImage={`/api/w/${p.workspaceId}/social/posts/${i.id}/link-image`} mediaUrl={(m) => `/api/w/${p.workspaceId}/media/${m}`} />
+            !POINTERS.has(i.kind) && <Content content={d.content} appearance={d.appearance} spans={d.recipient?.spans} trackedLinks={d.trackedLinks} showRaw={p.role === "owner" || p.role === "admin"} linkImage={`/api/w/${p.workspaceId}/social/posts/${i.id}/link-image`} mediaUrl={(m) => `/api/w/${p.workspaceId}/media/${m}`} />
           )}
           {d.writtenFrom && <WrittenFrom workspaceId={p.workspaceId} from={d.writtenFrom} stepLabel={i.groupLabel} />}
           {(textEditable || postEditable) && !editing && (

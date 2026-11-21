@@ -664,6 +664,10 @@
     "0161_social_pace.sql": {
       "sha256": "2d31f0206cebb2fc4bbcded5523cb7c48ff98c494e27fb57445b715984a45d28",
       "description": "Social account pace columns, social_reservations and social_pace_changes under forced RLS, and a backfill of live post reservations (ADR 0038)"
+    },
+    "0162_drop_run_input_text.sql": {
+      "sha256": "ef5e24a3f39c035ce072fbef3656a426841dbdb03a33ee0853d0c6848fbe3e59",
+      "description": "Drops attached and history from the input of ended agent runs, so a run record keeps only the kind, id and digest of what it read (ADR 0008 rule DX-R-0008-025); live runs keep them"
     }
   }
 }

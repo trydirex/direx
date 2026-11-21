@@ -51,7 +51,15 @@ export async function transition(tx: WorkspaceTx, id: string, token: number, to:
     extra.endedAt = at;
     extra.leaseExpiresAt = null;
     extra.resumeAt = null;
-    const { text: _text, request: _request, brief: _brief, person: _person, ...kept } = run.input as { text?: string; request?: string; brief?: unknown; person?: unknown };
+    // What the run read is kept as kind, id and digest in its manifest (DX-R-0008-025), so its text goes.
+    const { text: _text, request: _request, brief: _brief, person: _person, attached: _attached, history: _history, ...kept } = run.input as {
+      text?: string;
+      request?: string;
+      brief?: unknown;
+      person?: unknown;
+      attached?: unknown;
+      history?: unknown;
+    };
     extra.input = kept;
     if (isIncomplete(to)) await tx.update(agentProposals).set({ incomplete: true }).where(eq(agentProposals.runId, id));
   }

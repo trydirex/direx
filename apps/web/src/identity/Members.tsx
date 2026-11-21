@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { Confirm } from "../components/Confirm";
 import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { components } from "../api/schema";
 import { inWorkspace } from "../api/query";
@@ -16,7 +16,7 @@ import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } f
 import { invite, invitesQuery, membersQuery, revoke, type Invite, type Member, type Role } from "./actions";
 import { message, MESSAGES } from "./messages";
 import { SignIn } from "./SignIn";
-import { applyChange, savePending, takePending, type Change } from "./step-up";
+import { applyChange, type Change } from "./step-up";
 
 const ROLES: Role[] = ["owner", "admin", "marketer", "contributor", "viewer"];
 const label = (r: string) => r[0]!.toUpperCase() + r.slice(1);
@@ -79,27 +79,17 @@ export function Members({ workspace, me, initial }: { workspace: components["sch
   /** Runs a change. With `from`, a role change that worked offers Undo, which puts `from` back. */
   async function change(c: Change, from?: Role) {
     const code = await applyChange(c);
-    if (code === "step_up_required") {
-      savePending(c);
-      setStepUp(true);
-      return;
-    }
+    if (code === "step_up_required") return setStepUp(true);
     if (!code && c.role && from && from !== c.role)
       toast.add({ title: `Role changed to ${label(c.role)}.`, actionProps: { children: "Undo", onClick: () => void change({ ...c, role: from }) } });
     await settle(code);
   }
 
-  // A change that waited for step-up runs once, here, after the person signs in again.
-  useEffect(() => {
-    const pending = takePending(workspaceId);
-    if (pending) void change(pending);
-  }, [workspaceId]);
-
   if (stepUp) {
     return (
       <SignIn
         title="Confirm it's you"
-        note="Changing a role or removing a member needs a recent sign-in. Sign in again and we'll finish the change."
+        note="Changing a role or removing a member needs a recent sign-in. Sign in again, then make the change once more."
         callbackURL={location.pathname + location.search}
       />
     );

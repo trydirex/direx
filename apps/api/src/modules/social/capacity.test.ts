@@ -146,6 +146,22 @@ describe("a Social account's day", () => {
     await w.done();
   });
 
+  it("keeps approval when automatic redating returns the same slot", async () => {
+    const w = await world();
+    try {
+      const wanted = tomorrow(8);
+      const post = await w.submit(await w.post(wanted));
+      expect(post.at!.getTime()).toBeGreaterThan(wanted.getTime());
+      expect(await w.items.approve(w.W, post.id, post.revision, w.who)).toMatchObject({ ok: true });
+      const id = await actionIdOf(w.W, post.id);
+      expect(await w.items.redateItem(w.W, post.id, wanted, person)).toEqual({ ok: true, kept: true, backToApproval: false, overCap: false });
+      expect(await w.ledger.getAction(w.W, id)).toMatchObject({ state: "scheduled", dueAt: post.at });
+      expect(await w.reserved("2026-11-03")).toEqual([post.at]);
+    } finally {
+      await w.done();
+    }
+  });
+
   it("leaves an approved post on its original schedule when the redate day is full", async () => {
     const w = await world();
     await w.post(today(12), "exact");

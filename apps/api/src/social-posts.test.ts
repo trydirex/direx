@@ -607,6 +607,29 @@ test("a step's posts on one account are placed apart on its pace; a person's Cal
   expect((await pacedItems.view(W, itemIds[0]!))!.at).toEqual(new Date(times[0]!.getTime() + 24 * 60 * 60_000));
 });
 
+test("an unchanged step post follows an earlier Workspace day even on the same UTC date", async () => {
+  beforeWhen();
+  await q("update workspaces set time_zone = 'America/Los_Angeles' where id = $1", [W]);
+  try {
+    const a = await account();
+    const step = { campaignId: await postStep(), stepKey: "launch", title: "Launch", plannedAt: new Date("2026-11-04T16:00:00Z") };
+    const targets = [{ ...a, text: "Same words" }];
+    const [first] = await pacedPosts.draft(W, step, targets, owner);
+    expect(first?.ok).toBe(true);
+    const itemId = first!.itemId!;
+    const initial = (await pacedItems.view(W, itemId))!.at!;
+    expect(initial.toISOString()).toMatch(/^2026-11-04T16:/);
+    const plannedAt = new Date("2026-11-04T02:00:00Z");
+    const [again] = await pacedPosts.draft(W, { ...step, plannedAt }, targets, owner);
+    expect(again).toMatchObject({ ok: true, itemId });
+    const moved = (await pacedItems.view(W, itemId))!.at!;
+    // 02:00–03:00 UTC is 18:00–19:00 PST on November 3, inside this account's posting hours.
+    expect(moved.toISOString()).toMatch(/^2026-11-04T02:/);
+  } finally {
+    await q("update workspaces set time_zone = 'UTC' where id = $1", [W]);
+  }
+});
+
 test("the month's limit on Direx's app holds the next post with no call, and own keys have none", async () => {
   beforeWhen();
   info.monthlyPostLimit = LIMIT;

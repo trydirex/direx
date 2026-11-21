@@ -6,9 +6,10 @@ import type { SocialNetworkInfo } from "../domain/network";
 import type { Vault } from "../../credentials/index";
 import { warn, type Items, type ItemKind, type Warning } from "../../items/index";
 import type { Media } from "../../media/index";
+import { mailboxDay } from "../../schedule";
 import { specHash, type Actor, type Check } from "../../ledger/index";
 import type { Plugins, Prepared as PreparedSpec } from "../../plugins/index";
-import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, replacePost, runByOf, specOfAction, type SocialTx } from "../adapters/repo";
+import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, replacePost, runByOf, specOfAction, workspaceZone, type SocialTx } from "../adapters/repo";
 import { canDo } from "../domain/can-do";
 import { isPublicUrl } from "../domain/public-url";
 import { firstLink, imageType, mustRead, type KeptPreview, type LinkPreview } from "../domain/link-preview";
@@ -316,7 +317,8 @@ export function createPosts(deps: PostsDeps) {
             // The same words at a new step time are placed again, as a launch move is, so an approval stays when it can.
             // ponytail: a step moved earlier within the same day keeps its post's time; only a new day or a later time re-places.
             const was = (await deps.items().view(workspaceId, existing.itemId))?.at;
-            if (was && (was.toISOString().slice(0, 10) !== at.toISOString().slice(0, 10) || was < at)) {
+            const timeZone = was && was > at ? await inWorkspace(workspaceId, (tx) => workspaceZone(tx, workspaceId)) : null;
+            if (was && (was < at || (timeZone && mailboxDay(was, timeZone) !== mailboxDay(at, timeZone)))) {
               const moved = await deps.items().redateItem(workspaceId, existing.itemId, at, actor);
               if (!moved.ok) {
                 results.push({ ...base, ok: false, reason: moved.reason });

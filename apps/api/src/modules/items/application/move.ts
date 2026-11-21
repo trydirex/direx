@@ -43,7 +43,7 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
     },
 
     /**
-     * A move that follows a Campaign's launch. Later keeps an approved Action's approval: the time isn't
+     * A move that follows a Campaign's launch. An unchanged or later slot keeps the approval: the time isn't
      * what an approval binds, and a later send gives the person more time, not less. Earlier needs a new
      * approval, as any move does. A slot over its cap still moves, and says so: the claim then finds no
      * reservation for that time and holds the Action with reason "cap". A full Mailbox day is different:
@@ -76,12 +76,14 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
         if (!placed) await capacity.reserve(workspaceId, item.actionId, plannedAt, { now: at });
       }
       const later = approved && action.dueAt !== null && plannedAt > action.dueAt;
+      const sameSlot = approved && action.dueAt?.getTime() === plannedAt.getTime();
       await inWorkspace(workspaceId, (tx) => setPlannedAt(tx, id, plannedAt, at));
-      if (approved) {
+      if (approved && !sameSlot) {
         const r = later ? await ledger.redateAction(workspaceId, item.actionId!, plannedAt, actor) : await ledger.moveAction(workspaceId, item.actionId!, actor);
         if (!r.ok) return { ok: false, reason: r.reason } as const;
       }
-      return { ok: true, kept: later, backToApproval: approved && !later, overCap } as const;
+      const kept = later || sameSlot;
+      return { ok: true, kept, backToApproval: approved && !kept, overCap } as const;
     },
 
     /** Each Item on its own, so a chip can split and the caller can say why. */

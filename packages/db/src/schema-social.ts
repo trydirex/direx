@@ -32,11 +32,22 @@ export const socialAccounts = pgTable(
     postingUntil: integer("posting_until"),
     postingWeekends: boolean("posting_weekends"),
     gapMinutes: integer("gap_minutes"),
+    // Reading its published posts (ADR 0039): the last successful read, the state of the latest
+    // one, the plugin's reason when it failed, the plugin's newest cursor and the last reconcile.
+    // A null read time with no cursor means the first read hasn't run.
+    postsReadAt: tz("posts_read_at"),
+    postsReadState: text("posts_read_state"),
+    postsReadReason: text("posts_read_reason"),
+    postsCursor: text("posts_cursor"),
+    postsReconciledAt: tz("posts_reconciled_at"),
   },
   (t) => [
     foreignKey({ name: "social_accounts_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
     foreignKey({ name: "social_accounts_credential_fk", columns: [t.workspaceId, t.credentialId], foreignColumns: [credentials.workspaceId, credentials.id] }),
     unique("social_accounts_target_unique").on(t.credentialId, t.networkId),
+    // What outside_posts' paired foreign key points at.
+    unique("social_accounts_workspace_target_key").on(t.workspaceId, t.credentialId, t.networkId),
+    check("social_accounts_posts_read_check", sql`${t.postsReadState} in ('reading', 'ok', 'failed')`),
     check("social_accounts_about_check", sql`char_length(${t.runBy}) <= 200 and char_length(${t.angle}) <= 200`),
     check(
       "social_accounts_pace_check",
@@ -156,5 +167,44 @@ export const socialPosts = pgTable(
     foreignKey({ name: "social_posts_item_fk", columns: [t.workspaceId, t.itemId], foreignColumns: [items.workspaceId, items.id] }),
     foreignKey({ name: "social_posts_action_fk", columns: [t.workspaceId, t.actionId], foreignColumns: [actions.workspaceId, actions.id] }),
     foreignKey({ name: "social_posts_clip_fk", columns: [t.workspaceId, t.clipId], foreignColumns: [clips.workspaceId, clips.id] }),
+  ],
+);
+
+// What each Social account published outside Direx (ADR 0039), read back to check drafts against.
+// Originals and quotes only, with the account's own text. Swept at keep_until (retention.ts), and
+// deleted with the account on disconnect (the cascade).
+export const outsidePosts = pgTable(
+  "outside_posts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    credentialId: uuid("credential_id").notNull(),
+    connection: text("connection").notNull(),
+    networkId: text("network_id").notNull(),
+    providerAccountId: text("provider_account_id").notNull(),
+    providerPostId: text("provider_post_id").notNull(),
+    kind: text("kind").notNull(),
+    origin: text("origin").notNull(),
+    text: text("text").notNull(),
+    links: text("links").array().notNull().default(sql`'{}'`),
+    permalink: text("permalink"),
+    postedAt: tz("posted_at").notNull(),
+    editedAt: tz("edited_at"),
+    firstRead: boolean("first_read").notNull(),
+    readAt: tz("read_at").notNull().defaultNow(),
+    seenAt: tz("seen_at").notNull().defaultNow(),
+    keepUntil: tz("keep_until").notNull(),
+  },
+  (t) => [
+    foreignKey({ name: "outside_posts_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
+    foreignKey({
+      name: "outside_posts_account_fk",
+      columns: [t.workspaceId, t.credentialId, t.networkId],
+      foreignColumns: [socialAccounts.workspaceId, socialAccounts.credentialId, socialAccounts.networkId],
+    }).onDelete("cascade"),
+    unique("outside_posts_post_key").on(t.workspaceId, t.connection, t.providerAccountId, t.providerPostId),
+    index("outside_posts_window_idx").on(t.workspaceId, t.credentialId, t.networkId, t.postedAt),
+    check("outside_posts_kind_check", sql`${t.kind} in ('original', 'quote')`),
+    check("outside_posts_origin_check", sql`${t.origin} in ('outside', 'own', 'possibly_own')`),
   ],
 );

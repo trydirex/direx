@@ -3,7 +3,8 @@
 // goes, while a row still in flight or inside a guard's window stays, and a batch stops at its limit.
 import { afterAll, beforeAll, expect, test } from "vitest";
 import type pg from "pg";
-import { sweepRetention, withSystem } from "../src/index";
+import { sweepRetention, withSystem, withWorkspace } from "../src/index";
+import { outsidePosts } from "../src/schema-social";
 import { sql } from "drizzle-orm";
 import { insertAuthUser, ownerClient } from "../../../test/db";
 
@@ -60,6 +61,16 @@ async function seed(c: pg.Client) {
   await use(400);
   await use(100);
 
+  await c.query(`insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values ($1, $2, 'x', 'person', 'n1', 'A')`, [W, cred[0].id]);
+  const outside = (id: string, keepDays: number) =>
+    c.query(
+      `insert into outside_posts (workspace_id, credential_id, connection, network_id, provider_account_id, provider_post_id, kind, origin, text, posted_at, first_read, keep_until)
+       values ($1, $2, 'x', 'n1', 'a1', $3, 'original', 'outside', 't', $4, false, now() + make_interval(days => $5))`,
+      [W, cred[0].id, id, ago(30), keepDays],
+    );
+  await outside("expired", -1);
+  await outside("kept", 1);
+
   const competitor = async (name: string) => {
     const { rows } = await c.query(`insert into competitors (workspace_id, name, pricing_url, created_by, created_at, updated_at) values ($1, $2, 'https://a.example/', $3, now(), now()) returning id`, [W, name, U]);
     ids.set(name, rows[0].id);
@@ -110,6 +121,7 @@ test("each table loses its old terminal rows and keeps what is in flight or stil
     "public.budget_reservations": 2,
     "public.credential_access_events": 1,
     "public.competitor_snapshots": 2,
+    "public.outside_posts": 1,
   });
   expect(await left(`select event_id from trigger_events`)).toEqual(["recent"]);
   expect((await left(`select idempotency_key from model_calls order by 1`)).sort()).toEqual(["old and in flight", "recent"]);
@@ -119,6 +131,17 @@ test("each table loses its old terminal rows and keeps what is in flight or stil
   expect((await left(`select id from competitor_snapshots`)).sort()).toEqual([ids.get("newest"), ids.get("only read")].sort());
   // The Change between two pruned reads went with them.
   expect(await left(`select count(*)::int from competitor_changes`)).toEqual([0]);
+  expect(await left(`select provider_post_id from outside_posts`)).toEqual(["kept"]);
   // A second run finds nothing.
-  expect(Object.values(await sweepRetention())).toEqual([0, 0, 0, 0, 0]);
+  expect(Object.values(await sweepRetention())).toEqual([0, 0, 0, 0, 0, 0]);
+});
+
+test("another Workspace reads none of a Workspace's outside posts", async () => {
+  expect((await withWorkspace(W, (tx) => tx.select().from(outsidePosts))).length).toBeGreaterThan(0);
+  expect(await withWorkspace(crypto.randomUUID(), (tx) => tx.select().from(outsidePosts))).toEqual([]);
+});
+
+test("removing the Social account, as disconnect does, deletes its outside posts", async () => {
+  await owner.query(`delete from social_accounts where workspace_id = $1`, [W]);
+  expect(await left(`select count(*)::int from outside_posts`)).toEqual([0]);
 });

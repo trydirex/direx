@@ -39,6 +39,18 @@ export async function makeLink(workspaceId: string, connection: string): Promise
 
 const account = (workspaceId: string, accountId: string) => ({ path: { workspaceId, accountId } });
 
+// An account's pace (ADR 0038): the hours its posts go out in and how far apart, in minutes from midnight.
+export type SocialPace = S["SocialPace"];
+export type OwnPace = S["SocialOwnPace"];
+export const paceKey = (workspaceId: string, accountId: string) => inWorkspace(workspaceId, "social", "pace", accountId);
+export const paceQuery = (workspaceId: string, accountId: string) =>
+  queryOptions({ queryKey: paceKey(workspaceId, accountId), queryFn: () => call(api.GET("/api/w/{workspaceId}/social/accounts/{accountId}/pace", { params: account(workspaceId, accountId) })) });
+/** Null values put the account back on its network's pace. */
+export async function savePace(workspaceId: string, accountId: string, own: OwnPace): Promise<string | null> {
+  const { error, response } = await api.PUT("/api/w/{workspaceId}/social/accounts/{accountId}/pace", { params: account(workspaceId, accountId), body: own });
+  return response.ok ? null : (error?.error || "failed");
+}
+
 /** Where the account itself says who runs it, and what it is for beside the Workspace's other accounts. */
 export async function saveAbout(workspaceId: string, accountId: string, about: { runBy: string | null; angle: string | null }): Promise<string | null> {
   const { error } = await api.PUT("/api/w/{workspaceId}/social/accounts/{accountId}/about", { params: account(workspaceId, accountId), body: about });

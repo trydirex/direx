@@ -3,7 +3,7 @@
 // recorded handler must reach the module behind it. The reply-text and retention sweeps run against the database.
 import { expect, test } from "vitest";
 import { recordedBoss } from "./fixtures/boss";
-import { MEDIA_SWEEP, REPLY_TEXT_SWEEP, RESULT_READINGS_SWEEP, RETENTION_SWEEP, RULE_CAP_SWEEP, SETTLE_SWEEP, STALL_CHECK, sweeps } from "./sweeps";
+import { DRIFT_CHECK, MEDIA_SWEEP, REPLY_TEXT_SWEEP, RESULT_READINGS_SWEEP, RETENTION_SWEEP, RULE_CAP_SWEEP, SETTLE_SWEEP, STALL_CHECK, sweeps } from "./sweeps";
 
 test("every sweep registers on its cron and its handler reaches its module", async () => {
   const calls: string[] = [];
@@ -24,6 +24,7 @@ test("every sweep registers on its cron and its handler reaches its module", asy
         return { removed: 0, failed: 0 };
       },
     }),
+    drift: { driftAll: async () => void calls.push("drift check") },
   });
   // Nothing registers until the starts run, after every module is built.
   expect(r.queues).toEqual([]);
@@ -36,24 +37,26 @@ test("every sweep registers on its cron and its handler reaches its module", asy
     [REPLY_TEXT_SWEEP]: "0 3 * * *",
     [RETENTION_SWEEP]: "15 3 * * *",
     [MEDIA_SWEEP]: "30 4 * * *",
+    [DRIFT_CHECK]: "0 5 * * *",
     [RESULT_READINGS_SWEEP]: "0 6 * * *",
   });
-  expect(r.queues.sort()).toEqual([MEDIA_SWEEP, REPLY_TEXT_SWEEP, RESULT_READINGS_SWEEP, RETENTION_SWEEP, RULE_CAP_SWEEP, SETTLE_SWEEP, STALL_CHECK].sort());
+  expect(r.queues.sort()).toEqual([DRIFT_CHECK, MEDIA_SWEEP, REPLY_TEXT_SWEEP, RESULT_READINGS_SWEEP, RETENTION_SWEEP, RULE_CAP_SWEEP, SETTLE_SWEEP, STALL_CHECK].sort());
 
-  for (const queue of [RULE_CAP_SWEEP, STALL_CHECK, SETTLE_SWEEP, MEDIA_SWEEP, RESULT_READINGS_SWEEP]) await r.run(queue);
-  expect(calls).toEqual(["rules over cap", "follow anchors", "offer stalls", "settle all", "media sweep", "count readings"]);
+  for (const queue of [RULE_CAP_SWEEP, STALL_CHECK, SETTLE_SWEEP, MEDIA_SWEEP, DRIFT_CHECK, RESULT_READINGS_SWEEP]) await r.run(queue);
+  expect(calls).toEqual(["rules over cap", "follow anchors", "offer stalls", "settle all", "media sweep", "drift check", "count readings"]);
   // The real reply-text sweep, against the test database.
   await expect(r.run(REPLY_TEXT_SWEEP)).resolves.not.toThrow();
   await expect(r.run(RETENTION_SWEEP)).resolves.toMatchObject({ "public.trigger_events": 0, "public.model_calls": 0 });
 });
 
-test("campaigns and media are required: every sweep registers, and one handed in empty fails when run rather than skipping", async () => {
+test("campaigns, media and drift are required: every sweep registers, and one handed in empty fails when run rather than skipping", async () => {
   const r = recordedBoss();
-  // @ts-expect-error campaigns and media are required ports (ADR 0027 rule 003)
+  // @ts-expect-error campaigns, media and drift are required ports (ADR 0027 rule 003)
   sweeps({ boss: r.boss, later: r.later, standingRules: { sweepOverCap: async () => {} } });
   await r.start();
-  expect([...r.crons.keys()].sort()).toEqual([MEDIA_SWEEP, REPLY_TEXT_SWEEP, RESULT_READINGS_SWEEP, RETENTION_SWEEP, RULE_CAP_SWEEP, SETTLE_SWEEP, STALL_CHECK].sort());
+  expect([...r.crons.keys()].sort()).toEqual([DRIFT_CHECK, MEDIA_SWEEP, REPLY_TEXT_SWEEP, RESULT_READINGS_SWEEP, RETENTION_SWEEP, RULE_CAP_SWEEP, SETTLE_SWEEP, STALL_CHECK].sort());
   await expect(r.run(SETTLE_SWEEP)).rejects.toThrow(TypeError);
   await expect(r.run(RESULT_READINGS_SWEEP)).rejects.toThrow(TypeError);
   await expect(r.run(MEDIA_SWEEP)).rejects.toThrow(TypeError);
+  await expect(r.run(DRIFT_CHECK)).rejects.toThrow(TypeError);
 });

@@ -26,6 +26,10 @@ const SAMPLES: { [N in QueryName]: { input: unknown; output: unknown } } = {
   "newsletter.lists": { input: {}, output: [{ id: "l1", name: "Weekly", subscriberCount: 3 }] },
   "social.identity": { input: null, output: { accountId: "1", accountLabel: "@ann", targets: [{ id: "p1", name: "Page", type: "page" }] } },
   "social.health": { input: null, output: { ok: false, reason: "auth" } },
+  "social.posts": {
+    input: { limit: 50 },
+    output: { posts: [{ id: "p1", accountId: "a1", kind: "quote", createdAt: "2026-11-20T10:00:00Z", editedAt: "2026-11-20T11:00:00Z", text: "Out now", links: ["https://b.example/launch"], permalink: "https://bsky.app/profile/a1/post/p1" }], next: "c2", newest: "c0" },
+  },
   "docs.sources": { input: { kind: "database" }, output: { pages: [{ id: "p1", title: "Plan", url: null, editedAt: null }], more: false } },
   "docs.page_text": { input: { pageId: "p1" }, output: { title: "Plan", text: "Hello", cut: false } },
   "docs.rows": {
@@ -65,6 +69,16 @@ test("where first-party providers differ, the entry takes the union and the stri
   expect(CATALOGUE["newsletter.profile"].input.safeParse(null).success).toBe(true);
   expect(CATALOGUE["newsletter.profile"].input.safeParse({ listId: "" }).success).toBe(false);
   expect(CATALOGUE["search.analytics"].input.safeParse({ siteUrl: "x", startDate: "2026-10-01", endDate: "2026-10-02", dimensions: ["query", "query"] }).success).toBe(false);
+});
+
+test("social.posts lists by cursor and limit, or looks up ids, and refuses anything else", () => {
+  const { input, output } = CATALOGUE["social.posts"];
+  expect(input.safeParse({ target: "page1", ids: ["p1", "p2"] }).success).toBe(true);
+  expect(input.safeParse({ target: "page1", cursor: "c1", limit: 100 }).success).toBe(true);
+  for (const bad of [{ limit: 0 }, { limit: 101 }, { limit: 1.5 }, {}, { ids: [] }, { ids: Array(101).fill("p") }, { ids: ["p1"], limit: 10 }]) expect(input.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+  const post = { id: "p1", accountId: "a1", kind: "original", createdAt: "2026-11-20T10:00:00Z", text: "Hi", links: [] };
+  expect(output.safeParse({ posts: [post] }).success).toBe(true);
+  for (const bad of [{ ...post, extra: 1 }, { ...post, kind: "story" }, { ...post, links: ["javascript:alert(1)"] }, { ...post, createdAt: "yesterday" }]) expect(output.safeParse({ posts: [bad] }).success, JSON.stringify(bad)).toBe(false);
 });
 
 test("mail.from's code call takes a skip list; the model's input stays the address alone", () => {

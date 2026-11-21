@@ -6,14 +6,14 @@ import { firstPartyPlugins, socialNetworks } from "@direx/extensions";
 import { VERIFY_ADDRESS, type EffectCapability, type MediaRef } from "@direx/plugin-sdk";
 import { createBoss } from "./jobs/boss";
 import { roleFromEnv, sendOnly, type Role } from "./roles";
-import { createAgents, createFetchHtml, createFetchImage, factContext, factSink, shippedEvals, sinkByOutputKey, starterNotice, type Agents, type AskStart } from "./modules/agents/index";
+import { createAgents, createDrift, createFetchHtml, createFetchImage, factContext, factSink, shippedEvals, sinkByOutputKey, starterNotice, type Agents, type AskStart } from "./modules/agents/index";
 import { agentWrittenGate, campaignCheck, campaignDefinitions, campaignKinds, campaignOnPlanApproved, campaignReplies, campaignRulePort, campaignSinks, stepOutputVersion, templateVersion, type Campaigns, type PostPort } from "./modules/campaigns/index";
 import { clipDefinitions, createClips, MOMENTS_OUTPUT_KEY, type Clips, type Measure } from "./modules/clips/index";
 import { createFacts, describeFactChange, factKinds, factVersion } from "./modules/facts/index";
 import type { Media } from "./modules/media/index";
 import type { Exports } from "./modules/retention/index";
 import { credentialLabel, credentialReady, dataDir, suppressionHasher, type Vault } from "./modules/credentials/index";
-import { adminEmails, approverMayApprove, mayGrantRules, memberEmail, workspaceLive, type Mailer } from "./modules/identity/index";
+import { adminEmails, approverMayApprove, logMailer, mayGrantRules, memberEmail, workspaceLive, type Mailer } from "./modules/identity/index";
 import { createItems, routeCapacity, warn } from "./modules/items/index";
 import { createLessons, lessonCheckOpen } from "./modules/lessons/index";
 import { BRIEF_OUTPUT_KEY, briefSink, createPageReader, seoDefinitions, seoKinds, type Briefs } from "./modules/seo/index";
@@ -262,7 +262,8 @@ export async function compose(opts: WorkerOptions) {
     // How an Item shows as what it will be: a post's account and network, an email's Mailbox.
     appearance: async (workspaceId, a) => (a.workArea === "social" ? postAppearance(workspaceId, a.itemId, socialNetworks(), { text: (a.content as { text?: unknown } | null)?.text as string | undefined, readPreview, readImage }) : a.workArea === "outreach" && a.credentialId ? mailFrom(workspaceId, a.credentialId) : null) });
   const reviews = companyReviews({ items: () => items, now });
-  sweeps({ boss, later, standingRules, campaigns: opts.campaigns, media: opts.media });
+  // A worker a test builds without a mailer logs the drift notices instead.
+  sweeps({ boss, later, standingRules, campaigns: opts.campaigns, media: opts.media, drift: createDrift({ mailer: mailer ?? logMailer(), adminEmails }) });
   // A Workspace's export builds and its hourly sweep (ADR 0030 rule 008).
   later(() => opts.exports().work(boss));
   later(() => replies.work());

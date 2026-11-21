@@ -4,7 +4,7 @@
 import { socialNetworks, type SocialNetworkInfo } from "@direx/extensions";
 import { afterAll, expect, test, vi } from "vitest";
 import { createBoss } from "./jobs/boss";
-import { createVault, rootKeyFromEnv, type AppProvider } from "./modules/credentials/index";
+import { createVault, rootKeyFromEnv, singleAppSource, type AppProvider } from "./modules/credentials/index";
 import { testApp, vaultDb } from "./modules/credentials/fixtures/app";
 import { loadPlugins } from "./modules/plugins/index";
 import { createTestNet } from "./modules/social/fixtures/net";
@@ -51,7 +51,7 @@ function setup(o: { deployment?: "cloud" | "self_host"; systemApp?: boolean; net
     rootKey: rootKeyFromEnv(),
     now,
     appProviders: [provider],
-    systemApp: async () => (o.systemApp === false ? null : { clientId: "direx", clientSecret: "direx-secret" }),
+    appSources: [singleAppSource("deployment", async () => (o.systemApp === false ? null : { clientId: "direx", clientSecret: "direx-secret" }))],
     identify: (ws, c, t) => social.identify(ws, c, t),
     callbackUrl: "http://direx.test/cb",
     timeoutMs: 500,

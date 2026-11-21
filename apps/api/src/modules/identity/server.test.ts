@@ -117,7 +117,7 @@ test("on self-host only a Server admin creates an Organization; in dev anyone do
   const someone = await account();
   const refused = await call(someone.cookie, "/api/orgs", "POST", { name: "Acme", workspaceName: "Shop" });
   expect(refused.status).toBe(403);
-  expect(await refused.json()).toEqual({ error: "server_admins_only" });
+  expect(await refused.json()).toEqual({ error: "cannot_create_organization" });
   expect(await (await call(someone.cookie, "/api/server/status")).json()).toEqual({ claimed: false, canCreateOrganization: false, serverAdmin: false });
 
   const admin = await account(true);

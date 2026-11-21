@@ -66,8 +66,11 @@ export type VideoWait = { everyMs: number; forMs: number };
 export const VIDEO_WAIT: VideoWait = { everyMs: 5_000, forMs: 3 * 60_000 };
 export const socialHttp = (o: SocialPluginOptions, baseUrl: string): SocialHttp => ({ baseUrl: o.baseUrl ?? baseUrl, fetch: o.fetch ?? fetch, timeoutMs: o.timeoutMs ?? 20_000 });
 
-/** The two reads every network answers, and publishing where it's built. CI finds each plugin's `id:` in its manifest.ts, so ids stay literal there. */
-export const socialManifest = (m: { id: string; connection: string; auth?: "oauth2" | "basic"; hosts: readonly string[]; publish?: { dedupe: "queryable" | "blind"; timeoutMs?: number; media?: "read" } }) =>
+/**
+ * The two reads every network answers, and publishing and reading its posts where they're built; `posts` declares
+ * `social.posts`, which the plugin then answers. CI finds each plugin's `id:` in its manifest.ts, so ids stay literal there.
+ */
+export const socialManifest = (m: { id: string; connection: string; auth?: "oauth2" | "basic"; hosts: readonly string[]; publish?: { dedupe: "queryable" | "blind"; timeoutMs?: number; media?: "read" }; posts?: boolean }) =>
   ({
     id: m.id,
     apiVersion: 1,
@@ -79,6 +82,7 @@ export const socialManifest = (m: { id: string; connection: string; auth?: "oaut
     capabilities: [
       { kind: "query", name: "social.identity", connection: m.connection },
       { kind: "query", name: "social.health", connection: m.connection },
+      ...(m.posts ? [{ kind: "query", name: "social.posts", connection: m.connection }] : []),
       ...(m.publish ? [{ kind: "effect", name: "social.publish", connection: m.connection, risk: "medium", reachesPerson: false, ...m.publish }] : []),
     ],
   }) as const;

@@ -9,14 +9,15 @@ import { campaignCheck, campaignKinds, campaignOnPlanApproved, campaignOnPlanCre
 import { createVault, credentialLabel, credentialReady, rootKeyFromEnv } from "./modules/credentials/index";
 import { createFacts, describeFactChange, factKinds, factVersion } from "./modules/facts/index";
 import { approverMayApprove, workspaceLive } from "./modules/identity/index";
-import { createItems, itemRoutes, warn } from "./modules/items/index";
+import { createItems, itemRoutes, routeCapacity, warn } from "./modules/items/index";
 import { TEST_SECRET, testIdentity, testLedger } from "./modules/outreach/fixtures/support";
 import { createOutreach, outreachFloors } from "./modules/outreach/index";
 import { createPlans, planKinds, type PlanBody } from "./modules/plans/index";
 import { loadPlugins } from "./modules/plugins/index";
 import { touchCheck } from "./modules/schedule/index";
+import { createTrackingDomains } from "./modules/tracking/index";
 import { createTestNet } from "./modules/social/fixtures/net";
-import { accountHealthCheck, createPosts, pauseInWorkspace, postAppearance, postLinkImage, pauseOnAccountLimit, postLimitCheck, socialKinds, socialRoutes, stepUpCredential, unpauseAccount } from "./modules/social/index";
+import { accountHealthCheck, createPosts, pauseInWorkspace, postAppearance, postLinkImage, pauseOnAccountLimit, postLimitCheck, socialCapacity, socialKinds, socialRoutes, stepUpCredential, unpauseAccount } from "./modules/social/index";
 import { createSocial } from "./modules/social/index";
 
 process.env.DIREX_AUTH_SECRET = TEST_SECRET;
@@ -63,6 +64,10 @@ const facts = createFacts({ items: () => items });
 const plans = createPlans({ items: () => items, facts, onPlanCreated: campaignOnPlanCreated });
 const own = { app: "system" as "own" | "system" };
 const posts = createPosts({ plugins: () => plugins, vault: () => ({ appSource: async () => own.app }), networks, items: () => items, now, launchesOn: (w, day) => campaigns.launchesBetween(w, day, day) });
+// Posts on their Social account's pace, composed as the worker does (ADR 0038). The rest of this file
+// keeps exact times, so its dispatch times stay where the tests put them.
+const pacedItems = createItems({ ledger, now, kinds: socialKinds(), capacity: routeCapacity((c) => (c.endsWith("/social.publish") ? socialCapacity({ networks }) : undefined)) });
+const pacedPosts = createPosts({ plugins: () => plugins, vault: () => ({ appSource: async () => own.app }), networks, items: () => pacedItems, now });
 const campaigns = createCampaigns({ plans, facts, items: () => items, outreach: () => outreach, posts: () => posts, startDraft: () => async () => ({ ok: false, reason: "not_here" }), now });
 const social = createSocial({ plugins: () => plugins, vault: () => vault, networks, deployment: () => "cloud", callbackUrl: () => "" });
 
@@ -569,21 +574,91 @@ test("a post to one of several accounts on a network that doesn't say who runs i
   expect((await stateOf(second!.itemId)).warnings.map((w) => w.text)).not.toContain("Say who runs this account on the account itself, then note it under Run by.");
 });
 
-test("two posts on one account in one slot warn and stay out of approve all clean; on two accounts they don't", async () => {
+test("a step's posts on one account are placed apart on its pace; a person's Calendar time inside the gap is kept with a warning", async () => {
   beforeWhen();
-  const [x, y] = [await postStep(), await postStep()];
-  const [a, b] = [await account(), await account()];
-  await draft(x, [{ ...a, text: "Earlier" }]);
-  const [near] = await draft(y, [{ ...a, text: "Near" }], new Date(WHEN.getTime() + 14 * 60_000));
-  expect((await stateOf(near!.itemId)).clean).toBe(false);
-  const [far] = await draft(y, [{ ...b, text: "Far" }], new Date(WHEN.getTime() + 14 * 60_000));
-  expect((await stateOf(far!.itemId)).clean).toBe(true);
-  const [apart] = await draft(y, [{ ...a, text: "Apart" }], new Date(WHEN.getTime() + 16 * 60_000));
-  expect(apart!.ok).toBe(true);
-  expect((await stateOf(apart!.itemId)).clean).toBe(true);
-  // A wrong result here would hold real work.
-  const results = await items.approveClean(W, [{ id: near!.itemId, revision: await revisionOf(near!.itemId) }], { approverId: owner as never, may: () => true });
-  expect(results[0]!.result.ok).toBe(true);
+  const a = await account();
+  const times: Date[] = [];
+  const steps: string[] = [];
+  const itemIds: string[] = [];
+  for (const key of ["one", "two", "three"]) {
+    steps.push(await postStep());
+    const [r] = await pacedPosts.draft(W, { campaignId: steps.at(-1)!, stepKey: "launch", title: "Launch", plannedAt: WHEN }, [{ ...a, text: `Post ${key}` }], owner);
+    itemIds.push(r!.itemId!);
+    times.push((await pacedItems.view(W, r!.itemId!))!.at!);
+  }
+  // The network names no pace, so the fallback applies: 08:00 to 20:00, an hour apart.
+  for (const t of times) {
+    expect(t.toISOString().slice(0, 10)).toBe("2026-11-03");
+    expect(t.getUTCMinutes() % 15).not.toBe(0);
+    for (const o of times) if (o !== t) expect(Math.abs(o.getTime() - t.getTime())).toBeGreaterThanOrEqual(60 * 60_000);
+  }
+  const mine = await pacedPosts.write(W, { ...a, text: "Mine", at: times[0]! }, owner);
+  expect(mine.ok).toBe(true);
+  const view = (await pacedItems.view(W, mine.itemId!))!;
+  expect(view.at).toEqual(times[0]);
+  expect(view.warnings.map((w) => w.text)).toContain("Another post on this account is planned within 60 minutes.");
+  // An External token's time is placed, as a step's is.
+  const token = await pacedPosts.writeAs(W, { ...a, text: "From a token", at: times[0]! }, { system: `external_token:${crypto.randomUUID()}` });
+  expect(token.ok).toBe(true);
+  expect((await pacedItems.view(W, token.itemId!))!.at).not.toEqual(times[0]);
+  // The same words with the step moved to the next day: the post follows it there, keeping its minute.
+  const nextDay = new Date(WHEN.getTime() + 24 * 60 * 60_000);
+  const [again] = await pacedPosts.draft(W, { campaignId: steps[0]!, stepKey: "launch", title: "Launch", plannedAt: nextDay }, [{ ...a, text: "Post one" }], owner);
+  expect(again).toMatchObject({ ok: true, itemId: itemIds[0] });
+  expect((await pacedItems.view(W, itemIds[0]!))!.at).toEqual(new Date(times[0]!.getTime() + 24 * 60 * 60_000));
+});
+
+test("an interrupted Social reschedule cannot publish at the old time", async () => {
+  beforeWhen();
+  const a = await account();
+  const step = { campaignId: await postStep(), stepKey: "launch", title: "Launch", plannedAt: WHEN };
+  const targets = [{ ...a, text: "Wait for the new slot" }];
+  const [post] = await pacedPosts.draft(W, step, targets, owner);
+  const id = post!.itemId!;
+  expect((await approve(id)).status).toBe(200);
+  const actionId = (await pacedItems.actionIdOf(W, id))!;
+  const oldSlot = (await pacedItems.view(W, id))!.at!;
+  const plannedAt = new Date(WHEN.getTime() + 24 * 60 * 60_000);
+  // Commit the reservation, simulating an interruption before the Item and Action are updated.
+  const moved = await socialCapacity({ networks }).reserveAutomatic!(W, actionId, plannedAt, clock.at);
+  expect(moved?.result.kind).toBe("reserved");
+  expect(await ledger.getAction(W, actionId)).toMatchObject({ state: "scheduled", dueAt: oldSlot });
+  try {
+    clock.at = oldSlot;
+    await ledger.run(W, actionId);
+    expect(published(actionId)).toHaveLength(0);
+    expect(await ledger.getAction(W, actionId)).toMatchObject({ state: "held", holdReason: "cap" });
+    expect((await pacedItems.moveItem(W, id, moved!.slot, { userId: owner })).ok).toBe(true);
+    expect((await approve(id)).status).toBe(200);
+    clock.at = moved!.slot;
+    await ledger.run(W, actionId);
+    expect(published(actionId)).toHaveLength(1);
+  } finally {
+    beforeWhen();
+  }
+});
+
+test("an unchanged step post follows an earlier Workspace day even on the same UTC date", async () => {
+  beforeWhen();
+  await q("update workspaces set time_zone = 'America/Los_Angeles' where id = $1", [W]);
+  try {
+    const a = await account();
+    const step = { campaignId: await postStep(), stepKey: "launch", title: "Launch", plannedAt: new Date("2026-11-04T16:00:00Z") };
+    const targets = [{ ...a, text: "Same words" }];
+    const [first] = await pacedPosts.draft(W, step, targets, owner);
+    expect(first?.ok).toBe(true);
+    const itemId = first!.itemId!;
+    const initial = (await pacedItems.view(W, itemId))!.at!;
+    expect(initial.toISOString()).toMatch(/^2026-11-04T16:/);
+    const plannedAt = new Date("2026-11-04T02:00:00Z");
+    const [again] = await pacedPosts.draft(W, { ...step, plannedAt }, targets, owner);
+    expect(again).toMatchObject({ ok: true, itemId });
+    const moved = (await pacedItems.view(W, itemId))!.at!;
+    // 02:00–03:00 UTC is 18:00–19:00 PST on November 3, inside this account's posting hours.
+    expect(moved.toISOString()).toMatch(/^2026-11-04T02:/);
+  } finally {
+    await q("update workspaces set time_zone = 'UTC' where id = $1", [W]);
+  }
 });
 
 test("the month's limit on Direx's app holds the next post with no call, and own keys have none", async () => {
@@ -760,6 +835,63 @@ test("a fresh account starts at the floor: one post a day, no links, and the nex
   await ledger.run(W, (await items.actionIdOf(W, second))!);
   expect((await stateOf(second)).state).toBe("sent");
   own.app = "system";
+});
+
+test("an account's day at dispatch is the Workspace's day, not UTC's", async () => {
+  beforeWhen();
+  await q("update workspaces set time_zone = 'America/Los_Angeles' where id = $1", [W]);
+  try {
+    const a = await account();
+    // 09:20 UTC on the 3rd and 07:00 UTC on the 4th are both the 3rd in Los Angeles.
+    const first = await postOn(a, "Morning", 20);
+    const second = await postOn(a, "Late", 22 * 60);
+    await runAt(first, new Date(WHEN.getTime() + 21 * 60_000));
+    expect((await stateOf(first)).state).toBe("sent");
+    await runAt(second, new Date(WHEN.getTime() + (22 * 60 + 1) * 60_000));
+    expect(await stateOf(second)).toMatchObject({ state: "held", reasonCode: "account_budget_reached" });
+  } finally {
+    await q("update workspaces set time_zone = 'UTC' where id = $1", [W]);
+  }
+});
+
+test("a post sent on a retry counts on the day the retry went out", async () => {
+  beforeWhen();
+  const a = await account();
+  const first = await postOn(a, "Retried", 20);
+  const second = await postOn(a, "Same day", 120);
+  await runAt(first, new Date(WHEN.getTime() + 21 * 60_000));
+  expect((await stateOf(first)).state).toBe("sent");
+  // Its first attempt was the day before, rejected, and kept as the first dispatch.
+  await q("update actions set first_dispatched_at = first_dispatched_at - interval '1 day' where id = $1", [await items.actionIdOf(W, first)]);
+  await runAt(second, new Date(WHEN.getTime() + 121 * 60_000));
+  expect(await stateOf(second)).toMatchObject({ state: "held", reasonCode: "account_budget_reached" });
+});
+
+test("a post before a skipped local midnight does not spend the next day's budget", async () => {
+  await q("update workspaces set time_zone = 'America/Sao_Paulo' where id = $1", [W]);
+  const previous = clock.at;
+  clock.at = new Date("2018-11-04T01:00:00Z");
+  try {
+    const a = await account();
+    const write = async (text: string, at: Date) => {
+      const post = await posts.write(W, { ...a, text, at }, owner);
+      const id = post.itemId!;
+      expect((await approve(id)).status).toBe(200);
+      return id;
+    };
+    // 02:30Z is 23:30 on Nov 3; the clock jumps to 01:00 on Nov 4 at 03:00Z.
+    const before = new Date("2018-11-04T02:30:00Z");
+    const after = new Date("2018-11-04T03:30:00Z");
+    const first = await write("Before the jump", before);
+    const second = await write("After the jump", after);
+    await runAt(first, before);
+    expect((await stateOf(first)).state).toBe("sent");
+    await runAt(second, after);
+    expect((await stateOf(second)).state).toBe("sent");
+  } finally {
+    clock.at = previous;
+    await q("update workspaces set time_zone = 'UTC' where id = $1", [W]);
+  }
 });
 
 test("a paused account holds every post, and a pause halves the budget once", async () => {
@@ -943,9 +1075,6 @@ test("a post written on the Calendar waits for approval, outside any campaign, o
   expect(mode).toBe("publish");
   expect(await stateOf(itemId)).toMatchObject({ state: "needs_approval" });
   expect(await q("select campaign_id, step_key from social_posts where item_id = $1", [itemId])).toEqual([{ campaign_id: null, step_key: `calendar:${itemId}` }]);
-  // A second post on the same account is its own, and the two share a slot.
-  const second = (await (await write({ ...a, text: "Another" })).json()) as { itemId: string };
-  expect((await stateOf(second.itemId)).warnings.map((w) => w.text)).toContain("Another post on this account is planned within 15 minutes.");
   expect((await call(`/api/w/${W}/social/posts/${itemId}`, cookie, { method: "PUT", body: { text: "Edited" } })).status).toBe(200);
   const title = async (id: string) => ((await (await call(`/api/w/${W}/items/${id}`, cookie)).json()) as { item: { title: string } }).item.title;
   // Its title is its first words, so an edit retitles it, published or copied by hand.
@@ -976,4 +1105,53 @@ test("a post written in a system actor's name keeps its extra warnings, waits fo
   expect(await stateOf(r.itemId!)).toMatchObject({ state: "needs_approval", clean: false, warnings: expect.arrayContaining([{ code: "untrusted_source", text: 'Sent by External token "Zapier".' }]) });
   const detail = (await (await call(`/api/w/${W}/items/${r.itemId}`, cookie)).json()) as { timeline: { actor: { kind: string; id: string } }[] };
   expect(detail.timeline[0]?.actor).toEqual({ kind: "system", id: actor.system });
+});
+
+test("a tracking Campaign's post carries its step's tracked link with no token, records each use, and reads its card from the destination", async () => {
+  beforeWhen();
+  const id = await postStep();
+  const hostname = `links${crypto.randomUUID().slice(0, 8)}.example.com`;
+  let txt = "";
+  const domains = createTrackingDomains({ dns: { records: async () => ({ cname: ["t.direx.example"], txt: [txt] }), handshake: async () => true }, target: () => "t.direx.example" });
+  const d = await domains.add(W, owner, hostname);
+  if (typeof d === "string") throw new Error(d);
+  txt = d.txtValue;
+  await domains.check(W, d.id);
+  await q(
+    "update campaigns set tracking_domain_id = $2, tracking_on = true, tracking_set_by = $3, tracking_set_at = now(), tracking_wording_version = 1, per_person_on = true, per_person_set_by = $3, per_person_set_at = now(), per_person_wording_version = 1 where id = $1",
+    [id, d.id, owner],
+  );
+  const textOf = async (itemId: string) => (await q("select a.spec ->> 'text' as text from actions a join items i on i.action_id = a.id where i.id = $1", [itemId]))[0].text as string;
+  const usesOf = (itemId: string) => q("select l.destination, u.token_hash from tracked_link_uses u join tracked_links l on l.id = u.link_id join items i on i.action_id = u.action_id where i.id = $1 order by l.destination", [itemId]);
+  const tracked = (rest: string) => new RegExp(`^${rest.replace("LINK", `https://${hostname.replaceAll(".", "\\.")}/t/[A-Za-z0-9_-]{22}`)}$`);
+
+  // A Network that drops links without the Workspace's own app gets no tracked link, and says so.
+  const [dropped] = await draft(id, [{ ...(await account()), text: "See https://acme.test/q4" }]);
+  const removed = { code: "unspecified", text: expect.stringContaining("Links were removed") };
+  expect((await stateOf(dropped!.itemId)).warnings).toContainEqual(removed);
+  expect(await usesOf(dropped!.itemId)).toEqual([]);
+
+  own.app = "own";
+  try {
+    const a = await account();
+    const [r] = await draft(id, [{ ...a, text: "Read https://acme.test/q4 today" }]);
+    expect(r).toMatchObject({ ok: true, mode: "publish" });
+    expect(await textOf(r!.itemId)).toMatch(tracked("Read LINK today"));
+    expect((await stateOf(r!.itemId)).warnings).not.toContainEqual(removed);
+    expect(await usesOf(r!.itemId)).toEqual([{ destination: "https://acme.test/q4", token_hash: null }]);
+    // Drafting new words revises the same Action and records the new link too.
+    await draft(id, [{ ...a, text: "Read https://acme.test/q5" }]);
+    expect(await textOf(r!.itemId)).toMatch(tracked("Read LINK"));
+    // A person's own edit does the same.
+    ok(await posts.edit(W, r!.itemId, "Now https://acme.test/q6", owner));
+    const text = await textOf(r!.itemId);
+    expect(text).toMatch(tracked("Now LINK"));
+    expect((await usesOf(r!.itemId)).map((u) => u.destination)).toEqual(["https://acme.test/q4", "https://acme.test/q5", "https://acme.test/q6"]);
+    // The card is read from where the link goes, never through the redirect.
+    const reads: string[] = [];
+    await postAppearance(W, r!.itemId, networks(), { text, readPreview: async (url) => (reads.push(url), null) });
+    expect(reads).toEqual(["https://acme.test/q6"]);
+  } finally {
+    own.app = "system";
+  }
 });

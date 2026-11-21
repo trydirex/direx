@@ -26,6 +26,7 @@ export async function pauseOnBounces(tx: OutreachTx, credentialId: string, at: D
 
 // Every effect that sends an email from a Mailbox.
 const MAIL_EFFECTS: ReadonlySet<string> = new Set(["email.send", MAILBOX_PROBE, ...PLACEMENT_EFFECTS]);
+export const isMailboxMailEffect = (capability: string): boolean => MAIL_EFFECTS.has(capability.slice(capability.lastIndexOf("/") + 1));
 
 /**
  * The ledger's hook: a provider refusing a Mailbox's email as abuse pauses the Mailbox, in the same
@@ -35,7 +36,7 @@ const MAIL_EFFECTS: ReadonlySet<string> = new Set(["email.send", MAILBOX_PROBE, 
 export const pauseOnProviderAbuse =
   (deps: { now: () => Date }) =>
   async (rawTx: unknown, action: { capability: string; credentialId: string | null }, limit: "sending_limit" | "abuse"): Promise<void> => {
-    if (limit !== "abuse" || !action.credentialId || !MAIL_EFFECTS.has(action.capability.slice(action.capability.lastIndexOf("/") + 1))) return;
+    if (limit !== "abuse" || !action.credentialId || !isMailboxMailEffect(action.capability)) return;
     const at = deps.now();
     await setPause(rawTx as OutreachTx, action.credentialId, { reason: "provider_abuse", by: null, at });
     await halveRampOf(rawTx as OutreachTx, action.credentialId, at);
@@ -45,7 +46,7 @@ export const pauseOnProviderAbuse =
 export const slowOnSendingLimit =
   (deps: { now: () => Date }) =>
   async (rawTx: unknown, action: { capability: string; credentialId: string | null }, limit: "sending_limit" | "abuse"): Promise<void> => {
-    if (limit !== "sending_limit" || !action.credentialId || !MAIL_EFFECTS.has(action.capability.slice(action.capability.lastIndexOf("/") + 1))) return;
+    if (limit !== "sending_limit" || !action.credentialId || !isMailboxMailEffect(action.capability)) return;
     await halveRampOf(rawTx as OutreachTx, action.credentialId, deps.now());
   };
 

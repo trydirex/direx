@@ -11,7 +11,7 @@ import { eligibilityOf, hashedOptOut, hashedOptOutsExist, hasOpenSignal, readSet
 import { notEligible } from "../domain/eligibility";
 import { mailboxHold } from "./header-check";
 import { holdOf, holdResult } from "./holds";
-import { MAILBOX_PAUSED, mailboxPaused } from "./mailboxes";
+import { MAILBOX_PAUSED, isMailboxMailEffect, mailboxPaused } from "./mailboxes";
 import { subscriberHold } from "../domain/subscribers";
 
 /** Whether replies to this Action's mailbox are being read. Required, so wiring can't leave it out. */
@@ -44,10 +44,12 @@ export const outreachFloors = (repliesRead: RepliesRead, now: () => Date = () =>
   // An effect that reaches a Person with no Touch is refused by the schedule's check. A placement
   // effect has none, and still never goes to an address that opted out or bounced.
   if (!touch) {
-    if (!placementEffect(action.capability)) return { kind: "ok" };
-    const to = recipientsOf(action.spec);
-    if ((await suppressionReasons(tx, to)).length || (await optedOutBefore(tx, hasher, to))) return { kind: "block", reason: "suppressed" };
-    return (await mailboxPaused(tx, action.credentialId)) ? { kind: "hold", reason: MAILBOX_PAUSED } : { kind: "ok" };
+    if (placementEffect(action.capability)) {
+      const to = recipientsOf(action.spec);
+      if ((await suppressionReasons(tx, to)).length || (await optedOutBefore(tx, hasher, to))) return { kind: "block", reason: "suppressed" };
+    }
+    if (isMailboxMailEffect(action.capability) && await mailboxPaused(tx, action.credentialId)) return { kind: "hold", reason: MAILBOX_PAUSED };
+    return { kind: "ok" };
   }
   const { personId, touchClass } = touch;
   // An opt-out from any address of this Person's group stops mail to all of them.

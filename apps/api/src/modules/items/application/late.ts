@@ -3,7 +3,7 @@
 // one, at the next send slot free for its Person, so the Touch check matches and the caps still hold.
 // One Workspace notice counts what is late and resumes the late emails together; posts go one by one.
 import type { Actor, Ledger } from "../../ledger";
-import { reserveTouch, reserveTouchIn } from "../../schedule";
+import { lockTouchGroup, reserveTouch, reserveTouchIn } from "../../schedule";
 import { inWorkspace, itemIdByAction, setPlannedAt, type ItemsTx } from "../adapters/repo";
 import type { CapacityPort } from "./capacity";
 import type { ItemKind } from "./items";
@@ -20,10 +20,13 @@ const SEARCH_HOURS = 14 * 24;
 export async function nextFreeSlot(capacity: CapacityPort, workspaceId: string, actionId: string, from: Date): Promise<Date | null> {
   const end = from.getTime() + SEARCH_HOURS * HOUR;
   for (let next = from; next.getTime() <= end; ) {
-    const placed = await capacity.reserveAutomatic?.(workspaceId, actionId, next, from, async (tx, slot) => {
-      if (slot.getTime() > end) return "unavailable";
-      const touch = await reserveTouchIn(tx, workspaceId, actionId, slot, from);
-      return touch.kind === "not_found" ? "not_found" : touch.kind === "full" ? "unavailable" : "ok";
+    const placed = await capacity.reserveAutomatic?.(workspaceId, actionId, next, from, {
+      lock: (tx) => lockTouchGroup(tx, actionId),
+      check: async (tx, slot) => {
+        if (slot.getTime() > end) return "unavailable";
+        const touch = await reserveTouchIn(tx, workspaceId, actionId, slot, from);
+        return touch.kind === "not_found" ? "not_found" : touch.kind === "full" ? "unavailable" : "ok";
+      },
     });
     if (placed) {
       if (placed.slot.getTime() > end || placed.result.kind === "not_found") return null;

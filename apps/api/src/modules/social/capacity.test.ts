@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A post's place on its Social account's day (ADR 0038): placed inside the account's hours and gap,
 // counted against its budget, refused to a person on a spent day, and safe under many writers.
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { createVault, credentialLabel, rootKeyFromEnv } from "../credentials/index";
 import { routeCapacity } from "../items/index";
@@ -12,6 +12,8 @@ import { offPace } from "./application/pace";
 const PUBLISH = "com.example.testnet/social.publish";
 const PACE = { from: 8 * 60, until: 20 * 60, weekends: true, gapMinutes: 60 };
 const HOUR = 3_600_000;
+// Two connections for this file's pool: a writer that waits for a second one while it holds the account lock stalls.
+process.env.DIREX_DB_POOL_MAX = "2";
 
 async function world() {
   const capacity = routeCapacity((c) => (c.endsWith("/social.publish") ? socialCapacity({ networks: () => [{ connection: "testnet", pace: PACE }] }) : undefined));
@@ -50,10 +52,6 @@ async function world() {
 // The world's clock starts on Monday 2026-11-02 at 09:00 UTC, and the Workspace is on UTC.
 const tomorrow = (h: number, m = 0) => new Date(Date.UTC(2026, 10, 3, h, m));
 const today = (h: number, m = 0) => new Date(Date.UTC(2026, 10, 2, h, m));
-
-// Set the bound before the first fixture opens the shared app pool.
-beforeAll(() => { vi.stubEnv("DIREX_DB_POOL_MAX", "2"); });
-afterAll(() => { vi.unstubAllEnvs(); });
 
 describe("a Social account's day", () => {
   it("places a step's posts on the wanted day inside the hours, apart by the gap and never on a quarter hour", async () => {

@@ -279,6 +279,9 @@ export async function postActionOf(tx: WorkspaceTx, actionId: string) {
 type ReservationRow = { actionId: string; day: string; slot: Date } & Account;
 const reservationColumns = { actionId: socialReservations.actionId, day: socialReservations.day, slot: socialReservations.slot, credentialId: socialReservations.credentialId, networkId: socialReservations.networkId };
 
+/** Newest first; the id only settles an exact tie. */
+const NEWEST = [desc(socialReservations.createdAt), desc(socialReservations.id)];
+
 /** The newest reservation of every post that has one on the account's days in [from, to]. */
 export async function newestReservationsAround(tx: WorkspaceTx, a: Account, from: string, to: string): Promise<ReservationRow[]> {
   const near = tx
@@ -289,7 +292,7 @@ export async function newestReservationsAround(tx: WorkspaceTx, a: Account, from
     .selectDistinctOn([socialReservations.actionId], reservationColumns)
     .from(socialReservations)
     .where(inArray(socialReservations.actionId, near))
-    .orderBy(socialReservations.actionId, desc(socialReservations.createdAt));
+    .orderBy(socialReservations.actionId, ...NEWEST);
 }
 
 export async function newestReservationFor(tx: WorkspaceTx, actionId: string): Promise<ReservationRow | undefined> {
@@ -297,7 +300,7 @@ export async function newestReservationFor(tx: WorkspaceTx, actionId: string): P
     .select(reservationColumns)
     .from(socialReservations)
     .where(eq(socialReservations.actionId, actionId))
-    .orderBy(desc(socialReservations.createdAt))
+    .orderBy(...NEWEST)
     .limit(1);
   return row;
 }

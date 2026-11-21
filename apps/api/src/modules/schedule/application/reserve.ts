@@ -29,6 +29,13 @@ export function reserveTouch(workspaceId: string, actionId: string, slot: Date, 
   return withGroupRetry(workspaceId, (tx) => reserveTouchIn(tx, workspaceId, actionId, slot, opts.now ?? new Date()));
 }
 
+/** Takes the group lock reserveTouchIn would, for a caller that must hold it before a lock of its own. */
+export async function lockTouchGroup(tx: ScheduleTx, actionId: string): Promise<void> {
+  const action = (await actionStates(tx, [actionId])).get(actionId);
+  const touch = action && touchOf(action.spec);
+  if (touch && CAPS_BY_CLASS[touch.touchClass].length) await lockGroup(tx, touch.personId);
+}
+
 /** Reserve on the caller's transaction; the caller must retry the whole operation on group contention. */
 export async function reserveTouchIn(tx: ScheduleTx, workspaceId: string, actionId: string, slot: Date, now: Date): Promise<ReserveResult> {
   const action = (await actionStates(tx, [actionId])).get(actionId);

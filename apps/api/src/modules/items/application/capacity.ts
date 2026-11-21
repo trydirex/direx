@@ -18,12 +18,15 @@ export type Placed = { at: Date; warning?: Warning };
 /** `day` and `limit` name the day that was full; `reason` is the refusal a person sees, when it isn't a Mailbox's. */
 export type CapacityResult = MailboxReserveResult | { kind: "full"; day: string; limit: number; reason: "account_day_full" };
 
+/** `lock` runs before the account's own lock, `check` once the slot is placed, both in its transaction. */
+export type SlotCheck = { lock(tx: ItemsTx): Promise<void>; check(tx: ItemsTx, slot: Date): Promise<"ok" | "unavailable" | "not_found"> };
+
 export type CapacityPort = {
   placeIn(tx: ItemsTx, workspaceId: string, t: PlaceTarget, now: Date): Promise<Placed>;
   reserveIn(tx: ItemsTx, workspaceId: string, actionId: string, slot: Date, now: Date): Promise<CapacityResult>;
   reserve(workspaceId: string, actionId: string, slot: Date, opts?: { now?: Date }): Promise<CapacityResult>;
-  /** Atomically place and reserve, optionally checking the slot on the same transaction before inserting. Undefined uses the usual flow. */
-  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: (tx: ItemsTx, slot: Date) => Promise<"ok" | "unavailable" | "not_found">): Promise<{ slot: Date; result: CapacityResult | { kind: "unavailable" } } | undefined>;
+  /** Atomically place and reserve, optionally locking first and checking the slot in the same transaction before inserting. Undefined uses the usual flow. */
+  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<{ slot: Date; result: CapacityResult | { kind: "unavailable" } } | undefined>;
   nextTime(workspaceId: string, actionId: string, from: Date, opts?: { now?: Date }): Promise<Date | null>;
 };
 

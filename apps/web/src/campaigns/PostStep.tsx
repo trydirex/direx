@@ -432,7 +432,7 @@ export function PostStep(p: { workspaceId: string; id: string; step: Step; edit:
           </fieldset>
           )}
           <div className="flex flex-col gap-1.5 text-sm font-medium">
-            <Input label="When" type="datetime-local" className="w-auto" required value={when} onChange={(e) => setWhen(e.target.value)} />
+            <Input label="Not before" hint="Each account's post goes out at its own time that day, inside its posting hours." type="datetime-local" className="w-auto" required value={when} onChange={(e) => setWhen(e.target.value)} />
           </div>
           {picked.map((o) => {
             const v = previews[o.key];

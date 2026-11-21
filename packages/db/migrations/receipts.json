@@ -672,6 +672,10 @@
     "0163_agent_drift_incidents.sql": {
       "sha256": "c0c4fa9d53bd2976334d052f4ccfd4b3ee0f8b7341ee1a42cdfd96be8344df6a",
       "description": "Adds agent_drift_incidents: one row per agent version and measure (rejections or citations) whose rate rose past the ADR 0008 rule 026 line, with both rates and run counts, under forced Workspace RLS, with UPDATE and DELETE revoked from the app"
+    },
+    "0164_click_counts.sql": {
+      "sha256": "2071873d580c09b1b400684883e25dec6353913e376962dc14c52cc3869a37e0",
+      "description": "Add grow-only daily click counts per tracked link and classification key, and the per-minute counter behind the redirect's rate limit (ADR 0035)"
     }
   }
 }

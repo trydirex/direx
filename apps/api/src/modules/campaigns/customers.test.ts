@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Customers: a Person role stored in person_roles, and the import that adds only opted-in rows, with
 // consent recorded as their basis. Through HTTP with real outreach, and the table as direx_app.
-import { afterAll, expect, test } from "vitest";
+import { afterAll, expect, test, vi } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { createFacts } from "../facts/index";
 import { itemsApp } from "../items/fixtures/items";
@@ -125,6 +125,31 @@ test("a consent already on record is kept as it is", async () => {
   await outreach.addPerson(W, { email: a, country: "DE", basis: "consent", evidence: "Signed up on the form", userId: (await me()).id });
   const { body } = await importCsv(`email,opted_in,opted_in_on\n${a},yes,2026-05-01`);
   expect((await list()).find((p) => p.personId === body.added[0]!.personId)).toMatchObject({ basis: "consent", evidence: "Signed up on the form" });
+});
+
+test.each([true, false])("a consent saved during import keeps its restrictions only while active (%s)", async (active) => {
+  const email = address();
+  const userId = (await me()).id;
+  const expiresAt = new Date(Date.now() + (active ? 1 : -1) * 86_400_000);
+  const evidence = "Signed up with a time limit";
+  const read = outreach.person;
+  const spy = vi.spyOn(outreach, "person").mockImplementationOnce(async (workspaceId, personId) => {
+    const before = await read(workspaceId, personId);
+    await outreach.addPerson(workspaceId, { email, country: "GB", basis: "consent", evidence, scope: "news", expiresAt, userId });
+    return before;
+  });
+  try {
+    const { status, body } = await importCsv(`email,opted_in\n${email},yes`);
+    expect(status).toBe(200);
+    expect(body.added).toHaveLength(1);
+    const { personId } = body.added[0]!;
+    expect(await read(W, personId)).toMatchObject(active
+      ? { basis: "consent", scope: "news", expiresAt: expiresAt.toISOString() }
+      : { basis: "consent", scope: null, expiresAt: null });
+    expect((await list()).find((p) => p.personId === personId)?.evidence).toBe(active ? evidence : "Customer import: opted in (no date given)");
+  } finally {
+    spy.mockRestore();
+  }
 });
 
 test("a row's own country is stated; with no country anywhere the row is left out", async () => {

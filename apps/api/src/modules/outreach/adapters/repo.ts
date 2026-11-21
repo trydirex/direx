@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { newsletterSubscribers, outreachSettings, personEligibility, replySignals, suppressions, unsubscribeTokens } from "@direx/db/schema-outreach";
-import { and, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, lte, ne, or, sql } from "drizzle-orm";
 
 export const inWorkspace = withWorkspace;
 export type OutreachTx = WorkspaceTx;
@@ -112,11 +112,18 @@ export async function emailForToken(tx: WorkspaceTx, tokenHash: string): Promise
   return row?.email ?? null;
 }
 
-export async function saveEligibility(tx: WorkspaceTx, row: typeof personEligibility.$inferInsert) {
-  await tx
+export async function saveEligibility(tx: WorkspaceTx, row: typeof personEligibility.$inferInsert & { recordedAt: Date }, preserveActiveConsent?: boolean) {
+  const [saved] = await tx
     .insert(personEligibility)
     .values(row)
-    .onConflictDoUpdate({ target: [personEligibility.workspaceId, personEligibility.personId], set: row });
+    .onConflictDoUpdate({
+      target: [personEligibility.workspaceId, personEligibility.personId],
+      set: row,
+      // A null expiry does not satisfy <=, so consent without an expiry is kept too.
+      setWhere: preserveActiveConsent ? or(ne(personEligibility.basis, "consent"), lte(personEligibility.expiresAt, row.recordedAt)) : undefined,
+    })
+    .returning({ personId: personEligibility.personId });
+  return saved !== undefined;
 }
 
 export async function eligibilityOf(tx: WorkspaceTx, personIds: string[]) {

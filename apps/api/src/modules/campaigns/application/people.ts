@@ -161,7 +161,7 @@ export function campaignPeople({ outreach, items, now, keptEligibility }: { outr
       const confidence: Confidence = given ? "stated" : record?.country ? (record.confidence === "inferred" ? "inferred" : "stated") : "inferred";
       const entityType = ENTITY_TYPES.find((t) => t === record?.entityType);
       const evidence = `Customer import: opted in ${on ? `on ${on}` : "(no date given)"}`;
-      const saved = await outreach().addPerson(workspaceId, { email, country, basis: "consent", evidence, entityType, confidence, userId });
+      const saved = await outreach().addPerson(workspaceId, { email, country, basis: "consent", evidence, entityType, confidence, userId }, { preserveActiveConsent: true });
       if (!saved.ok) return { status: "skipped", reason: "invalid_email", email };
     }
     const added = await inWorkspace(workspaceId, (tx) => addRole(tx, { workspaceId, personId: person.id, role: "customer", name: read.row.firstName, company: read.row.company, addedBy: userId, at: now() }));

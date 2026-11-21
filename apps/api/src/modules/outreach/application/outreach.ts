@@ -255,10 +255,10 @@ export function createOutreach(deps: OutreachDeps) {
     },
 
     /** Adds a Person, or finds the one with this email, and records why they may be contacted. `existed` says the record replaced one. */
-    async addPerson(workspaceId: string, a: EligibilityInput & { email: string; userId: string }) {
+    async addPerson(workspaceId: string, a: EligibilityInput & { email: string; userId: string }, opts?: { preserveActiveConsent?: boolean }) {
       const person = await ensurePerson(workspaceId, a.email);
       if (!person.ok) return person;
-      await inWorkspace(workspaceId, (tx) =>
+      const saved = await inWorkspace(workspaceId, (tx) =>
         saveEligibility(tx, {
           workspaceId,
           personId: person.id,
@@ -271,12 +271,12 @@ export function createOutreach(deps: OutreachDeps) {
           countryConfidence: a.confidence ?? "stated",
           recordedBy: a.userId,
           recordedAt: now(),
-        }),
+        }, opts?.preserveActiveConsent),
       );
       // A new record may answer why mail to them was held. Every check runs again, so one that still
       // doesn't count holds it again.
       // ponytail: one scan of held Actions per saved Person; batch per import if large lists get slow.
-      await deps.ledger?.().resumeHeldBy(workspaceId, "not_eligible", { userId: a.userId }, async (_tx, held) => held.personId === person.id);
+      if (saved) await deps.ledger?.().resumeHeldBy(workspaceId, "not_eligible", { userId: a.userId }, async (_tx, held) => held.personId === person.id);
       return person;
     },
 

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The host parses every query's input and answer through its catalogue entry (ADR 0028 rule 001):
 // an answer that doesn't fit is the provider's error, named by the query and never by the answer.
+import { firstPartyPlugins } from "@direx/extensions";
 import { definePlugin, type QueryName } from "@direx/plugin-sdk";
 import { CATALOGUE } from "@direx/plugin-sdk/host";
 import { expect, test } from "vitest";
@@ -24,6 +25,7 @@ const INPUTS: Record<QueryName, unknown> = {
   "newsletter.lists": {},
   "social.identity": null,
   "social.health": null,
+  "social.posts": { limit: 10 },
   "docs.sources": {},
   "docs.page_text": { pageId: "p1" },
   "docs.rows": { sourceId: "s1" },
@@ -62,4 +64,12 @@ test("an input that doesn't fit its entry never reaches the plugin", async () =>
 
 test("a typed credential's answer is parsed the same way", async () => {
   await expect(plugins.queryTyped(W, "com.example.liar/social.identity", null, { key: "k" })).rejects.toMatchObject({ reason: "provider_error", message: "the answer to social.identity does not fit its catalogue entry" });
+});
+
+test("a social network's registry entry names social.posts only when its plugin declares it", () => {
+  expect(plugins.socialFor("svc")?.posts).toBe("com.example.liar/social.posts");
+  const bluesky = firstPartyPlugins().find((p) => p.manifest.id === "com.trydirex.bluesky")!;
+  const without = loadPlugins({ sources: [{ mode: "in_process", plugin: bluesky }], credentials: async () => null, confinement: "none", log: () => {} });
+  expect(without.socialFor("bluesky")).toBeDefined();
+  expect(without.socialFor("bluesky")).not.toHaveProperty("posts");
 });

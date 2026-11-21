@@ -253,7 +253,7 @@ export function loadPlugins(deps: PluginsDeps) {
     }
   }
 
-  const socials = new Map<string, { pluginId: string; identity: QueryId<"social.identity">; health: QueryId<"social.health">; publish?: string; dedupe?: DedupeClass }>();
+  const socials = new Map<string, { pluginId: string; identity: QueryId<"social.identity">; health: QueryId<"social.health">; posts?: QueryId<"social.posts">; publish?: string; dedupe?: DedupeClass }>();
   for (const { manifest } of loaded.values()) {
     for (const c of manifest.capabilities) {
       if (c.kind !== "query" || c.name !== SOCIAL_IDENTITY) continue;
@@ -267,6 +267,7 @@ export function loadPlugins(deps: PluginsDeps) {
         pluginId: manifest.id,
         identity: capabilityId(manifest.id, SOCIAL_IDENTITY),
         health: capabilityId(manifest.id, SOCIAL_HEALTH),
+        ...(manifest.capabilities.some((p) => p.kind === "query" && p.name === SOCIAL_POSTS && p.connection === c.connection) && { posts: capabilityId(manifest.id, SOCIAL_POSTS) }),
         ...(publish?.kind === "effect" && { publish: capabilityId(manifest.id, SOCIAL_PUBLISH), dedupe: publish.dedupe }),
       });
     }
@@ -457,6 +458,7 @@ export function docsProviders(manifests: readonly Manifest[]): DocsProvider[] {
 }
 export const SOCIAL_IDENTITY = "social.identity";
 export const SOCIAL_HEALTH = "social.health";
+export const SOCIAL_POSTS = "social.posts";
 export const SOCIAL_PUBLISH = "social.publish";
 
 /**

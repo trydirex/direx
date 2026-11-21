@@ -5,7 +5,8 @@
 export type SocialAvailability = "available" | "awaiting_approval" | "not_built" | "not_available";
 
 export type NetworkFeature = {
-  key: "publish" | "links" | "follow_ups" | "video" | "image" | "analytics" | "comments";
+  /** `read`: Direx reads the account's own published posts as outside posts (ADR 0039). */
+  key: "publish" | "links" | "follow_ups" | "video" | "image" | "analytics" | "comments" | "read";
   built: boolean;
   /** Granted scopes it needs; a missing one offers a reconnect. */
   scopes: readonly string[];
@@ -24,6 +25,8 @@ export type SocialNetworkInfo = {
   tokenEnds?: boolean;
   noDailyHealth?: boolean;
   monthlyPostLimit?: number;
+  /** How many days this network's posts may be kept as outside posts (ADR 0039). */
+  outsidePostDays?: number;
   /** The most characters one post takes, counted in code points. */
   postLimit?: number;
   noIdenticalAcrossAccounts?: boolean;

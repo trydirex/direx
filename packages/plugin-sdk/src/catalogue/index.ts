@@ -13,7 +13,7 @@ import { emailSend, mailboxProbe, placementArchive, placementJoin, placementRepo
 import { newsletterCancel, newsletterDraft, newsletterLists, newsletterProfile, newsletterPublish, newsletterSend, newsletterStats, newsletterSubscribers } from "./newsletter";
 import { placementRead } from "./placement";
 import { searchAnalytics, searchProperties } from "./search";
-import { socialHealth, socialIdentity, socialPublish } from "./social";
+import { socialHealth, socialIdentity, socialPosts, socialPublish } from "./social";
 import { verifyAddress, verifyBalance } from "./verify";
 
 const entries = [
@@ -31,6 +31,7 @@ const entries = [
   newsletterLists,
   socialIdentity,
   socialHealth,
+  socialPosts,
   docsSources,
   docsPageText,
   docsRows,

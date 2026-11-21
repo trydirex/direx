@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow } f
 import { toast } from "@/components/toast";
 import { SignIn } from "../identity/SignIn";
 import { MailboxPace, WorkspaceZone } from "./MailboxPace";
+import { MailboxDomain } from "./MailboxDomain";
 import { MailboxPause } from "./MailboxPause";
 import { mayApprove } from "../items/actions";
 import { momentWords } from "../campaigns/actions";
@@ -262,6 +263,7 @@ export function Credentials(p: { workspace: S["MyWorkspace"]; me: string; tab?: 
                         <>
                           <MailboxPace workspaceId={workspace.id} credentialId={c.id} name={c.name} mayEdit={mayConnect && (c.ownerUserId === me || manage)} />
                           <MailboxPause workspaceId={workspace.id} credentialId={c.id} name={c.name} mayPause={mayConnect} mayResume={mayApprove(workspace.role)} />
+                          <MailboxDomain workspaceId={workspace.id} credentialId={c.id} />
                           <PlacementJoin workspaceId={workspace.id} credentialId={c.id} name={c.name} me={me} />
                           <Placement workspaceId={workspace.id} credentialId={c.id} name={c.name} />
                         </>

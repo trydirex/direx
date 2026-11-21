@@ -30,7 +30,7 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
         if (reserved.kind === "full") return { ok: false, reason: "slot_full", cap: reserved.cap };
         if (reserved.kind === "not_found") return { ok: false, reason: "not_found" };
         const day = await capacity.reserve(workspaceId, item.actionId, plannedAt, { now: at });
-        if (day.kind === "full") return { ok: false, reason: "mailbox_day_full", day: day.day, limit: day.limit };
+        if (day.kind === "full") return { ok: false, reason: "reason" in day ? day.reason : "mailbox_day_full", day: day.day, limit: day.limit };
       }
       await onStep?.("reserved");
       await inWorkspace(workspaceId, (tx) => setPlannedAt(tx, id, plannedAt, at));
@@ -48,33 +48,34 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
      * approval, as any move does. A slot over its cap still moves, and says so: the claim then finds no
      * reservation for that time and holds the Action with reason "cap". A full Mailbox day is different:
      * the move takes the Mailbox's next time with room instead, since no person is there to choose.
+     * A Social post stays on its original schedule if the target day has no capacity.
      */
     async redateItem(workspaceId: string, id: string, wanted: Date, actor: Actor) {
       const at = now();
       if (wanted <= at) return { ok: false, reason: "slot_in_past" } as const;
-      const lookup = await inWorkspace(workspaceId, (tx) => readItem(tx, id));
-      let plannedAt = wanted;
-      if (lookup?.item.actionId) {
-        const room = await capacity.nextTime(workspaceId, lookup.item.actionId, wanted, { now: at });
-        if (!room) return { ok: false, reason: "mailbox_day_full" } as const;
-        plannedAt = room;
-      }
-      const row = lookup;
+      const row = await inWorkspace(workspaceId, (tx) => readItem(tx, id));
       if (!row) return { ok: false, reason: "not_found" } as const;
       const { item, action } = row;
       if (action?.holdReason === "outcome_unknown") return { ok: false, reason: "outcome_unknown" } as const;
       if (action?.state === "claimed" || !canMove(action ? action.state : (item.state as OwnState), action?.holdReason ?? null)) return { ok: false, reason: "wrong_state" } as const;
       const approved = action !== null && (action.state === "scheduled" || action.state === "held");
-      const later = approved && action.dueAt !== null && plannedAt > action.dueAt;
-
+      let plannedAt = wanted;
       let overCap = false;
       if (item.actionId) {
+        const placed = await capacity.reserveAutomatic?.(workspaceId, item.actionId, wanted, at);
+        const result = placed?.result;
+        if (result?.kind === "not_found" || result?.kind === "unavailable") return { ok: false, reason: result.kind } as const;
+        if (result?.kind === "full") return { ok: false, reason: "reason" in result ? result.reason : "mailbox_day_full", day: result.day, limit: result.limit } as const;
+        const room = placed?.slot ?? await capacity.nextTime(workspaceId, item.actionId, wanted, { now: at });
+        if (!room) return { ok: false, reason: "mailbox_day_full" } as const;
+        plannedAt = room;
         const reserved = await reserveTouch(workspaceId, item.actionId, plannedAt, { now: at });
         if (reserved.kind === "not_found") return { ok: false, reason: "not_found" } as const;
         overCap = reserved.kind === "full";
         // ponytail: a writer that took the last place since the search leaves the move over the limit; the dispatch check moves it on.
-        await capacity.reserve(workspaceId, item.actionId, plannedAt, { now: at });
+        if (!placed) await capacity.reserve(workspaceId, item.actionId, plannedAt, { now: at });
       }
+      const later = approved && action.dueAt !== null && plannedAt > action.dueAt;
       await inWorkspace(workspaceId, (tx) => setPlannedAt(tx, id, plannedAt, at));
       if (approved) {
         const r = later ? await ledger.redateAction(workspaceId, item.actionId!, plannedAt, actor) : await ledger.moveAction(workspaceId, item.actionId!, actor);

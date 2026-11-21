@@ -5,6 +5,7 @@ import { afterAll, expect, test } from "vitest";
 import { masterRootKey } from "./adapters/crypto";
 import type { AppProvider } from "./adapters/provider";
 import { resolverOf, createVault } from "./application/secrets";
+import { singleAppSource } from "./application/apps";
 import type { Identity } from "./application/connect";
 import { vaultDb } from "./test-helpers";
 
@@ -56,7 +57,7 @@ function setup(o: { provider?: AppProvider; identity?: Partial<Identity> | null;
     rootKey: masterRootKey(Buffer.alloc(32, 9)),
     now: () => new Date(clock.t),
     appProviders: [o.provider ?? net()],
-    systemApp: async () => (o.system === false ? null : { clientId: "direx-app", clientSecret: "direx-secret" }),
+    appSources: [singleAppSource("deployment", async () => (o.system === false ? null : { clientId: "direx-app", clientSecret: "direx-secret" }))],
     identify: async () => {
       if (o.identity === null) throw new Error("no such account");
       return { accountId: "acct-1", accountLabel: "Ana's page", scopes: ["a", "b"], ...o.identity };

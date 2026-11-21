@@ -12,6 +12,8 @@ export type Refusal =
   | "budget_stop"
   | "safety_daily_cap"
   | "unpriced"
-  | "duplicate";
+  | "duplicate"
+  /** Whoever runs this Direx holds the Workspace, its Organization or the deployment. */
+  | "operator_hold";
 
 export type ErrorFamily = "configuration" | "transient_upstream" | "provider_quota" | "model_refusal" | "no_receipt";

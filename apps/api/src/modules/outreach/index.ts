@@ -11,6 +11,7 @@ export { BASES, ENTITY_TYPES, WARNINGS, type Basis, type Confidence, type Entity
 export { outreachRoutes } from "./routes";
 export { createHoldHooks } from "./application/hold-hooks";
 export { createMailboxPauses, pauseOnProviderAbuse, type MailboxPauses } from "./application/mailboxes";
+export { createMailboxDomains, type MailboxDomains } from "./application/domain-report";
 export { CHANNELS as OUTSIDE_CHANNELS, createOutsideTouches, type OutsideTouches, type ReplyStop } from "./application/outside-touches";
 export { createHeaderCheck, finishHeaderCheck, isProbeCapability, probeRecipient, probeWordingVersion, PROBE_WORDING_VERSION, type ProbeFor } from "./application/header-check";
 export { OPTOUT_PROMPT, optOutEval } from "./application/optout-model";

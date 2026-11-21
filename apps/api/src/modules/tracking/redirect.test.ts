@@ -9,7 +9,7 @@ import { testIdentity } from "../identity/test-auth";
 import { createPerson } from "../people/index";
 import { classify, countingEnded, FETCHER_LIST, PER_MINUTE } from "./domain/classify";
 import { clicksOf, linkOn, ownerOf, trackingCampaign, trackingOff, useOf } from "./fixtures/campaign";
-import { createRedirect, createTrackingDomains, trackingRedirectApp } from "./index";
+import { createRedirect, createTrackingDomains, trackedDestination, trackingRedirectApp } from "./index";
 
 const BROWSER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15";
 const NOW = new Date("2026-11-21T12:00:00Z");
@@ -161,4 +161,13 @@ test("a stopped domain keeps answering for links already sent", async () => {
   await useOf(w, id, { state: "sent", sentAt: new Date("2026-11-20T00:00:00Z") });
   await domains.stop(w, domainId);
   expect((await follow(hostname, `/t/${id}`)).status).toBe(302);
+});
+
+test("a tracked link of this Workspace reads back as its destination, and anything else as itself", async () => {
+  const { w, hostname, link } = await world();
+  const other = await world();
+  const id = await link("https://acme.example/card");
+  expect(await trackedDestination(w, `https://${hostname}/t/${id}`)).toBe("https://acme.example/card");
+  expect(await trackedDestination(w, `https://${hostname}/t/${id}/${token()}`)).toBe("https://acme.example/card");
+  for (const url of [`https://${other.hostname}/t/${id}`, `http://${hostname}/t/${id}`, `https://${hostname}/about`, "not a url"]) expect(await trackedDestination(w, url)).toBe(url);
 });

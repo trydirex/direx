@@ -12,5 +12,6 @@ export { MAX_REASON_NOTE, REVIEW_REASONS, type ReasonGiven, type ReviewReason } 
 export { blocking, EXEMPT_PROVENANCE, warn, WARNING_CODES, type Warning, type WarningCode } from "./domain/warnings";
 export { itemRoutes, WarningShape } from "./routes";
 export { createItems, KEYS_LOST_KIND, type Items } from "./application/create";
+export { mailboxCapacity, routeCapacity, type CapacityPort, type CapacityResult, type PlaceTarget, type Placed } from "./application/capacity";
 export { askResultWhy } from "./application/result-why";
 export { lineProblems, resultWhy, type WhyResult } from "./definitions/result-why";

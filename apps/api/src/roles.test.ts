@@ -29,6 +29,13 @@ test("a split role refuses self-host, and refuses a root key that isn't in DIREX
   }
 });
 
+test("a split role takes a root key an extension supplies, with nothing in env, and still refuses self-host", () => {
+  for (const role of ["api", "worker"] as const) {
+    expect(() => assertRoleAllowed(role, "cloud", {}, true)).not.toThrow();
+    expect(() => assertRoleAllowed(role, "self_host", {}, true)).toThrow(`DIREX_ROLE=${role} is for Direx cloud only`);
+  }
+});
+
 test("a split role refuses media on local disk", () => {
   for (const role of ["api", "worker"] as const) {
     expect(() => assertSharedMedia(role, null)).toThrow(`DIREX_ROLE=${role} needs media on object storage`);

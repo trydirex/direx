@@ -14,7 +14,7 @@ import type { Media } from "./modules/media/index";
 import type { Exports } from "./modules/retention/index";
 import { credentialLabel, credentialReady, dataDir, suppressionHasher, type Vault } from "./modules/credentials/index";
 import { adminEmails, approverMayApprove, logMailer, mayGrantRules, memberEmail, workspaceLive, type Mailer } from "./modules/identity/index";
-import { createItems, warn } from "./modules/items/index";
+import { createItems, routeCapacity, warn } from "./modules/items/index";
 import { createLessons, lessonCheckOpen } from "./modules/lessons/index";
 import { BRIEF_OUTPUT_KEY, briefSink, createPageReader, seoDefinitions, seoKinds, type Briefs } from "./modules/seo/index";
 import { COMPARISON_OUTPUT_KEY, competitorDefinitions, competitorKinds, createLabels, createMoves, LABELS_OUTPUT_KEY, POST_OUTPUT_KEY } from "./modules/competitors/index";
@@ -23,7 +23,7 @@ import { createStandingRules, ruleStillCovers, standingRuleKinds, suspendForAgen
 import { connectedMailboxes, createReplies, createReplyDesk, mailMembers, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
 import { planDefinitions, planKinds, planSinks } from "./modules/plans/index";
 import { createLedger, type SigningKeys } from "./modules/ledger/index";
-import { accountHealthCheck, pauseOnAccountLimit, postAppearance, postLimitCheck, previewOf, socialKinds } from "./modules/social/index";
+import { accountHealthCheck, pauseOnAccountLimit, postAppearance, postLimitCheck, previewOf, socialCapacity, socialKinds } from "./modules/social/index";
 import { companyReviews, createCompanyReader, createHandovers, createRuns, createVerifier, NAMES_OUTPUT_KEY, namesEnded, namesSink, prospectingDefinitions, prospectKinds, TERMS_OUTPUT_KEY, termsSink, verifyThrough, workCompanyReads, workCompanyVerifies, workHandovers, type StartNames, type VerifyAddress, type VerifyQuery } from "./modules/prospecting/index";
 import { deploymentFromEnv, modelSignInKind, modelsFromEnv, routesFor, sandboxStatus, signInNeeds, workHoldWatch, type Models } from "./modules/models/index";
 import { confinedSpawn, docsProviders, EMAIL_RECEIVED, installGate, listenForInstalls, listInstalled, loadPlugins, MAIL_SENT, mailboxRepliesRead, newsletterLists, webhookVerifier, type Plugins } from "./modules/plugins/index";
@@ -242,7 +242,9 @@ export async function compose(opts: WorkerOptions) {
     const r = await fetchImage(url, AbortSignal.timeout(4_000)).catch(() => null);
     return r?.ok ? { bytes: r.bytes } : null;
   };
-  const items = createItems({ ledger, actionPermission, kinds: { ...factKinds(), ...planKinds({ now, onPlanApproved: campaignOnPlanApproved({ now, items: () => items }) }), ...campaignKinds({ now }), ...optOutReviewKind({ boss, now }), ...replyDeskKind(), ...modelSignInKind(), ...socialKinds() , ...standingRuleKinds(), ...prospectKinds({ boss, now }), ...newsletterKinds(), ...seoKinds({ now }), ...competitorKinds(), ...lessons.kinds(), ...next.kinds(), ...askKinds({ items: () => items, now }), ...askStartKinds({ starts: askStarts, boss, now }) }, now, describeChange: describeFactChange, onSubmitted: standingRules.onSubmitted, onApproved: standingRules.onApproved, onApplied: async (workspaceId, item) => {
+  // Posts count against their Social account's day (ADR 0038); everything else against its Mailbox's.
+  const postCapacity = socialCapacity({ networks: socialNetworks });
+  const items = createItems({ ledger, actionPermission, capacity: routeCapacity((capability) => (capability.endsWith("/social.publish") ? postCapacity : undefined)), kinds: { ...factKinds(), ...planKinds({ now, onPlanApproved: campaignOnPlanApproved({ now, items: () => items }) }), ...campaignKinds({ now }), ...optOutReviewKind({ boss, now }), ...replyDeskKind(), ...modelSignInKind(), ...socialKinds() , ...standingRuleKinds(), ...prospectKinds({ boss, now }), ...newsletterKinds(), ...seoKinds({ now }), ...competitorKinds(), ...lessons.kinds(), ...next.kinds(), ...askKinds({ items: () => items, now }), ...askStartKinds({ starts: askStarts, boss, now }) }, now, describeChange: describeFactChange, onSubmitted: standingRules.onSubmitted, onApproved: standingRules.onApproved, onApplied: async (workspaceId, item) => {
       // Each only suggests or follows up, so one failing doesn't stop the other.
       await opts.campaigns().planApplied(workspaceId, item).catch((e) => console.error("campaigns: planApplied failed", item.id, e));
       await next.onApplied(workspaceId, item);

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Tracked links (ADR 0035): a Campaign's links rewritten onto the customer's own tracking domain, and
-// which message used which link. Click counts, per-Person clicks, marks and the redirect's rate
-// counter come with the code that writes them. Nothing here holds a client IP address, user agent or other request
+// which message used which link, and the redirect's daily counts. Per-Person clicks and marks come with
+// the code that writes them. Nothing here holds a client IP address, user agent or other request
 // header (rule 009). Links never change once made (rule 004), so the app may not update or delete them.
 import { sql } from "drizzle-orm";
-import { boolean, check, foreignKey, index, pgTable, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, date, foreignKey, index, integer, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { actions, people, workspaces } from "./schema";
 import { campaignDms, campaigns } from "./schema-campaigns";
@@ -97,5 +97,42 @@ export const trackedLinkUses = pgTable(
     check("tracked_link_uses_token_hash_check", sql`${t.tokenHash} is null or ${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
     // DMs never carry a token (rule 012).
     check("tracked_link_uses_dm_token_check", sql`${t.dmId} is null or ${t.tokenHash} is null`),
+  ],
+);
+
+// Clicks per link, UTC day and classification (rule 011): a count, nothing about who clicked. Likely
+// automatic clicks are kept apart from the rest, under the classifier version that sorted them (rule 010).
+export const clickCounts = pgTable(
+  "click_counts",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    linkId: text("link_id").notNull(),
+    day: date("day").notNull(),
+    bucket: text("bucket").notNull(),
+    classifierVersion: integer("classifier_version").notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "click_counts_pkey", columns: [t.workspaceId, t.linkId, t.day, t.bucket, t.classifierVersion] }),
+    foreignKey({ name: "click_counts_link_fk", columns: [t.workspaceId, t.linkId], foreignColumns: [trackedLinks.workspaceId, trackedLinks.id] }),
+    check("click_counts_bucket_check", sql`${t.bucket} in ('automatic', 'rest')`),
+    check("click_counts_count_check", sql`${t.count} > 0`),
+  ],
+);
+
+// Requests per link per minute, the redirect's rate limit (rule 005), shared by every API process. The
+// app prunes old minutes as it counts, as the door does with door_counters.
+export const trackingCounters = pgTable(
+  "tracking_counters",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    linkId: text("link_id").notNull(),
+    minute: tz("minute").notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "tracking_counters_pkey", columns: [t.workspaceId, t.linkId, t.minute] }),
+    foreignKey({ name: "tracking_counters_link_fk", columns: [t.workspaceId, t.linkId], foreignColumns: [trackedLinks.workspaceId, trackedLinks.id] }),
+    check("tracking_counters_count_check", sql`${t.count} > 0`),
   ],
 );

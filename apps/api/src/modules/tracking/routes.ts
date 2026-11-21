@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Tracking domains over HTTP (ADR 0035). identity's Workspace middleware has resolved the caller; only
 // Admins and Owners manage domains. The edge's ask is a separate app, served only on an internal port
-// that is never published or proxied (rule 006), so it needs no key.
+// that is never published or proxied (rule 006), so it needs no key. The redirect is public: the edge
+// sends only /t/ to it, and it answers only on a tracking domain's own host.
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { Hono } from "hono";
 import { requirePermission, type MemberEnv } from "../identity/index";
 import type { TrackingDomains } from "./application/domains";
+import type { Redirect } from "./application/redirect";
 
 const ErrorBody = z.object({ error: z.string() }).openapi("TrackingError");
 const json = <T extends z.ZodType>(schema: T, description: string) => ({ description, content: { "application/json": { schema } } });
@@ -86,4 +88,14 @@ export function trackingRoutes(deps: { domains: () => TrackingDomains }) {
 /** The edge's on-demand TLS ask: 200 lets it get a certificate for `domain`, 404 refuses. Internal port only. */
 export function trackingAskApp(deps: { domains: () => TrackingDomains }) {
   return new Hono().get("/ask", async (c) => ((await deps.domains().allowed(c.req.query("domain") ?? "")) ? c.body(null, 200) : c.body(null, 404)));
+}
+
+/** A tracked link's redirect (rule 004): 302 to the stored destination or 404, never cached, no cookie (rule 009). */
+export function trackingRedirectApp(deps: { redirect: () => Redirect }) {
+  // Hono answers HEAD through the GET route, with the request's own method, which classify reads.
+  return new Hono().on("GET", ["/t/:linkId", "/t/:linkId/:token"], async (c) => {
+    const to = await deps.redirect()({ host: c.req.header("host") ?? "", linkId: c.req.param("linkId") ?? "", token: c.req.param("token") ?? null, method: c.req.method, userAgent: c.req.header("user-agent") ?? null });
+    c.header("Cache-Control", "no-store");
+    return to ? c.redirect(to, 302) : c.body(null, 404);
+  });
 }

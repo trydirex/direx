@@ -56,6 +56,10 @@ const OUTSIDE = [
   "GET /api/connections/callback",
   // The link in an email: the token is the proof, and it opens only its own Workspace.
   "GET /api/unsubscribe/:workspaceId/:token",
+  // A tracked link on a customer's tracking domain: the host and link id find its Workspace through one
+  // system function, and it answers only for that Workspace's approved messages (ADR 0035 rule 021).
+  "GET /t/:linkId",
+  "GET /t/:linkId/:token",
   // A plugin reading an approved video: the signed token names one file in one Workspace and ends in minutes.
   "GET /api/media-links/:token",
   "POST /api/unsubscribe/:workspaceId/:token",

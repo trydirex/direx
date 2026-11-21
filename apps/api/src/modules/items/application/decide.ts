@@ -13,8 +13,8 @@ import type { ItemKind } from "./items";
 import { nextFreeSlot } from "./late";
 import { toView, type ItemView } from "./view";
 
-export type ItemRefusal = Refusal | "not_clean" | "details_stale" | "slot_full" | "mailbox_day_full" | "slot_in_past" | "forbidden" | "choice_not_allowed" | (string & {});
-/** A refusal's `day` and `limit` name the Mailbox day that was full. */
+export type ItemRefusal = Refusal | "not_clean" | "details_stale" | "slot_full" | "mailbox_day_full" | "account_day_full" | "slot_in_past" | "forbidden" | "choice_not_allowed" | (string & {});
+/** A refusal's `day` and `limit` name the Mailbox or Social account day that was full. */
 export type Decided = { ok: true; item: ItemView } | { ok: false; reason: ItemRefusal; cap?: string; day?: string; limit?: number };
 const refuse = (reason: ItemRefusal, cap?: string): Decided => ({ ok: false, reason, ...(cap && { cap }) });
 
@@ -121,7 +121,7 @@ export function decisions({
     if (reserved.kind === "full") return refuse("slot_full", reserved.cap);
     if (reserved.kind === "not_found") return refuse("not_found");
     const day = await capacity.reserve(workspaceId, item.actionId!, slot, { now: at });
-    if (day.kind === "full") return { ok: false, reason: "mailbox_day_full", day: day.day, limit: day.limit };
+    if (day.kind === "full") return { ok: false, reason: "reason" in day ? day.reason : "mailbox_day_full", day: day.day, limit: day.limit };
     const r = await ledger.approve(workspaceId, item.actionId!, {
       approverId: who.approverId,
       draftVersion: revision,

@@ -15,7 +15,8 @@ const plans = createPlans({ items: () => items, facts, onPlanCreated: campaignOn
 const noSend = () => {
   throw new Error("nothing is sent here");
 };
-const outreach = createOutreach({ items: () => items, send: noSend, baseUrl: () => "http://direx.test" });
+const readBacks = new Map<string, () => Promise<void>>();
+const outreach = createOutreach({ items: () => items, send: noSend, baseUrl: () => "http://direx.test", readBack: async (_ws, email) => readBacks.get(email)?.() });
 const noDraft = async () => ({ ok: false as const, reason: "not_here" });
 const campaigns = createCampaigns({ plans, facts, items: () => items, outreach: () => outreach, startDraft: () => noDraft });
 routes.route("/", campaignRoutes({ campaigns: () => campaigns }));
@@ -76,6 +77,28 @@ test("invalid opt-in dates are skipped and a later opted-in row is still importe
   expect(status).toBe(200);
   expect(body.skipped).toEqual(invalid.map((email, i) => ({ row: i + 1, email, reason: "bad_opt_in_date" })));
   expect(body.added.map((row) => row.email)).toEqual([valid]);
+});
+
+test("concurrent imports of a new email return one Customer and reuse its Person", async () => {
+  const email = address();
+  // Hold both requests after their first lookup misses, before either can create a Person.
+  const bothMissed = Promise.withResolvers<void>();
+  let misses = 0;
+  readBacks.set(email, async () => {
+    if (++misses === 2) bothMissed.resolve();
+    await bothMissed.promise;
+  });
+  try {
+    const results = await Promise.all([importCsv(`email,opted_in\n${email},yes`), importCsv(`email,opted_in\n${email.toUpperCase()},yes`)]);
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
+    const added = results.flatMap((r) => r.body.added);
+    const updated = results.flatMap((r) => r.body.updated);
+    expect(added).toEqual([{ email, personId: expect.any(String) }]);
+    expect(updated).toEqual(added);
+    expect((await list()).filter((p) => p.email === email)).toEqual([expect.objectContaining({ ...added[0], basis: "consent" })]);
+  } finally {
+    readBacks.delete(email);
+  }
 });
 
 test("re-importing the same list adds no one twice, and a later name changes what's stored", async () => {

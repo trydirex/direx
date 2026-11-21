@@ -404,14 +404,14 @@ test("a tracking Campaign's email carries its links on the tracking domain, says
   );
   const tracking = { campaignId: campaign.id as string, stepKey: "s1" };
   const { personId } = await addPerson();
-  const item = itemOf(await outreach.compose(W, composed(personId, { text: "See https://acme.example/a", tracking }), owner));
+  const item = itemOf(await outreach.compose(W, composed(personId, { text: "See https://acme.example/?ids[]=1", tracking }), owner));
   const uses = () => q("select l.destination, u.token_hash, u.person_id from tracked_link_uses u join tracked_links l on l.id = u.link_id join items i on i.action_id = u.action_id where i.id = $1 order by l.destination", [item.id]);
   const used = (destination: string) => ({ destination, token_hash: expect.stringMatching(/^[0-9a-f]{64}$/), person_id: personId });
-  expect(await uses()).toEqual([used("https://acme.example/a")]);
+  expect(await uses()).toEqual([used("https://acme.example/?ids[]=1")]);
 
   // A revise records the new text's links; the old use stays, as uses are never deleted.
-  expect((await outreach.revise(W, item.id, composed(personId, { text: "Now https://acme.example/b", tracking }), owner)).ok).toBe(true);
-  expect(await uses()).toEqual([used("https://acme.example/a"), used("https://acme.example/b")]);
+  expect((await outreach.revise(W, item.id, composed(personId, { text: "Now https://acme.example/O'Reilly", tracking }), owner)).ok).toBe(true);
+  expect(await uses()).toEqual([used("https://acme.example/?ids[]=1"), used("https://acme.example/O'Reilly")]);
 
   const before = fake.sent.length;
   await ledger.run(W, await approve(item.id));

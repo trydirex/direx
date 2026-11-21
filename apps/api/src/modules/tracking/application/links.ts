@@ -14,6 +14,7 @@ export type FixedLinks = { text: string; perRecipient: boolean; inputsHash: stri
 const PER_PERSON_COUNTRY = "US";
 // A domain whose DNS is checked can get its certificate on the first click; one stopped makes no links.
 const MAKES_LINKS = new Set(["dns_ok", "verified"]);
+const RECIPIENT_PATH = /^\/t\/[A-Za-z0-9_-]{22}\/[A-Za-z0-9_-]{43}$/;
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
 const token = () => randomBytes(32).toString("base64url");
@@ -44,7 +45,14 @@ export function fixLinks(workspaceId: string, a: TrackingInput & { personId: str
       urls.set(destination, `https://${t.hostname}/t/${linkId}${secret ? `/${secret}` : ""}`);
       uses.push({ linkId, tokenHash: secret && sha256(secret), personId: secret && a.personId });
     }
-    return { text: rewriteLinks(a.text, (d) => urls.get(d) ?? null).text, perRecipient: perPerson && uses.length > 0, inputsHash: inputsHash(inputs), uses };
+    let perRecipient = false;
+    const { text } = rewriteLinks(a.text, (destination) => {
+      const replacement = urls.get(destination);
+      const output = new URL(replacement ?? destination);
+      if (output.hostname === t.hostname && RECIPIENT_PATH.test(output.pathname)) perRecipient = true;
+      return replacement ?? null;
+    });
+    return { text, perRecipient, inputsHash: inputsHash(inputs), uses };
   });
 }
 

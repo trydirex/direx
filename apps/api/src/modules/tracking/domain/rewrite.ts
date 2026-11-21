@@ -6,17 +6,21 @@
 /** The longest destination a tracked link stores; a longer URL stays as written. */
 export const MAX_DESTINATION = 2048;
 
-const URL_RUN = /https:\/\/[^\s<>"'`[\]]+/g;
+// In a square-bracket wrapper, keep paired brackets inside the URL but stop at the wrapper.
+const URL_RUN = /(?<=\[)https:\/\/(?:\[[^\s<>"`[\]]*\]|[^\s<>"`[\]])+|https:\/\/[^\s<>"`]+/g;
 const TRAILING = /[.,;:!?*_~]$/;
 
 // Prose ends a URL with punctuation, and Markdown wraps it in brackets: drop trailing marks, and a
 // closing bracket the URL itself never opened, as in `[label](https://a.example/b)`.
-function trimmed(run: string): string {
+function trimmed(run: string, opener: string | undefined): string {
   let url = run;
   for (;;) {
     if (TRAILING.test(url)) url = url.slice(0, -1);
     else if (url.endsWith(")") && url.split("(").length < url.split(")").length) url = url.slice(0, -1);
-    else return url;
+    else if (opener === "'" && url.endsWith("'")) {
+      url = url.slice(0, -1);
+      opener = undefined;
+    } else return url;
   }
 }
 
@@ -35,8 +39,8 @@ function trackable(url: string): boolean {
  */
 export function rewriteLinks(text: string, track: (destination: string) => string | null): { text: string; destinations: string[] } {
   const destinations: string[] = [];
-  const out = text.replace(URL_RUN, (run) => {
-    const url = trimmed(run);
+  const out = text.replace(URL_RUN, (run: string, offset: number) => {
+    const url = trimmed(run, text[offset - 1]);
     if (!trackable(url)) return run;
     if (!destinations.includes(url)) destinations.push(url);
     const to = track(url);

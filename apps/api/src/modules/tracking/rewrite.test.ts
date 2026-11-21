@@ -11,6 +11,15 @@ import { createTrackingDomains, fixLinks } from "./index";
 
 const tracked = (d: string) => `<${d}>`;
 
+test("keeps URL characters inside prose and Markdown delimiters", () => {
+  const query = "https://acme.example/?ids[]=1";
+  const path = "https://acme.example/O'Reilly";
+  expect(rewriteLinks(`[${query}], '${path}', [read](${path})`, tracked)).toEqual({
+    text: `[<${query}>], '<${path}>', [read](<${path}>)`,
+    destinations: [query, path],
+  });
+});
+
 test.each([
   ["a bare URL", "See https://acme.example/pricing today", "See <https://acme.example/pricing> today"],
   ["a Markdown link", "[Pricing](https://acme.example/pricing)", "[Pricing](<https://acme.example/pricing>)"],
@@ -94,6 +103,8 @@ test("only a US Person whose country a person stated gets a token, and only whil
     expect(r.perRecipient).toBe(false);
     expect(LINK.exec(r.text)![3]).toBeUndefined();
   }
+  const edited = `Edited: [details](${a.text.split(" and ")[0]})`;
+  expect(await on.fix(us, edited)).toMatchObject({ text: edited, perRecipient: true, uses: [] });
   // No link, no token, so no line either.
   expect(await on.fix(us, "No links here")).toMatchObject({ text: "No links here", perRecipient: false, uses: [] });
   const off = await world();

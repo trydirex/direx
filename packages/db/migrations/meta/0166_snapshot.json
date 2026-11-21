@@ -1,6 +1,6 @@
 {
   "id": "3373979d-2b85-4022-b6f7-4c53dca5bf16",
-  "prevId": "0137b855-2026-4e63-aaf3-91bf0b248f1d",
+  "prevId": "daf73302-205e-4f88-a712-9c60d6ee8311",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -18990,6 +18990,91 @@
       },
       "isRLSEnabled": false
     },
+    "public.click_counts": {
+      "name": "click_counts",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "link_id": {
+          "name": "link_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "day": {
+          "name": "day",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bucket": {
+          "name": "bucket",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "classifier_version": {
+          "name": "classifier_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "click_counts_link_fk": {
+          "name": "click_counts_link_fk",
+          "tableFrom": "click_counts",
+          "tableTo": "tracked_links",
+          "columnsFrom": [
+            "workspace_id",
+            "link_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "click_counts_pkey": {
+          "name": "click_counts_pkey",
+          "columns": [
+            "workspace_id",
+            "link_id",
+            "day",
+            "bucket",
+            "classifier_version"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "click_counts_bucket_check": {
+          "name": "click_counts_bucket_check",
+          "value": "\"click_counts\".\"bucket\" in ('automatic', 'rest')"
+        },
+        "click_counts_count_check": {
+          "name": "click_counts_count_check",
+          "value": "\"click_counts\".\"count\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.tracked_link_uses": {
       "name": "tracked_link_uses",
       "schema": "",
@@ -19354,6 +19439,73 @@
         "tracked_links_destination_check": {
           "name": "tracked_links_destination_check",
           "value": "\"tracked_links\".\"destination\" like 'https://%' and length(\"tracked_links\".\"destination\") <= 2048"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.tracking_counters": {
+      "name": "tracking_counters",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "link_id": {
+          "name": "link_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "minute": {
+          "name": "minute",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "count": {
+          "name": "count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "tracking_counters_link_fk": {
+          "name": "tracking_counters_link_fk",
+          "tableFrom": "tracking_counters",
+          "tableTo": "tracked_links",
+          "columnsFrom": [
+            "workspace_id",
+            "link_id"
+          ],
+          "columnsTo": [
+            "workspace_id",
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "tracking_counters_pkey": {
+          "name": "tracking_counters_pkey",
+          "columns": [
+            "workspace_id",
+            "link_id",
+            "minute"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "tracking_counters_count_check": {
+          "name": "tracking_counters_count_check",
+          "value": "\"tracking_counters\".\"count\" > 0"
         }
       },
       "isRLSEnabled": false

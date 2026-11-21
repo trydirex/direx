@@ -93,6 +93,31 @@ test("each version is counted in its own Workspace: codes classified, routeless 
   expect(listed).not.toContain(routeless.ws);
 });
 
+test("an approval counts for the version that wrote the draft it measured, not every run that returned its Item", async () => {
+  const { ws, owner } = await workspace();
+  const item = crypto.randomUUID();
+  await q(ws, `insert into items (id, workspace_id, kind, state, title, warnings, created_at, updated_at) values ($1, $2, 'notice', 'needs_approval', 'x', '[]', now(), now())`, [item, ws]);
+  // Version 1 writes the draft, a later version 1 run finds it already there, and version 2 rewrites it.
+  for (const [version, input, at] of [[1, {}, 1], [1, {}, 2], [2, { target: { redraft: item } }, 3]] as const) {
+    await q(
+      ws,
+      `with made as (
+         insert into agent_runs (workspace_id, idempotency_key, agent, definition_version, prompt_revision, prompt_digest, tool_set_digest, trigger, status, deadline_ms, step_cap, cost_cap_micros, input, created_at, updated_at)
+         values ($1, gen_random_uuid()::text, $2, $3, 'r', 'd', 't', 'person', 'succeeded', 60000, 8, 1000, $4, $5, now()) returning id, created_at
+       )
+       insert into agent_proposals (workspace_id, run_id, output_key, kind, item_id, route_hash, at) select $1, id, 'draft', 'fact_proposal', $6, $7, created_at from made`,
+      [ws, AGENT, version, JSON.stringify(input), `2026-11-0${at}T00:00:00Z`, item, `r${version}`],
+    );
+  }
+  const decide = (distance: number, day: number) => q(ws, `insert into review_decisions (workspace_id, item_id, reviewer_id, kind, decision, opened_at, decided_at, edit_distance) values ($1, $2, $3, 'email', 'edit_approve', $4, $4, $5)`, [ws, item, owner, `2026-11-0${day}T12:00:00Z`, distance]);
+  await decide(14, 3);
+  const counts = async () => (await repo.inWorkspace(ws, repo.versionCounts)).sort((x, y) => x.definitionVersion - y.definitionVersion).map((c) => [c.definitionVersion, c.editMedian, c.edited]);
+  expect(await counts()).toEqual([[1, null, 0], [2, 14, 1]]);
+  // An approval made before the rewrite measured version 1's words.
+  await decide(4, 2);
+  expect(await counts()).toEqual([[1, 4, 1], [2, 14, 1]]);
+});
+
 test("a version whose rejection rate rose opens one incident and sends one notice, once; another Workspace waits for its own check", async () => {
   const a = await workspace();
   const b = await workspace();

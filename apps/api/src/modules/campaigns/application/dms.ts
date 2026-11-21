@@ -2,9 +2,12 @@
 // DM steps: one LinkedIn or X message per Person, which a person copies, sends by hand and marks sent.
 // Direx sends nothing here, so there is no Action and no approval; the text is checked like an email
 // template's, and marking one sent logs an outside touch that holds Direx's next cold email 3 days.
+// While the Campaign tracks links, a DM's links are tracked links, the same for every Person, and
+// they answer as soon as the DM exists (ADR 0035 rules 004 and 012).
 import type { Facts } from "../../facts";
 import type { Outreach, OutsideTouches } from "../../outreach";
 import { direxTouchNear } from "../../schedule";
+import { fixLinksIn, recordUsesOf } from "../../tracking";
 import { allPeople, fillTemplate, inWorkspace, lockStep, requireApproved, stepsOf, stillWaiting } from "../adapters/repo";
 import { dmsOf, insertDm, profilesOf, readDm, setCopied, setSent, type DmRow } from "../adapters/dms-repo";
 import { leftOut, type AudienceStep, type PersonStatus } from "../domain/audience";
@@ -97,7 +100,9 @@ export function dmSteps(d: Deps) {
           }
           const merged = merge(read.text, values);
           if (!merged.ok) continue;
-          const dm = await insertDm(tx, { workspaceId, campaignId, stepKey, personId: person.personId, channel: read.channel, profileUrl, text: merged.text, templateRevision: read.step.templateRevision, createdAt: d.now() });
+          const links = await fixLinksIn(tx, workspaceId, { campaignId, stepKey, personId: null, text: merged.text, now: d.now() });
+          const dm = await insertDm(tx, { workspaceId, campaignId, stepKey, personId: person.personId, channel: read.channel, profileUrl, text: links?.text ?? merged.text, templateRevision: read.step.templateRevision, createdAt: d.now() });
+          if (dm && links) await recordUsesOf(tx, workspaceId, { dmId: dm.id }, links, d.now());
           results.push({ ...base, ok: true, itemId: dm?.id, already: !dm });
         }
         return { ok: true, results } as const;

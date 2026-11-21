@@ -11,10 +11,20 @@ export async function sendOf(tx: ScheduleTx, actionId: string): Promise<{ capabi
   return row;
 }
 
-/** A Mailbox's pace and the time zone its days and hours are in. */
-export async function paceOf(tx: ScheduleTx, credentialId: string): Promise<{ pace: MailboxPace; timeZone: string } | undefined> {
+/**
+ * A Mailbox's pace and the time zone its days and hours are in. Ramped, as planning reads it, a new
+ * Mailbox's ramp lowers its daily limit until it has a record; unramped, as a person sets it, it doesn't.
+ */
+export async function paceOf(tx: ScheduleTx, credentialId: string, ramped = true): Promise<{ pace: MailboxPace; timeZone: string } | undefined> {
   const [row] = await tx
-    .select({ dailyLimit: credentials.dailyLimit, sendFrom: credentials.sendFrom, sendUntil: credentials.sendUntil, sendWeekends: credentials.sendWeekends, timeZone: workspaces.timeZone })
+    .select({
+      // An established Mailbox has no ramp.
+      dailyLimit: ramped ? sql<number>`least(${credentials.dailyLimit}, coalesce(${credentials.rampLimit}, ${credentials.dailyLimit}))` : credentials.dailyLimit,
+      sendFrom: credentials.sendFrom,
+      sendUntil: credentials.sendUntil,
+      sendWeekends: credentials.sendWeekends,
+      timeZone: workspaces.timeZone,
+    })
     .from(credentials)
     .innerJoin(workspaces, eq(workspaces.id, credentials.workspaceId))
     .where(eq(credentials.id, credentialId));

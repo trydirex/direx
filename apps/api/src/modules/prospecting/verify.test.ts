@@ -236,7 +236,7 @@ test("an unknown stored before is asked again: a published address, and a guess 
 test("before hand-over, a refused check leaves the address out of the answer and unchanged", async () => {
   const firm = await seed("handrefused.test", { addresses: [{ email: "sales@handrefused.test" }] });
   const id = (await q<{ id: string }>("select id from prospect_addresses where company_id = $1", [firm.id]))[0]!.id;
-  expect((await verifier(refusing).freshResults(W, [id])).size).toBe(0);
+  expect(await verifier(refusing).freshResults(W, [id])).toEqual({ status: "ready", results: new Map() });
   expect(await results(firm.id)).toEqual({ sales: [null, null] });
 });
 
@@ -280,7 +280,7 @@ test("before hand-over, a result older than 30 days or unknown is checked again;
   vendor.calls.length = 0;
   const soon = await verifier(vendor.verify, new Date(NOW.getTime() + 10 * 86_400_000)).freshResults(W, all);
   expect(vendor.calls).toEqual(["hello@fresh.test"]);
-  expect(Object.fromEntries(soon)).toEqual({ [ids.sales!]: "deliverable", [ids.hello!]: "deliverable" });
+  expect(soon).toEqual({ status: "ready", results: new Map([[ids.sales!, "deliverable"], [ids.hello!, "deliverable"]]) });
 
   vendor.calls.length = 0;
   const late = new Date(NOW.getTime() + (VERIFIED_FOR_DAYS + 1) * 86_400_000);

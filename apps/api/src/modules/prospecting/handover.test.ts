@@ -4,7 +4,7 @@
 // directly rather than through the queue, so a test can make a batch fail and run it again.
 import type { VerifyAddressOutput } from "@direx/plugin-sdk";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { appClient } from "../../../../../test/db";
+import { appClient, ownerClient } from "../../../../../test/db";
 import { createBoss } from "../../jobs/boss";
 import { CONFLICT_KIND, campaignOnPlanApproved, campaignOnPlanCreated, campaignKinds, campaignRoutes, createCampaigns, type Campaigns } from "../campaigns/index";
 import { createFacts, factKinds } from "../facts/index";
@@ -201,6 +201,42 @@ test("a result older than 30 days or unknown is checked again first, and only de
   // The summary names the check just made, not the old one.
   const [row] = await q<{ evidence: string }>(w.W, "select e.evidence from person_eligibility e join person_keys k on k.person_id = e.person_id where k.value = 'unknown@fresh.test'");
   expect(row!.evidence).toContain("verified deliverable on 2026-11-02");
+});
+
+test("a hold defers a batch needing verification and the queued retry resumes after lift", async () => {
+  const w = await world();
+  const emails = Array.from({ length: 4 }, (_, i) => `p${i}@held-handover.test`);
+  await w.seed("held-handover.test", emails.map((email) => ({ email })));
+  const [last] = await q<{ id: string; email: string }>(w.W, "select id, email from prospect_addresses order by id desc limit 1");
+  await q(w.W, "update prospect_addresses set verified_at = $1 where id = $2", [new Date(NOW.getTime() - (VERIFIED_FOR_DAYS + 1) * DAY), last!.id]);
+  const campaignId = await w.newCampaign();
+  const handoverId = await w.handOver(await w.cohort(), campaignId);
+  const db = await ownerClient();
+  const lift = () => db.query("select system.lift_operator_hold('workspace', $1, 'cli:test')", [w.W]);
+  calls.length = 0;
+  vendor.calls.length = 0;
+  try {
+    await db.query("select system.set_operator_hold('workspace', $1, 'test', 'cli:test')", [w.W]);
+    await w.work(handoverId);
+    await w.work(handoverId);
+    expect(vendor.calls).toEqual([]);
+    expect(await w.view(handoverId)).toMatchObject({ status: "running", counts: { added: 3, leftOut: 0 } });
+    expect((await w.byEmail(handoverId))[last!.email]).toBeUndefined();
+    expect(calls).toEqual([3]);
+
+    const jobs = await boss.findJobs<{ workspaceId: string; handoverId: string }>(HANDOVER_QUEUE, { data: { handoverId } });
+    expect(jobs).toHaveLength(2); // The initial job and one delayed retry, even when replayed.
+    const retry = jobs.find((j) => j.startAfter > NOW)!;
+    expect(retry.startAfter.getTime()).toBe(NOW.getTime() + 60_000);
+    await lift();
+    await handovers.run(retry.data);
+    expect(vendor.calls).toEqual([last!.email]);
+    expect(calls).toEqual([3, 1]);
+    expect(await w.view(handoverId)).toMatchObject({ status: "done", counts: { added: 4, leftOut: 0 } });
+    expect((await w.byEmail(handoverId))[last!.email]).toMatchObject({ status: "added" });
+  } finally {
+    await lift().finally(() => db.end());
+  }
 });
 
 test("a guess is never handed over for a company in Canada or a Person recorded in Canada; a published address is", async () => {

@@ -39,8 +39,9 @@ per worker.
 While a hold is live, the Workspace's drafting calls are refused as `operator_hold`, and an agent
 run stops at its next model call. New prospecting runs are refused before search starts. Prospecting
 also checks the hold before each paid verification call, including calls from jobs queued before the
-hold. Use **Check again** after lifting the hold to finish refused checks. A vendor call already
-past its hold check can still finish.
+hold. Use **Check again** after lifting the hold to finish refused company checks. A Campaign
+handover that needs paid verification waits and retries its unfinished batch automatically.
+A vendor call already past its hold check can still finish.
 
 ## What it doesn't stop
 

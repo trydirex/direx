@@ -8,13 +8,14 @@ import type { PgBoss } from "pg-boss";
 import { MAX_ROWS, type Campaigns, type PersonInput, type PersonResult } from "../../campaigns/index";
 import { cohortById } from "../adapters/cohorts-repo";
 import { addHandover, addressesOfPerson, keptFor, campaignExists, campaignSkips, canadianAddresses, checkedAt, failHandover, finishHandover, handoverById, handoverCounts, handoverNames, resultsPage, saveBatch, signalsOfPerson, type HandoverResultRow } from "../adapters/handover-repo";
-import { sendHandover, type Handover } from "../adapters/queue";
+import { deferHandover, sendHandover, type Handover } from "../adapters/queue";
 import { inWorkspace } from "../adapters/repo";
 import { mayGuessIn } from "../domain/guesses";
 import { createCohorts, type CohortMember } from "./cohorts";
 import type { Verifier } from "./verify";
 
 const PAGE = 100;
+const HOLD_RETRY_MS = 60_000;
 
 /** The first line of what broke, without the values a failed query lists after it. */
 export const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).split("\nparams:")[0]!.split("\n")[0]!.slice(0, 200);
@@ -52,7 +53,7 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
   const batchSize = Math.min(deps.batchSize ?? MAX_ROWS, MAX_ROWS);
   const cohorts = createCohorts({ now });
 
-  async function handBatch(h: { id: string; campaignId: string; createdBy: string }, workspaceId: string, members: CohortMember[]): Promise<void> {
+  async function handBatch(h: { id: string; campaignId: string; createdBy: string }, workspaceId: string, members: CohortMember[]): Promise<"saved" | "operator_hold"> {
     const out = new Map<string, HandoverResultRow>();
     // Checked before verification, so nothing is paid for a guess that can't go over.
     const guesses = members.filter((m) => m.source === "guessed");
@@ -61,11 +62,12 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
 
     const toCheck = members.filter((m) => !out.has(m.addressId)).map((m) => m.addressId);
     const fresh = await deps.freshResults(workspaceId, toCheck);
+    if (fresh.status === "operator_hold") return "operator_hold";
     const dates = await inWorkspace(workspaceId, (tx) => checkedAt(tx, toCheck));
     const sendable: { m: CohortMember; row: PersonInput }[] = [];
     for (const m of members) {
       if (out.has(m.addressId)) continue;
-      const result = fresh.get(m.addressId);
+      const result = fresh.results.get(m.addressId);
       if (result !== "deliverable") {
         out.set(m.addressId, leftOut(m.addressId, "not_deliverable"));
         continue;
@@ -96,6 +98,7 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
     }
     const results = members.map((m) => out.get(m.addressId)!);
     await inWorkspace(workspaceId, (tx) => saveBatch(tx, { workspaceId, handoverId: h.id, results, cursor: members.at(-1)!.addressId, at: now() }));
+    return "saved";
   }
 
   return {
@@ -159,7 +162,12 @@ export function createHandovers(deps: { boss: PgBoss; campaigns: () => Pick<Camp
             break;
           }
         }
-        if (batch.length) await handBatch(h, workspaceId, batch);
+        if (batch.length && (await handBatch(h, workspaceId, batch)) === "operator_hold") {
+          // A hold can outlast the queue's normal fault retries. Keep the saved cursor and queue
+          // another attempt without treating the hold as a failure.
+          await deferHandover(deps.boss, { workspaceId, handoverId }, new Date(now().getTime() + HOLD_RETRY_MS));
+          return;
+        }
       }
       await inWorkspace(workspaceId, (tx) => finishHandover(tx, handoverId, now()));
     },

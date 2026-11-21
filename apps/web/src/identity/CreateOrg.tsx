@@ -6,6 +6,7 @@ import { Field, Notice, Page } from "../components/layout";
 import { NativeButton, NativeInput } from "@/components/native";
 import { createOrg, serverStatusQuery } from "./actions";
 import { Narrow } from "./SignIn";
+import { message } from "./messages";
 
 /**
  * `/new-org`: the form for whoever may create an Organization (on self-host, a Server admin), and
@@ -23,7 +24,7 @@ export function NewOrg({ onCreated }: { onCreated: (workspaceId: string, website
           <Narrow>
             {s.claimed ? (
               <Page title="You can't create an Organization here">
-                <p>Your account can't create an Organization on this server. Ask whoever runs it, or ask to be invited to a Workspace.</p>
+                <p>{message("cannot_create_organization")}</p>
               </Page>
             ) : (
               <Page title="This server has no Server admin yet">
@@ -60,9 +61,13 @@ export function CreateOrg({ onCreated }: { onCreated: (workspaceId: string, webs
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
+            setError(undefined);
             setPending(true);
             void createOrg(orgName.trim() || business, business)
-              .then((id) => (id ? onCreated(id, siteAddress(website)) : setError("We couldn't create the Organization. Check the names and try again.")))
+              .then((result) => {
+                if ("workspaceId" in result) return onCreated(result.workspaceId, siteAddress(website));
+                setError(result.error === "cannot_create_organization" ? message(result.error) : "We couldn't create the Organization. Check the names and try again.");
+              })
               .finally(() => setPending(false));
           }}
         >

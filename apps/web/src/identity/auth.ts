@@ -23,7 +23,8 @@ export const signupRefusal = (search: string): string | undefined => REFUSALS[ne
 
 /** Hands an invite or bootstrap token to the server, which keeps it in a cookie for sign-up. */
 export async function holdInviteToken(token: string): Promise<void> {
-  await post("/api/admission/token", { token }).catch(() => undefined);
+  const res = await post("/api/admission/token", { token }).catch(() => undefined);
+  if (!res?.ok) throw new Error("We couldn't save the code from your link. Try again.");
 }
 
 /** `firstRun` is set only while the server has no accounts (`sign_up` in dev, `needs_link` outside it). */

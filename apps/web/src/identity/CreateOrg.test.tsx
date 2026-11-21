@@ -46,12 +46,15 @@ test("a typed website gets https unless it has a scheme", () => {
   expect(siteAddress("  ")).toBe("");
 });
 
-test("when the Organization can't be created, the form says so", async () => {
-  vi.spyOn(api, "POST").mockImplementation((() => reply(400, { error: "invalid" })) as never);
+test.each([
+  [400, "invalid", "We couldn't create the Organization. Check the names and try again."],
+  [403, "cannot_create_organization", "Your account can't create an Organization on this server. Ask whoever runs it, or ask to be invited to a Workspace."],
+] as const)("when creation returns %i (%s), the form shows the matching guidance", async (statusCode, code, guidance) => {
+  vi.spyOn(api, "POST").mockImplementation((() => reply(statusCode, { error: code })) as never);
   const onCreated = vi.fn();
   render(<CreateOrg onCreated={onCreated} />);
   await create();
-  expect((await screen.findByRole("alert")).textContent).toContain("We couldn't create the Organization.");
+  expect((await screen.findByRole("alert")).textContent).toContain(guidance);
   expect(onCreated).not.toHaveBeenCalled();
 });
 

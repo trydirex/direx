@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Field, Notice, Page } from "../components/layout";
 import { NativeButton, NativeInput } from "@/components/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -51,10 +51,21 @@ export function SignIn({
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState<string>();
   const [error, setError] = useState<string | undefined>(() => signupRefusal(location.search));
-  const tokenHeld = useRef<Promise<void> | undefined>(undefined);
+  const tokenHeld = useRef<{ token: string; promise: Promise<void> } | undefined>(undefined);
+  const hold = useCallback((token: string) => {
+    if (tokenHeld.current?.token === token) return tokenHeld.current.promise;
+    const promise = holdInviteToken(token).catch((error: unknown) => {
+      if (tokenHeld.current?.promise === promise) tokenHeld.current = undefined;
+      throw error;
+    });
+    tokenHeld.current = { token, promise };
+    return promise;
+  }, []);
   useEffect(() => {
-    tokenHeld.current = inviteToken ? holdInviteToken(inviteToken) : undefined;
-  }, [inviteToken]);
+    // Start early; only actions that need the cookie report a failed hold.
+    if (inviteToken) void hold(inviteToken).catch(() => undefined);
+    else tokenHeld.current = undefined;
+  }, [hold, inviteToken]);
   // Both buttons show until the server says which it is set up for, so a server that has them never loses them.
   const providers = useQuery(signInOptionsQuery).data ?? { google: true, microsoft: true };
   const [pending, setPending] = useState<"submit" | "link">();
@@ -62,12 +73,14 @@ export function SignIn({
   const signedIn = () => location.assign(callbackURL);
 
   // A return path without the token (the claim page, a sign-up link) relies on the cookie set by the hold response.
-  const claimTokenHeld = () => (inviteToken && !callbackURL.includes(inviteToken) ? tokenHeld.current : undefined);
+  const claimTokenHeld = () => (inviteToken && !callbackURL.includes(inviteToken) ? hold(inviteToken) : undefined);
   const social = async (provider: "google" | "microsoft") => {
+    setError(undefined);
     await claimTokenHeld();
     await signInWith(provider, callbackURL);
   };
   const magicLink = async () => {
+    setError(undefined);
     await claimTokenHeld();
     await sendSignInLink(email, callbackURL);
   };

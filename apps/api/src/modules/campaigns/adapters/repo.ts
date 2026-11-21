@@ -51,8 +51,9 @@ export const campaignOfPlan = async (tx: CampaignsTx, planId: string): Promise<C
  * emails, step setup or settings. Every such write path starts here. A plan's approval is never undone,
  * so a yes here stays true for the rest of the transaction.
  */
-export async function requireApproved(tx: CampaignsTx, campaignId: string) {
-  const [row] = await tx.select({ campaign: campaigns, approved: marketingPlans.currentVersion }).from(campaigns).innerJoin(marketingPlans, eq(marketingPlans.id, campaigns.planId)).where(eq(campaigns.id, campaignId));
+export async function requireApproved(tx: CampaignsTx, campaignId: string, { lockCampaign = false } = {}) {
+  const query = tx.select({ campaign: campaigns, approved: marketingPlans.currentVersion }).from(campaigns).innerJoin(marketingPlans, eq(marketingPlans.id, campaigns.planId)).where(eq(campaigns.id, campaignId));
+  const [row] = await (lockCampaign ? query.for("no key update", { of: campaigns }) : query);
   if (!row) return { ok: false, reason: "not_found" } as const;
   if (row.approved === null) return { ok: false, reason: "plan_not_approved" } as const;
   return { ok: true, campaign: row.campaign } as const;

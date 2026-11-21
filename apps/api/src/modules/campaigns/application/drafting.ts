@@ -240,7 +240,8 @@ export function campaignDrafting({ plans, facts, startDraft, now, onOutsideConte
     /** Counting clicks per Person for US recipients whose country a person stated, only while tracking is on. */
     setPerPerson: (workspaceId: string, campaignId: string, a: { on: true; wordingVersion: number; userId: string } | { on: false; userId: string }) =>
       inWorkspace(workspaceId, async (tx) => {
-        const approved = await requireApproved(tx, campaignId);
+        // Keep tracking on between this check and the write; turning tracking off updates this same row.
+        const approved = await requireApproved(tx, campaignId, { lockCampaign: a.on });
         if (!approved.ok) return approved;
         if (a.on && !approved.campaign.trackingOn) return { ok: false, reason: "tracking_off" } as const;
         if (a.on && a.wordingVersion !== PER_PERSON_WORDING_VERSION) return { ok: false, reason: "wording_changed" } as const;

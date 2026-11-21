@@ -506,5 +506,27 @@ test("link tracking is turned on with a verified domain and the current wording,
   expect((await perPerson({ on: true, confirmed: true, wordingVersion: 1 })).status).toBe(200);
   expect((await track({ on: false })).status).toBe(200);
   expect(await row()).toMatchObject({ tracking_on: false, per_person_on: false, tracking_set_by: ownerId, per_person_set_by: ownerId });
-  await db.end();
+
+  // Hold the tracking-off write open until the other request is waiting on the campaign.
+  expect((await track(on)).status).toBe(200);
+  const observer = await appClient();
+  let enabling: Promise<Response> | undefined;
+  try {
+    await db.query("begin");
+    const { rows: [writer] } = await db.query("update campaigns set tracking_on = false where id = $1 returning pg_backend_pid() as pid", [id]);
+    enabling = Promise.resolve(perPerson({ on: true, confirmed: true, wordingVersion: 1 }, roles.contributor));
+    await expect.poll(async () => (await observer.query(
+      "select exists(select from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as waiting",
+      [writer.pid],
+    )).rows[0].waiting).toBe(true);
+    await db.query("commit");
+    const response = await enabling;
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "tracking_off" });
+    expect(await row()).toMatchObject({ tracking_on: false, per_person_on: false });
+  } finally {
+    await db.end();
+    await observer.end();
+    await enabling;
+  }
 });

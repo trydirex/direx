@@ -410,3 +410,31 @@ test("the picker is told when a target needs an angle, and a row when it can sti
   await s.call(`/api/w/${ws}/social/accounts/${main!.id}/established`, owner.cookie, { method: "POST" });
   expect((await s.social.accounts(ws))[0]!.establishable).toBe(false);
 });
+
+test("an account posts on its network's pace until a manager sets its own, and each change is recorded", async () => {
+  const s = setup({ networks: [{ ...info, pace: { from: 8 * 60, until: 21 * 60, weekends: true, gapMinutes: 60 } }, unbuilt] });
+  const { ws, owner } = await s.workspace();
+  const c = await s.connect(ws, owner.userId);
+  await s.call(`/api/w/${ws}/social/credentials/${c.id}/targets`, owner.cookie, { method: "POST", body: { ids: ["p1"] } });
+  const id = ((await q(ws, "select id from social_accounts")) as { id: string }[])[0]!.id;
+  const path = `/api/w/${ws}/social/accounts/${id}/pace`;
+  const read = async (cookie: string) => body<{ own: unknown; defaults: unknown; pace: unknown; timeZone: string }>(await s.call(path, cookie));
+  const put = (cookie: string, b: unknown) => s.call(path, cookie, { method: "PUT", body: b });
+  const none = { postingFrom: null, postingUntil: null, postingWeekends: null, gapMinutes: null };
+  const network = { from: 480, until: 1260, weekends: true, gapMinutes: 60 };
+  expect(await read(owner.cookie)).toEqual({ own: none, defaults: network, pace: network, timeZone: "UTC" });
+
+  const weekdays = { postingFrom: 540, postingUntil: 1020, postingWeekends: false, gapMinutes: null };
+  expect((await put(owner.cookie, weekdays)).status).toBe(200);
+  expect(await read(owner.cookie)).toMatchObject({ own: weekdays, pace: { from: 540, until: 1020, weekends: false, gapMinutes: 60 } });
+  // Hours come as a pair inside one day.
+  expect((await put(owner.cookie, { ...none, postingFrom: 600 })).status).toBe(400);
+  expect((await put(owner.cookie, { ...weekdays, postingFrom: 1100 })).status).toBe(400);
+
+  const marketer = await s.signIn();
+  await q(ws, "insert into workspace_members (workspace_id, user_id, role, created_at) values ($1, $2, 'marketer', now())", [ws, marketer.userId]);
+  expect((await read(marketer.cookie)).pace).toEqual({ from: 540, until: 1020, weekends: false, gapMinutes: 60 });
+  expect((await put(marketer.cookie, none)).status).toBe(403);
+
+  expect(await q(ws, "select before, after, changed_by from social_pace_changes")).toEqual([{ before: none, after: weekdays, changed_by: owner.userId }]);
+});

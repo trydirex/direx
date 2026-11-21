@@ -32,6 +32,10 @@ const login = (email: string): Credential => ({ username: email, password: email
 const seeder = nodemailer.createTransport({ host: HOST, port: 3465, secure: true, auth: { user: "alice@example.com", pass: "secret" }, tls: { rejectUnauthorized: false } });
 afterAll(() => seeder.close());
 
+async function seedMailbox(address: string) {
+  await seeder.sendMail({ envelope: { from: "alice@example.com", to: [address] }, raw: `From: seed@example.org\r\nTo: ${address}\r\nSubject: Seed\r\n\r\nSeed` });
+}
+
 const boxes = new Map<string, Credential>();
 const plugins = loadPlugins({
   sources: [{ mode: "in_process", plugin: createImapSmtpPlugin({ timeoutMs: 10_000, test: { untrustedCerts: true, implicitTlsPort: 3465 } }) }],
@@ -75,7 +79,7 @@ async function sendingWorkspace(name: string, org?: string) {
   if (org) await q("update workspaces set org_id = $2 where id = $1", [ws, org]);
   expect((await call(`/api/w/${ws}/outreach/identity`, cookie, { method: "PUT", body: { senderName: "Sam", postalAddress: "1 Main St, Springfield" } })).status).toBe(200);
   const address = `sender-${crypto.randomUUID()}@example.com`;
-  await seeder.sendMail({ envelope: { from: "alice@example.com", to: [address] }, raw: `From: seed@example.org\r\nTo: ${address}\r\nSubject: Seed\r\n\r\nSeed` });
+  await seedMailbox(address);
   const made = await vault.create({ workspaceId: ws, actorUserId: owner, scope: "workspace", kind: "api_key", key: address, name: "Mailbox", meta: {}, value: { key: "x" } });
   if (!made.ok) throw new Error(made.reason);
   boxes.set(made.credential.id, login(address));
@@ -100,11 +104,10 @@ async function inbox(address: string): Promise<number> {
   try {
     await c.connect();
     const s = await c.status("INBOX", { messages: true });
-    await c.logout();
-    return (s && s.messages) || 0;
-  } catch {
-    // GreenMail has no mailbox for an address nothing was delivered to.
-    return 0;
+    if (!s || typeof s.messages !== "number") throw new Error("GreenMail did not report the INBOX message count");
+    return s.messages;
+  } finally {
+    c.close();
   }
 }
 
@@ -112,7 +115,13 @@ test("an Organization hold stops the run mid-way; lifting it checks everything a
   const a = await sendingWorkspace("Agency A");
   const b = await sendingWorkspace("Agency B", a.org);
   const jobs = [];
-  for (let i = 0; i < EMAILS; i++) jobs.push(await approved(i % 2 ? b : a));
+  for (let i = 0; i < EMAILS; i++) {
+    const job = await approved(i % 2 ? b : a);
+    await seedMailbox(job.to);
+    const baseline = await inbox(job.to);
+    expect(baseline).toBe(1);
+    jobs.push({ ...job, baseline });
+  }
 
   // Two dispatchers, as a deployment runs. The first to see HOLD_AFTER sent sets the hold.
   const queue = [...jobs];
@@ -141,7 +150,7 @@ test("an Organization hold stops the run mid-way; lifting it checks everything a
   const held = jobs.filter((j) => !sentAt.has(j.actionId));
   expect(held.length).toBeGreaterThanOrEqual(EMAILS - HOLD_AFTER - 1);
   for (const j of held) expect(await ledger.getAction(j.ws, j.actionId)).toMatchObject({ state: "held", holdReason: "operator_hold", reasonDetail: "organization" });
-  for (const j of jobs) expect(await inbox(j.to)).toBe(sentAt.has(j.actionId) ? 1 : 0);
+  for (const j of jobs) expect(await inbox(j.to)).toBe(j.baseline + (sentAt.has(j.actionId) ? 1 : 0));
 
   // While held, one of the waiting Persons opts out; recording it isn't held.
   const optedOut = held[0]!;
@@ -152,5 +161,5 @@ test("an Organization hold stops the run mid-way; lifting it checks everything a
   for (const j of held) await ledger.run(j.ws, j.actionId);
   expect(await ledger.getAction(optedOut.ws, optedOut.actionId)).toMatchObject({ state: "blocked", blockReason: "suppressed" });
   for (const j of held.slice(1)) expect((await ledger.getAction(j.ws, j.actionId))!.state).toBe("sent");
-  for (const j of jobs) expect(await inbox(j.to)).toBe(j === optedOut ? 0 : 1);
+  for (const j of jobs) expect(await inbox(j.to)).toBe(j.baseline + (j === optedOut ? 0 : 1));
 });

@@ -3,7 +3,7 @@
 // verification vendor. No vendor is ever called here.
 import type { VerifyAddressOutput } from "@direx/plugin-sdk";
 import { afterAll, beforeAll, expect, test } from "vitest";
-import { appClient } from "../../../../../test/db";
+import { appClient, ownerClient } from "../../../../../test/db";
 import { guessesFor } from "./domain/guesses";
 import { testIdentity } from "./fixtures/support";
 import { createVerifier, VERIFIED_FOR_DAYS, verifyThrough, type VerifyAddress } from "./index";
@@ -105,6 +105,38 @@ test("an unknown is checked once more, and only once", async () => {
   expect(vendor.calls.filter((e) => e.startsWith("hello@"))).toHaveLength(2);
   expect(await results(firm.id)).toEqual({ sales: ["deliverable", null], hello: ["unknown", null] });
   expect(await cost(firm.runId)).toBe(PRICE);
+});
+
+test("a hold stops queued verification and is checked again before retrying an unknown", async () => {
+  const email = "sales@held.test";
+  const firm = await seed("held.test", { addresses: [{ email }] });
+  const db = await ownerClient();
+  const hold = () => db.query("select system.set_operator_hold('workspace', $1, 'test', 'cli:test')", [W]);
+  const lift = () => db.query("select system.lift_operator_hold('workspace', $1, 'cli:test')", [W]);
+  const vendor = fakeVendor({ [email]: ["unknown", "deliverable"] });
+  try {
+    await hold();
+    expect(await verifier(vendor.verify).verifyCompany(firm.job)).toEqual({ status: "refused", checked: 0, guessesKept: 0 });
+    expect(vendor.calls).toEqual([]);
+    await lift();
+
+    const interrupted = verifier(async (ws, address) => {
+      const answer = await vendor.verify(ws, address);
+      await hold();
+      return answer;
+    });
+    expect(await interrupted.verifyCompany(firm.job)).toEqual({ status: "refused", checked: 0, guessesKept: 0 });
+    expect(vendor.calls).toEqual([email]);
+    expect(await cost(firm.runId)).toBe(0);
+    expect(await results(firm.id)).toEqual({ sales: [null, null] });
+
+    await lift();
+    expect(await verifier(vendor.verify).verifyCompany(firm.job)).toEqual({ status: "done", checked: 1, guessesKept: 0 });
+    expect(vendor.calls).toEqual([email, email]);
+    expect(await cost(firm.runId)).toBe(PRICE);
+  } finally {
+    await lift().finally(() => db.end());
+  }
 });
 
 test("first@ invalid, then first.last@ deliverable is kept with its pattern; a person with a published address gets no guess", async () => {

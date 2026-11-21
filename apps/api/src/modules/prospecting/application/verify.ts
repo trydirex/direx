@@ -6,6 +6,7 @@
 // "Check again" can finish it; a stored `unknown` is asked again, which the vendor doesn't charge for.
 // Every check is stored with its time and its cost on the run that found the company.
 import { verifyAddressOutput, type QueryInput, type VerificationResult, type VerifyAddressOutput } from "@direx/plugin-sdk";
+import { operatorHold } from "../../ledger/index";
 import type { QueryId } from "../../plugins/index";
 import { beforePaidCheck } from "../adapters/mail-records";
 import { inWorkspace } from "../adapters/repo";
@@ -48,6 +49,8 @@ export function createVerifier(deps: { verify: VerifyAddress; now?: () => Date; 
   async function checkOnce(workspaceId: string, email: string): Promise<Check> {
     const free = await beforePaidCheck(email, deps.resolveMx);
     if (free) return { refused: false, result: free, costMicros: 0, connected: true };
+    // Queued jobs and retries must check again at the boundary where they can pay a vendor.
+    if (await inWorkspace(workspaceId, (tx) => operatorHold(tx, workspaceId))) return { refused: true };
     let out: VerifyAddressOutput | null;
     try {
       out = await deps.verify(workspaceId, email);

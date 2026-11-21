@@ -36,9 +36,11 @@ provider call. No Action whose dispatch check starts after the hold commits can 
 already past that check when you commit it may still go: at most one per running dispatch, a few
 per worker.
 
-While a hold is live, the Workspace's model calls are refused as `operator_hold` too, so it drafts
-nothing and spends nothing. An agent run stops at its next model call, and no prospecting run
-starts, so no search or verification vendor is paid.
+While a hold is live, the Workspace's drafting calls are refused as `operator_hold`, and an agent
+run stops at its next model call. New prospecting runs are refused before search starts. Prospecting
+also checks the hold before each paid verification call, including calls from jobs queued before the
+hold. Use **Check again** after lifting the hold to finish refused checks. A vendor call already
+past its hold check can still finish.
 
 ## What it doesn't stop
 

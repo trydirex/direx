@@ -411,16 +411,24 @@ test("a tracking Campaign's email carries its links on the tracking domain, says
   // The approver sees each tracked link's destination; the token stays in the text only.
   const shown = async () => ((await (await call(`/api/w/${W}/items/${item.id}`, cookie)).json()) as { trackedLinks: { url: string; destination: string }[] }).trackedLinks;
   const link = expect.stringMatching(new RegExp(`^https://${hostname.replaceAll(".", "\\.")}/t/[A-Za-z0-9_-]{22}$`));
-  expect(await shown()).toEqual([{ url: link, destination: "https://acme.example/?ids[]=1" }]);
+  const original = await shown();
+  expect(original).toEqual([{ url: link, destination: "https://acme.example/?ids[]=1" }]);
 
   // A revise records the new text's links; the old use stays, as uses are never deleted.
-  expect((await outreach.revise(W, item.id, composed(personId, { text: "Now https://acme.example/O'Reilly and https://bücher.example/a", tracking }), owner)).ok).toBe(true);
+  const revisedText = "Now https://acme.example/O'Reilly and https://bücher.example/a";
+  expect((await outreach.revise(W, item.id, composed(personId, { text: revisedText, tracking }), owner)).ok).toBe(true);
   expect(await uses()).toEqual([used("https://acme.example/?ids[]=1"), used("https://acme.example/O'Reilly"), used("https://bücher.example/a")]);
   // Only the links in the text now show, in order, and a host in punycode.
-  expect(await shown()).toEqual([
+  const revised = await shown();
+  expect(revised).toEqual([
     { url: link, destination: "https://acme.example/O'Reilly" },
     { url: link, destination: "https://xn--bcher-kva.example/a" },
   ]);
+
+  // A subject can retain an old link or mention a body link before it appears in the text.
+  const subject = `See ${original[0]!.url} or ${revised[1]!.url}`;
+  expect((await outreach.revise(W, item.id, composed(personId, { subject, text: revisedText, tracking }), owner)).ok).toBe(true);
+  expect(await shown()).toEqual(revised);
 
   const before = fake.sent.length;
   await ledger.run(W, await approve(item.id));

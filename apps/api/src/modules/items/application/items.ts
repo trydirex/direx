@@ -103,7 +103,8 @@ export type WrittenFrom = {
  * link the text no longer has isn't shown. Token links match on their link part; tokens aren't stored.
  */
 async function trackedIn(workspaceId: string, actionId: string, content: unknown) {
-  const text = JSON.stringify(content);
+  if (!content || typeof content !== "object" || !("text" in content) || typeof content.text !== "string") return [];
+  const { text } = content;
   const rows = await inWorkspace(workspaceId, (tx) => readTrackedLinks(tx, actionId));
   return rows
     .map((r) => ({ url: `https://${r.hostname}/t/${r.id}`, destination: new URL(r.destination).href }))

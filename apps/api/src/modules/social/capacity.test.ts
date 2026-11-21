@@ -160,12 +160,13 @@ describe("a Social account's day", () => {
     await w.done();
   });
 
-  it("keeps concurrent automatic redates apart on the same account", async () => {
+  it("keeps concurrent automatic redates apart on the same account and refuses those past the day's budget", async () => {
     const w = await world();
-    const posts = await Promise.all(Array.from({ length: 5 }, () => w.post(tomorrow(8))));
+    const posts = await Promise.all(Array.from({ length: 7 }, () => w.post(tomorrow(8))));
     const wanted = new Date(tomorrow(8).getTime() + 24 * HOUR);
     const results = await Promise.all(posts.map((post) => w.items.redateItem(w.W, post.id, wanted, person)));
-    expect(results.every((result) => result.ok)).toBe(true);
+    expect(results.filter((result) => result.ok)).toHaveLength(5);
+    expect(results.filter((result) => !result.ok)).toEqual(Array(2).fill({ ok: false, reason: "account_day_full", day: "2026-11-04", limit: 5 }));
     const slots = (await w.reserved("2026-11-04")).map((slot) => slot.getTime()).sort((a, b) => a - b);
     expect(slots).toHaveLength(5);
     for (let i = 1; i < slots.length; i++) expect(slots[i]! - slots[i - 1]!).toBeGreaterThanOrEqual(PACE.gapMinutes * 60_000);

@@ -15,6 +15,7 @@ import { createOutreach, outreachFloors } from "./modules/outreach/index";
 import { createPlans, planKinds, type PlanBody } from "./modules/plans/index";
 import { loadPlugins } from "./modules/plugins/index";
 import { touchCheck } from "./modules/schedule/index";
+import { createTrackingDomains } from "./modules/tracking/index";
 import { createTestNet } from "./modules/social/fixtures/net";
 import { accountHealthCheck, createPosts, pauseInWorkspace, postAppearance, postLinkImage, pauseOnAccountLimit, postLimitCheck, socialCapacity, socialKinds, socialRoutes, stepUpCredential, unpauseAccount } from "./modules/social/index";
 import { createSocial } from "./modules/social/index";
@@ -1104,4 +1105,53 @@ test("a post written in a system actor's name keeps its extra warnings, waits fo
   expect(await stateOf(r.itemId!)).toMatchObject({ state: "needs_approval", clean: false, warnings: expect.arrayContaining([{ code: "untrusted_source", text: 'Sent by External token "Zapier".' }]) });
   const detail = (await (await call(`/api/w/${W}/items/${r.itemId}`, cookie)).json()) as { timeline: { actor: { kind: string; id: string } }[] };
   expect(detail.timeline[0]?.actor).toEqual({ kind: "system", id: actor.system });
+});
+
+test("a tracking Campaign's post carries its step's tracked link with no token, records each use, and reads its card from the destination", async () => {
+  beforeWhen();
+  const id = await postStep();
+  const hostname = `links${crypto.randomUUID().slice(0, 8)}.example.com`;
+  let txt = "";
+  const domains = createTrackingDomains({ dns: { records: async () => ({ cname: ["t.direx.example"], txt: [txt] }), handshake: async () => true }, target: () => "t.direx.example" });
+  const d = await domains.add(W, owner, hostname);
+  if (typeof d === "string") throw new Error(d);
+  txt = d.txtValue;
+  await domains.check(W, d.id);
+  await q(
+    "update campaigns set tracking_domain_id = $2, tracking_on = true, tracking_set_by = $3, tracking_set_at = now(), tracking_wording_version = 1, per_person_on = true, per_person_set_by = $3, per_person_set_at = now(), per_person_wording_version = 1 where id = $1",
+    [id, d.id, owner],
+  );
+  const textOf = async (itemId: string) => (await q("select a.spec ->> 'text' as text from actions a join items i on i.action_id = a.id where i.id = $1", [itemId]))[0].text as string;
+  const usesOf = (itemId: string) => q("select l.destination, u.token_hash from tracked_link_uses u join tracked_links l on l.id = u.link_id join items i on i.action_id = u.action_id where i.id = $1 order by l.destination", [itemId]);
+  const tracked = (rest: string) => new RegExp(`^${rest.replace("LINK", `https://${hostname.replaceAll(".", "\\.")}/t/[A-Za-z0-9_-]{22}`)}$`);
+
+  // A Network that drops links without the Workspace's own app gets no tracked link, and says so.
+  const [dropped] = await draft(id, [{ ...(await account()), text: "See https://acme.test/q4" }]);
+  const removed = { code: "unspecified", text: expect.stringContaining("Links were removed") };
+  expect((await stateOf(dropped!.itemId)).warnings).toContainEqual(removed);
+  expect(await usesOf(dropped!.itemId)).toEqual([]);
+
+  own.app = "own";
+  try {
+    const a = await account();
+    const [r] = await draft(id, [{ ...a, text: "Read https://acme.test/q4 today" }]);
+    expect(r).toMatchObject({ ok: true, mode: "publish" });
+    expect(await textOf(r!.itemId)).toMatch(tracked("Read LINK today"));
+    expect((await stateOf(r!.itemId)).warnings).not.toContainEqual(removed);
+    expect(await usesOf(r!.itemId)).toEqual([{ destination: "https://acme.test/q4", token_hash: null }]);
+    // Drafting new words revises the same Action and records the new link too.
+    await draft(id, [{ ...a, text: "Read https://acme.test/q5" }]);
+    expect(await textOf(r!.itemId)).toMatch(tracked("Read LINK"));
+    // A person's own edit does the same.
+    ok(await posts.edit(W, r!.itemId, "Now https://acme.test/q6", owner));
+    const text = await textOf(r!.itemId);
+    expect(text).toMatch(tracked("Now LINK"));
+    expect((await usesOf(r!.itemId)).map((u) => u.destination)).toEqual(["https://acme.test/q4", "https://acme.test/q5", "https://acme.test/q6"]);
+    // The card is read from where the link goes, never through the redirect.
+    const reads: string[] = [];
+    await postAppearance(W, r!.itemId, networks(), { text, readPreview: async (url) => (reads.push(url), null) });
+    expect(reads).toEqual(["https://acme.test/q6"]);
+  } finally {
+    own.app = "system";
+  }
 });

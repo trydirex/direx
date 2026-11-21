@@ -147,6 +147,52 @@ test.each([
   await vi.waitFor(() => expect(sent()).toEqual({ path: endpoint, body: { ...body, callbackURL: "/claim", errorCallbackURL: "/claim" } }));
 });
 
+test.each([false, true])("a successful hold is renewed before sign-up only if expired (%s)", async (expired) => {
+  let now = Date.now();
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  answer(200, {}, { google: false, microsoft: false });
+  const token = "a".repeat(64);
+  const renewal = Promise.withResolvers<Response>();
+  fetchSpy.mockResolvedValueOnce(Response.json({ ok: true })).mockImplementation((path: RequestInfo | URL) =>
+    path === "/api/admission/token" ? renewal.promise : Promise.resolve(Response.json({ token: "session" })),
+  );
+  render(withQueries(<SignIn callbackURL="/" initialMode="sign_up" inviteToken={token} />));
+  await fill("sam@example.com", "twelve chars ok");
+  now += 30 * 60 * 1000 - (expired ? 0 : 1);
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+
+  if (expired) {
+    expect(fetchSpy.mock.calls.map(([path]: unknown[]) => path)).toEqual(["/api/admission/token", "/api/admission/token"]);
+    expect(sent()).toEqual({ path: "/api/admission/token", body: { token } });
+    renewal.resolve(Response.json({ ok: true }));
+  }
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  expect(fetchSpy.mock.calls.map(([path]: unknown[]) => path)).toEqual([
+    "/api/admission/token", ...(expired ? ["/api/admission/token"] : []), "/api/auth/sign-up/email",
+  ]);
+});
+
+test.each([200, 503])("switching links waits for the earlier hold (%i) before holding the current code", async (status) => {
+  answer(200);
+  const first = Promise.withResolvers<Response>();
+  const second = Promise.withResolvers<Response>();
+  fetchSpy.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue(Response.json({ token: "session" }));
+  const view = render(withQueries(<SignIn callbackURL="/" initialMode="sign_up" inviteToken={"a".repeat(64)} />));
+  await userEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
+  const token = "b".repeat(64);
+  view.rerender(withQueries(<SignIn callbackURL="/" initialMode="sign_up" inviteToken={token} />));
+  await fill("sam@example.com", "twelve chars ok");
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  expect(fetchSpy.mock.calls.map(([path]: unknown[]) => path)).toEqual(["/api/admission/token"]);
+
+  first.resolve(Response.json({}, { status }));
+  await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2));
+  expect(sent()).toEqual({ path: "/api/admission/token", body: { token } });
+  second.resolve(Response.json({ ok: true }));
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  expect(fetchSpy.mock.calls.map(([path]: unknown[]) => path)).toEqual(["/api/admission/token", "/api/admission/token", "/api/auth/sign-up/email"]);
+});
+
 test("a sign-up code the server won't hold stops sign-up and says so", async () => {
   answer(200, {}, { google: false, microsoft: false });
   fetchSpy.mockImplementation((path: RequestInfo | URL) => Promise.resolve(path === "/api/admission/token" ? Response.json({ error: "invalid" }, { status: 400 }) : Response.json({ token: "session" })));

@@ -8,6 +8,10 @@ import { addPassword } from "./actions";
 import { message } from "./messages";
 import { holdInviteToken, resetPassword, sendPasswordReset, sendSignInLink, signInOptionsQuery, signInWith, signInWithPassword, signUpWithPassword, signupRefusal } from "./auth";
 
+// Match the server's admission cookie maxAge. Count from request start so transit cannot
+// make the cached hold look newer than the cookie.
+const HOLD_LIFETIME_MS = 30 * 60 * 1000;
+
 type Mode = "sign_in" | "sign_up" | "forgot";
 
 const SUBMIT: Record<Mode, string> = { sign_in: "Sign in", sign_up: "Sign up", forgot: "Email me a reset link" };
@@ -51,10 +55,19 @@ export function SignIn({
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState<string>();
   const [error, setError] = useState<string | undefined>(() => signupRefusal(location.search));
-  const tokenHeld = useRef<{ token: string; promise: Promise<void> } | undefined>(undefined);
+  const tokenHeld = useRef<{ token: string; promise: Promise<void>; expiresAt?: number } | undefined>(undefined);
   const hold = useCallback((token: string) => {
-    if (tokenHeld.current?.token === token) return tokenHeld.current.promise;
-    const promise = holdInviteToken(token).catch((error: unknown) => {
+    const previous = tokenHeld.current;
+    if (previous?.token === token && (previous.expiresAt === undefined || Date.now() < previous.expiresAt)) return previous.promise;
+
+    const start = async () => {
+      const started = Date.now();
+      await holdInviteToken(token);
+      if (tokenHeld.current?.promise === promise) tokenHeld.current.expiresAt = started + HOLD_LIFETIME_MS;
+    };
+    // Every response writes the same cookie. Wait for the previous request to settle
+    // before sending a new one, even if the previous request failed.
+    const promise = (previous ? previous.promise.then(start, start) : start()).catch((error: unknown) => {
       if (tokenHeld.current?.promise === promise) tokenHeld.current = undefined;
       throw error;
     });
@@ -64,7 +77,6 @@ export function SignIn({
   useEffect(() => {
     // Start early; only actions that need the cookie report a failed hold.
     if (inviteToken) void hold(inviteToken).catch(() => undefined);
-    else tokenHeld.current = undefined;
   }, [hold, inviteToken]);
   // Both buttons show until the server says which it is set up for, so a server that has them never loses them.
   const providers = useQuery(signInOptionsQuery).data ?? { google: true, microsoft: true };
@@ -73,7 +85,12 @@ export function SignIn({
   const signedIn = () => location.assign(callbackURL);
 
   // A return path without the token (the claim page, a sign-up link) relies on the cookie set by the hold response.
-  const claimTokenHeld = () => (inviteToken && !callbackURL.includes(inviteToken) ? hold(inviteToken) : undefined);
+  const claimTokenHeld = async () => {
+    if (!inviteToken || callbackURL.includes(inviteToken)) return;
+    const promise = hold(inviteToken);
+    await promise;
+    if (tokenHeld.current?.promise !== promise) throw new Error("The sign-up link changed. Try again.");
+  };
   const social = async (provider: "google" | "microsoft") => {
     setError(undefined);
     await claimTokenHeld();

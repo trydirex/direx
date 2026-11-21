@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// A Mailbox's pause. Too many of its emails bouncing for good stops it, and so can a person; only a
-// person's resume starts it again, and what the pause held then goes through every check again.
+// A Mailbox's pause. Too many of its emails bouncing for good stops it, so does its provider refusing
+// an email as abuse, and so can a person; only a person's resume starts it again, and what the pause
+// held then goes through every check again.
 import type { Ledger } from "../../ledger";
+import { MAILBOX_PROBE, PLACEMENT_EFFECTS } from "../../plugins";
 import { clearPause, latestSends, pauseOf, pausedMailboxes, setPause } from "../adapters/pauses";
 import { inWorkspace, type OutreachTx } from "../adapters/repo";
 import { PAUSE_WINDOW, shouldPause } from "../domain/sending";
@@ -17,6 +19,21 @@ export async function pauseOnBounces(tx: OutreachTx, credentialId: string, at: D
   if (!state || state.pausedAt) return;
   if (shouldPause(await latestSends(tx, credentialId, state.resumedAt, PAUSE_WINDOW))) await setPause(tx, credentialId, { reason: "bounces", by: null, at, resumedAt: state.resumedAt });
 }
+
+// Every effect that sends an email from a Mailbox.
+const MAIL_EFFECTS: ReadonlySet<string> = new Set(["email.send", MAILBOX_PROBE, ...PLACEMENT_EFFECTS]);
+
+/**
+ * The ledger's hook: a provider refusing a Mailbox's email as abuse pauses the Mailbox, in the same
+ * transaction, however the email was approved. A sending limit only moves mail to a later day, so it
+ * pauses nothing. Other effects pass through.
+ */
+export const pauseOnProviderAbuse =
+  (deps: { now: () => Date }) =>
+  async (rawTx: unknown, action: { capability: string; credentialId: string | null }, limit: "sending_limit" | "abuse"): Promise<void> => {
+    if (limit !== "abuse" || !action.credentialId || !MAIL_EFFECTS.has(action.capability.slice(action.capability.lastIndexOf("/") + 1))) return;
+    await setPause(rawTx as OutreachTx, action.credentialId, { reason: "provider_abuse", by: null, at: deps.now() });
+  };
 
 export function createMailboxPauses(deps: { ledger: () => Pick<Ledger, "resumeMailboxPaused">; now?: () => Date }) {
   const now = deps.now ?? (() => new Date());

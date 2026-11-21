@@ -172,3 +172,43 @@ test("a hold on an Organization or Workspace that doesn't exist is refused, and 
   expect(await ledger.releaseOperatorHolds()).toBe(0);
   expect(await q("select released_at is not null as released from system.operator_holds where target = $1", [org])).toEqual([{ released: true }]);
 });
+
+test("a lift waits for transactions relying on the live hold", async () => {
+  const { ws } = await newWorkspace();
+  await hold("workspace", ws);
+  const reader = await appClient();
+  try {
+    await reader.query("begin");
+    expect((await reader.query("select system.operator_hold_of($1) as scope", [ws])).rows[0].scope).toBe("workspace");
+    await q("set lock_timeout = '100ms'");
+    await expect(lift("workspace", ws)).rejects.toMatchObject({ code: "55P03" });
+  } finally {
+    await reader.end();
+    await q("reset lock_timeout");
+  }
+  expect(await lift("workspace", ws)).toBe(true);
+});
+
+test("dispatch retries when its initial hold has already been released", async () => {
+  const { ws } = await newWorkspace();
+  const { id, fake } = await due(ws);
+  await hold("workspace", ws);
+  const blocker = await ownerClient();
+  let running: Promise<void> | undefined;
+  try {
+    await blocker.query("begin");
+    const { rows } = await blocker.query("select pg_backend_pid() as pid from actions where id = $1 for update", [id]);
+    running = ledger.run(ws, id);
+    await expect.poll(async () => (await q(
+      "select exists(select from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as waiting",
+      [rows[0].pid],
+    ))[0].waiting).toBe(true);
+    expect(await lift("workspace", ws)).toBe(true);
+    expect(await ledger.releaseOperatorHolds()).toBe(0);
+  } finally {
+    await blocker.end();
+    await running;
+  }
+  expect(await stateOf(ws, id)).toMatchObject({ state: "sent" });
+  expect(fake.calls).toHaveLength(1);
+});

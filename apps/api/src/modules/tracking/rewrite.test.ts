@@ -20,6 +20,15 @@ test("keeps URL characters inside prose and Markdown delimiters", () => {
   });
 });
 
+test("keeps prose closing brackets outside a URL, including after balanced URL brackets", () => {
+  const docs = "https://acme.example/docs";
+  const query = "https://acme.example/?ids[]";
+  expect(rewriteLinks(`[details: ${docs}] [query: ${query}].`, tracked)).toEqual({
+    text: `[details: <${docs}>] [query: <${query}>].`,
+    destinations: [docs, query],
+  });
+});
+
 test.each([
   ["a bare URL", "See https://acme.example/pricing today", "See <https://acme.example/pricing> today"],
   ["a Markdown link", "[Pricing](https://acme.example/pricing)", "[Pricing](<https://acme.example/pricing>)"],

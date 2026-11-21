@@ -10,12 +10,27 @@ export const MAX_DESTINATION = 2048;
 const URL_RUN = /(?<=\[)https:\/\/(?:\[[^\s<>"`[\]]*\]|[^\s<>"`[\]])+|https:\/\/[^\s<>"`]+/g;
 const TRAILING = /[.,;:!?*_~]$/;
 
+function lastPairedSquareBracket(url: string): number {
+  let open = 0;
+  let last = -1;
+  for (let i = 0; i < url.length; i++) {
+    if (url[i] === "[") open++;
+    else if (url[i] === "]" && open > 0) {
+      open--;
+      last = i;
+    }
+  }
+  return last;
+}
+
 // Prose ends a URL with punctuation, and Markdown wraps it in brackets: drop trailing marks, and a
 // closing bracket the URL itself never opened, as in `[label](https://a.example/b)`.
 function trimmed(run: string, opener: string | undefined): string {
   let url = run;
+  let lastPaired: number | undefined;
   for (;;) {
     if (TRAILING.test(url)) url = url.slice(0, -1);
+    else if (url.endsWith("]") && url.length - 1 > (lastPaired ??= lastPairedSquareBracket(url))) url = url.slice(0, -1);
     else if (url.endsWith(")") && url.split("(").length < url.split(")").length) url = url.slice(0, -1);
     else if (opener === "'" && url.endsWith("'")) {
       url = url.slice(0, -1);

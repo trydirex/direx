@@ -4,11 +4,21 @@
 import { callbackProblem, type SocialAvailability, type SocialNetworkInfo } from "../domain/network";
 import type { Identity, Vault } from "../../credentials/index";
 import type { Plugins } from "../../plugins/index";
-import { accountAbout, accountsOn, deleteTargets, insertTargets, inWorkspace, listAccounts, setAbout, targetIds, touchChecked } from "../adapters/repo";
+import { accountAbout, accountsOn, deleteTargets, insertTargets, inWorkspace, listAccounts, paceById, setAbout, targetIds, touchChecked, writePace, type OwnPace } from "../adapters/repo";
 import { atFloor } from "../domain/budget";
 import { canDo, expiryWarning } from "../domain/can-do";
 import { healthLine, startHealth, stepUpCredential } from "./account-health";
+import { timeZoneOf } from "../../schedule";
 import { targetsOf } from "./identity";
+import { paceOf } from "./pace";
+
+/** Hours set together inside one day, and a gap of at most 12 hours. */
+const validPace = (p: OwnPace) =>
+  (p.postingFrom === null) === (p.postingUntil === null) &&
+  (p.postingFrom === null || (p.postingFrom >= 0 && p.postingFrom < p.postingUntil! && p.postingUntil! <= 1440)) &&
+  (p.gapMinutes === null || (p.gapMinutes >= 0 && p.gapMinutes <= 720));
+
+const NO_OWN_PACE: OwnPace = { postingFrom: null, postingUntil: null, postingWeekends: null, gapMinutes: null };
 
 export type SocialDeps = {
   plugins: () => Pick<Plugins, "socialFor" | "socialConnections" | "identifySocial" | "query">;
@@ -217,6 +227,26 @@ export function createSocial(deps: SocialDeps) {
       }
       if (refused) await deps.vault().markNeedsReauth(workspaceId, credentialId);
       await inWorkspace(workspaceId, (tx) => touchChecked(tx, credentialId, now()));
+    },
+
+    /** An account's pace (ADR 0038): what it set, its network's defaults, what applies, and the time zone they are read in. */
+    async pace(workspaceId: string, accountId: string) {
+      const row = await inWorkspace(workspaceId, (tx) => paceById(tx, accountId));
+      if (!row) return null;
+      const defaults = network(row.connection)?.pace;
+      const own: OwnPace = { postingFrom: row.postingFrom, postingUntil: row.postingUntil, postingWeekends: row.postingWeekends, gapMinutes: row.gapMinutes };
+      return { own, defaults: paceOf(NO_OWN_PACE, defaults), pace: paceOf(own, defaults), timeZone: await timeZoneOf(workspaceId) };
+    },
+
+    /** Sets an account's own pace; null puts a value back to its network's default. Nothing already planned moves. */
+    setPace(workspaceId: string, accountId: string, next: OwnPace, userId: string): Promise<{ ok: true } | { ok: false; reason: "bad_pace" | "not_found" }> {
+      if (!validPace(next)) return Promise.resolve({ ok: false, reason: "bad_pace" });
+      return inWorkspace(workspaceId, async (tx) => {
+        const row = await paceById(tx, accountId, true);
+        if (!row) return { ok: false, reason: "not_found" } as const;
+        await writePace(tx, workspaceId, row, accountId, next, userId, now());
+        return { ok: true } as const;
+      });
     },
 
     /** The daily sweep. Also what renews a self-renewing token on an account nobody posts from. */

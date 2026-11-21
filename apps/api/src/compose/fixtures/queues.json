@@ -129,6 +129,11 @@
   },
   {
     "kind": "queue",
+    "name": "outreach.mailbox_ramp_sweep",
+    "options": null
+  },
+  {
+    "kind": "queue",
     "name": "outreach.newsletter_sync_one",
     "options": null
   },
@@ -321,6 +326,14 @@
   },
   {
     "kind": "schedule",
+    "name": "outreach.mailbox_ramp_sweep",
+    "cron": "0 5 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
     "name": "outreach.newsletter_sync_sweep",
     "cron": "0 5 * * *",
     "options": {
@@ -505,6 +518,11 @@
   {
     "kind": "work",
     "name": "outreach.mailbox_polls",
+    "options": null
+  },
+  {
+    "kind": "work",
+    "name": "outreach.mailbox_ramp_sweep",
     "options": null
   },
   {

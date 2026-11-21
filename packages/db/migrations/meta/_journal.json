@@ -1128,6 +1128,13 @@
       "when": 1795209313490,
       "tag": "0160_competitor_proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1795220038949,
+      "tag": "0161_social_pace",
+      "breakpoints": true
     }
   ]
 }

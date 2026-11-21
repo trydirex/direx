@@ -51,12 +51,19 @@ export type SocialNetworkInfo = {
   callback?: { https?: boolean; noLocalhost?: boolean };
   /** How a self-hoster registers their own app. consoleName names the console when it isn't the network's own. */
   wizard?: { consoleUrl: string; consoleName?: string; scopes: readonly string[]; steps: readonly string[] };
+  /** When an account posts by default, in minutes from midnight in the Workspace's time zone, and how far apart (ADR 0038). */
+  pace?: { from: number; until: number; weekends: boolean; gapMinutes: number };
 };
 
 const awaiting = { cloud: "awaiting_approval", self_host: "awaiting_approval" } as const;
 const feature = (key: NetworkFeature["key"], scopes: readonly string[] = [], over: Partial<NetworkFeature> = {}): NetworkFeature => ({ key, built: false, scopes, ...over });
 
 const BUILT = { built: true };
+
+// [DEFAULT] paces from research note r82: wide windows, not tuned best times; X's limits run in
+// half-hour intervals, and Bluesky's and Mastodon's feeds are chronological.
+const h = (hour: number) => hour * 60;
+const pace = (from: number, until: number, gapMinutes: number, weekends = true) => ({ from: h(from), until: h(until), weekends, gapMinutes });
 
 // Meta's apps in development mode let only people with a role on the app sign in.
 const META_OWN_APP_LIMITS = ["While your app is in development mode, only accounts with a role on the app can connect."];
@@ -73,6 +80,7 @@ const unbuilt = (connection: string, label: string, ...accountTypes: string[]): 
 export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   {
     ...unbuilt("linkedin", "LinkedIn", "member"),
+    pace: pace(8, 18, 180, false),
     postLimit: 3000,
     availability: awaiting,
     tokenEnds: true,
@@ -92,6 +100,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   // LinkedIn offers this only to registered legal organisations, so it stays unbuilt until a company exists.
   {
     ...unbuilt("linkedin_page", "LinkedIn Pages", "page"),
+    pace: pace(8, 18, 180, false),
     variantOf: "linkedin",
     tokenEnds: true,
     postLimit: 3000,
@@ -111,6 +120,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   },
   {
     ...unbuilt("x", "X", "user"),
+    pace: pace(8, 20, 30),
     postLimit: 280,
     availability: awaiting,
     noDailyHealth: true,
@@ -141,6 +151,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   },
   {
     ...unbuilt("bluesky", "Bluesky", "user"),
+    pace: pace(8, 21, 60),
     postLimit: 300,
     connect: "form",
     availability: awaiting,
@@ -152,6 +163,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   },
   {
     ...unbuilt("facebook", "Facebook", "page"),
+    pace: pace(8, 20, 180),
     availability: awaiting,
     ownAppLimits: META_OWN_APP_LIMITS,
     tokenEnds: true,
@@ -165,6 +177,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   },
   {
     ...unbuilt("instagram", "Instagram", "professional"),
+    pace: pace(8, 21, 180),
     postLimit: 2200,
     availability: awaiting,
     ownAppLimits: META_OWN_APP_LIMITS,
@@ -183,6 +196,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   },
   {
     ...unbuilt("threads", "Threads", "profile"),
+    pace: pace(7, 21, 60),
     postLimit: 500,
     availability: awaiting,
     ownAppLimits: META_OWN_APP_LIMITS,
@@ -232,7 +246,7 @@ export const socialNetworks = (): readonly SocialNetworkInfo[] => [
   },
   unbuilt("pinterest", "Pinterest", "user"),
   unbuilt("dribbble", "Dribbble", "user"),
-  unbuilt("mastodon", "Mastodon", "user"),
+  { ...unbuilt("mastodon", "Mastodon", "user"), pace: pace(8, 21, 90) },
   unbuilt("lemmy", "Lemmy", "user"),
   unbuilt("farcaster", "Farcaster", "user"),
   unbuilt("nostr", "Nostr", "key"),

@@ -2,7 +2,8 @@
 // What a Workspace can post to. One login can reach several targets, such as a person's Pages, so
 // each target is a row under its credential. No token is held here: Page tokens are fetched at call time.
 import { sql } from "drizzle-orm";
-import { check, foreignKey, integer, jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, foreignKey, index, integer, jsonb, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { user } from "./auth-schema";
 import { actions, bytea, credentials, items, workspaces } from "./schema";
 import { campaignSteps } from "./schema-campaigns";
 import { clips } from "./schema-clips";
@@ -25,12 +26,66 @@ export const socialAccounts = pgTable(
     runBy: text("run_by"),
     // What this account is for, beside the Workspace's other accounts on the same network.
     angle: text("angle"),
+    // Its pace (ADR 0038), in minutes from midnight in the Workspace's time zone; null means the
+    // network's default.
+    postingFrom: integer("posting_from"),
+    postingUntil: integer("posting_until"),
+    postingWeekends: boolean("posting_weekends"),
+    gapMinutes: integer("gap_minutes"),
   },
   (t) => [
     foreignKey({ name: "social_accounts_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
     foreignKey({ name: "social_accounts_credential_fk", columns: [t.workspaceId, t.credentialId], foreignColumns: [credentials.workspaceId, credentials.id] }),
     unique("social_accounts_target_unique").on(t.credentialId, t.networkId),
     check("social_accounts_about_check", sql`char_length(${t.runBy}) <= 200 and char_length(${t.angle}) <= 200`),
+    check(
+      "social_accounts_pace_check",
+      sql`(${t.postingFrom} is null) = (${t.postingUntil} is null) and (${t.postingFrom} is null or (0 <= ${t.postingFrom} and ${t.postingFrom} < ${t.postingUntil} and ${t.postingUntil} <= 1440)) and (${t.gapMinutes} is null or ${t.gapMinutes} between 0 and 720)`,
+    ),
+  ],
+);
+
+// Who changed an account's pace, and from what to what. Append-only.
+export const socialPaceChanges = pgTable(
+  "social_pace_changes",
+  {
+    id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
+    workspaceId: uuid("workspace_id").notNull(),
+    credentialId: uuid("credential_id").notNull(),
+    networkId: text("network_id").notNull(),
+    before: jsonb("before"),
+    after: jsonb("after").notNull(),
+    changedBy: uuid("changed_by")
+      .notNull()
+      .references(() => user.id),
+    changedAt: tz("changed_at").notNull(),
+  },
+  (t) => [
+    foreignKey({ name: "social_pace_changes_credential_fk", columns: [t.workspaceId, t.credentialId], foreignColumns: [credentials.workspaceId, credentials.id] }),
+    index("social_pace_changes_account_idx").on(t.workspaceId, t.credentialId, t.networkId, t.changedAt),
+  ],
+);
+
+// A post's claim on its account's day, as mailbox_reservations is for an email: the newest row per
+// Action wins, and whether it counts comes from the Action's live state, so rows are never updated.
+export const socialReservations = pgTable(
+  "social_reservations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    actionId: uuid("action_id").notNull(),
+    credentialId: uuid("credential_id").notNull(),
+    networkId: text("network_id").notNull(),
+    day: text("day").notNull(),
+    slot: tz("slot").notNull(),
+    createdAt: tz("created_at").notNull(),
+  },
+  (t) => [
+    foreignKey({ name: "social_reservations_action_fk", columns: [t.workspaceId, t.actionId], foreignColumns: [actions.workspaceId, actions.id] }),
+    foreignKey({ name: "social_reservations_credential_fk", columns: [t.workspaceId, t.credentialId], foreignColumns: [credentials.workspaceId, credentials.id] }),
+    index("social_reservations_day_idx").on(t.workspaceId, t.credentialId, t.networkId, t.day),
+    index("social_reservations_action_idx").on(t.workspaceId, t.actionId, t.createdAt),
+    check("social_reservations_day_check", sql`${t.day} ~ '^\\d{4}-\\d{2}-\\d{2}$'`),
   ],
 );
 

@@ -34,6 +34,8 @@ export type SocialNetworkInfo = {
   /** What the network accepts as a redirect URI. */
   callback?: { https?: boolean; noLocalhost?: boolean };
   wizard?: { consoleUrl: string; consoleName?: string; scopes: readonly string[]; steps: readonly string[] };
+  /** When an account posts by default, in minutes from midnight in the Workspace's time zone, and how far apart (ADR 0038). */
+  pace?: { from: number; until: number; weekends: boolean; gapMinutes: number };
 };
 
 export type CallbackProblem = "needs_https" | "no_localhost";

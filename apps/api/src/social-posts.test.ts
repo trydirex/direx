@@ -607,6 +607,36 @@ test("a step's posts on one account are placed apart on its pace; a person's Cal
   expect((await pacedItems.view(W, itemIds[0]!))!.at).toEqual(new Date(times[0]!.getTime() + 24 * 60 * 60_000));
 });
 
+test("an interrupted Social reschedule cannot publish at the old time", async () => {
+  beforeWhen();
+  const a = await account();
+  const step = { campaignId: await postStep(), stepKey: "launch", title: "Launch", plannedAt: WHEN };
+  const targets = [{ ...a, text: "Wait for the new slot" }];
+  const [post] = await pacedPosts.draft(W, step, targets, owner);
+  const id = post!.itemId!;
+  expect((await approve(id)).status).toBe(200);
+  const actionId = (await pacedItems.actionIdOf(W, id))!;
+  const oldSlot = (await pacedItems.view(W, id))!.at!;
+  const plannedAt = new Date(WHEN.getTime() + 24 * 60 * 60_000);
+  // Commit the reservation, simulating an interruption before the Item and Action are updated.
+  const moved = await socialCapacity({ networks }).reserveAutomatic!(W, actionId, plannedAt, clock.at);
+  expect(moved?.result.kind).toBe("reserved");
+  expect(await ledger.getAction(W, actionId)).toMatchObject({ state: "scheduled", dueAt: oldSlot });
+  try {
+    clock.at = oldSlot;
+    await ledger.run(W, actionId);
+    expect(published(actionId)).toHaveLength(0);
+    expect(await ledger.getAction(W, actionId)).toMatchObject({ state: "held", holdReason: "cap" });
+    expect((await pacedItems.moveItem(W, id, moved!.slot, { userId: owner })).ok).toBe(true);
+    expect((await approve(id)).status).toBe(200);
+    clock.at = moved!.slot;
+    await ledger.run(W, actionId);
+    expect(published(actionId)).toHaveLength(1);
+  } finally {
+    beforeWhen();
+  }
+});
+
 test("an unchanged step post follows an earlier Workspace day even on the same UTC date", async () => {
   beforeWhen();
   await q("update workspaces set time_zone = 'America/Los_Angeles' where id = $1", [W]);

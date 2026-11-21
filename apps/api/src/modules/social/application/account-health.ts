@@ -4,7 +4,7 @@
 import { storedSpec } from "@direx/plugin-sdk/host";
 import type { Check } from "../../ledger/index";
 import { localTime, mailboxDay, nextDay } from "../../schedule";
-import { accountById, healthOf, healthOfCredential, inWorkspace, peekHealth, postAccountOf, specsPostedBetween, updateHealth, workspaceZone, type HealthRow, type SocialTx } from "../adapters/repo";
+import { accountById, healthOf, healthOfCredential, inWorkspace, newestReservationFor, peekHealth, postAccountOf, specsPostedBetween, updateHealth, workspaceZone, type HealthRow, type SocialTx } from "../adapters/repo";
 import { atFloor, capOf, CLEAN_DAYS_PER_STEP, ESTABLISHED, FLOOR, halve, overBudget, spendOf, step, type Budget, type Use } from "../domain/budget";
 
 const NOUN = { posts: "posts", links: "links" } as const;
@@ -40,7 +40,7 @@ export async function handPostWarning(tx: SocialTx, workspaceId: string, account
   return over && `${over.used} of ${over.budget} ${NOUN[over.key]} that day on this account. Posting more by hand raises the risk of a restriction.`;
 }
 
-/** Holds a post when its account is paused or has used today's budget. A person moves it on. */
+/** Holds a post if its slot changed, its account is paused, or today's budget is used. */
 export const accountHealthCheck =
   (deps: { now: () => Date }): Check =>
   async (rawTx, action) => {
@@ -50,6 +50,12 @@ export const accountHealthCheck =
     const now = deps.now();
     const health = await healthOf(tx, action.workspaceId, account, FLOOR, now);
     if (health.pausedAt) return { kind: "hold", reason: "account_paused", detail: health.pauseDetail ?? health.pauseReason ?? undefined };
+    // Rescheduling reserves the new slot before changing the Action's due time. If that move
+    // stopped partway through, the old wake must hold. Legacy posts may have no reservation.
+    const reservation = await newestReservationFor(tx, action.id);
+    if (reservation && reservation.slot.getTime() !== action.dueAt?.getTime()) {
+      return { kind: "hold", reason: "cap", detail: "The reserved posting time changed. Move the post to schedule it again." };
+    }
     const used = await usedOnDay(tx, action.workspaceId, account, action.id, now);
     const over = overBudget(budgetOf(health), used, spendOf(storedSpec("social.publish", action.spec)));
     return over ? { kind: "hold", reason: "account_budget_reached", detail: `${over.used} of ${over.budget} ${NOUN[over.key]} today on this account` } : { kind: "ok" };

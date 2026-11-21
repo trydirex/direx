@@ -66,6 +66,18 @@ test("opted-in rows become Customers with consent as their basis; the rest are l
   expect(await outreach.person(W, body.added[0]!.personId)).toMatchObject({ country: "GB", basis: "consent", confidence: "inferred" });
 });
 
+test("invalid opt-in dates are skipped and a later opted-in row is still imported", async () => {
+  const dates = ["2026-13-01", "2026-00-15", "2026-01-32"];
+  const invalid = dates.map(() => address());
+  const valid = address();
+  const csv = ["email,opted_in,opted_in_on", ...dates.map((date, i) => `${invalid[i]},yes,${date}`), `${valid},yes,2024-02-29`].join("\n");
+  const { status, body } = await importCsv(csv);
+
+  expect(status).toBe(200);
+  expect(body.skipped).toEqual(invalid.map((email, i) => ({ row: i + 1, email, reason: "bad_opt_in_date" })));
+  expect(body.added.map((row) => row.email)).toEqual([valid]);
+});
+
 test("re-importing the same list adds no one twice, and a later name changes what's stored", async () => {
   const a = address();
   const first = (await importCsv(`${HEAD}\nSam,${a},Acme,yes,2026-01-01`)).body;

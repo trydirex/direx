@@ -6,7 +6,7 @@
 import type { Items } from "../../items";
 import type { Compose, Outreach } from "../../outreach";
 import { planMailbox } from "../../schedule";
-import { activeActions, inWorkspace, linkAction, lockPersonStatus, requireApproved, setProposedText, stepMailboxes } from "../adapters/repo";
+import { activeActions, inWorkspace, linkAction, lockPersonStatus, noteFixedTokenlessUses, requireApproved, setProposedText, stepMailboxes } from "../adapters/repo";
 import { assignSenders, type Sender } from "../domain/senders";
 
 export const groupKeyOf = (campaignId: string, stepKey: string) => `campaign:${campaignId}:step:${stepKey}`;
@@ -73,6 +73,10 @@ export async function reviseDraft(d: Deps, p: Placement & { itemId: string }, e:
     const approved = await requireApproved(tx, p.campaignId);
     if (!approved.ok) return { ...approved, announce: false };
     const revised = await d.outreach().reviseIn(tx, p.workspaceId, p.itemId, prepared, actor);
+    if (revised.ok && prepared.links) {
+      const linkIds = prepared.links.uses.filter((use) => use.tokenHash === null).map((use) => use.linkId);
+      if (linkIds.length) await noteFixedTokenlessUses(tx, p.itemId, linkIds, prepared.links.inputsHash);
+    }
     if (revised.ok && proposedText !== undefined) await setProposedText(tx, p.itemId, proposedText);
     if (!revised.ok || !e.submit) return { ...revised, announce: false };
     const submitted = await d.items().submitItemIn(tx, p.workspaceId, p.itemId, actor);

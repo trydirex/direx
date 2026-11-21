@@ -347,13 +347,28 @@ export async function campaignOfAction(tx: CampaignsTx, actionId: string) {
   return row ?? campaignOfPost(tx, actionId);
 }
 
-/** Only recipient uses made for this Action. The caller matches them against the fixed text. */
-export function recipientLinkUses(tx: CampaignsTx, actionId: string) {
+/** Tracked link uses made for this Action. The caller matches them against the fixed text. */
+export function actionTrackingUses(tx: CampaignsTx, actionId: string) {
   return tx.select({ linkId: trackedLinkUses.linkId, tokenHash: trackedLinkUses.tokenHash, hostname: trackingDomains.hostname, inputsHash: trackedLinkUses.inputsHash })
     .from(trackedLinkUses)
     .innerJoin(trackedLinks, eq(trackedLinks.id, trackedLinkUses.linkId))
     .innerJoin(trackingDomains, eq(trackingDomains.id, trackedLinks.domainId))
-    .where(and(eq(trackedLinkUses.actionId, actionId), isNotNull(trackedLinkUses.tokenHash)));
+    .innerJoin(items, eq(items.actionId, trackedLinkUses.actionId))
+    .where(and(eq(trackedLinkUses.actionId, actionId), sql`(
+      ${trackedLinkUses.tokenHash} is not null
+      or ${items.payload} -> 'fixedTokenlessLinks' ->> ${trackedLinkUses.linkId} is null
+      or ${items.payload} -> 'fixedTokenlessLinks' ->> ${trackedLinkUses.linkId} = ${trackedLinkUses.inputsHash}
+    )`));
+}
+
+/** Keep the current inputs for regenerated tokenless URLs, which can repeat across revisions.
+ * The use rows stay immutable; links carried forward without regeneration keep their last inputs.
+ */
+export async function noteFixedTokenlessUses(tx: CampaignsTx, itemId: string, linkIds: string[], inputsHash: string) {
+  const fixed = Object.fromEntries(linkIds.map((id) => [id, inputsHash]));
+  await tx.update(items).set({ payload: sql`jsonb_set(coalesce(${items.payload}, '{}'::jsonb), '{fixedTokenlessLinks}',
+    coalesce(${items.payload} -> 'fixedTokenlessLinks', '{}'::jsonb) || ${JSON.stringify(fixed)}::jsonb)` })
+    .where(eq(items.id, itemId));
 }
 
 /** The step and joining time behind an Action, for standing rules. */

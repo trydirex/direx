@@ -6,10 +6,10 @@ import type { Items, ItemKind } from "../../items";
 import type { Check } from "../../ledger";
 import type { InboundEvent } from "../../outreach";
 import type { Plans } from "../../plans";
-import { currentEmailTrackingHash, recipientTrackingLinks } from "../../tracking";
+import { currentEmailTrackingHash, trackingLinksInText } from "../../tracking";
 import { PLAN_CHANGED, planChangeKinds } from "./plan-change";
 import { strategyAssumptionKinds } from "./write-up";
-import { setStallWaitFrom, activePosts, activeActions, campaignOfAction, inWorkspace, markReplied, markRepliedEverywhere, readCampaign, recipientLinkUses, setPaused, settleConflict, postCounts, stepCounts, type CampaignsTx } from "../adapters/repo";
+import { setStallWaitFrom, activePosts, activeActions, campaignOfAction, inWorkspace, markReplied, markRepliedEverywhere, readCampaign, actionTrackingUses, setPaused, settleConflict, postCounts, stepCounts, type CampaignsTx } from "../adapters/repo";
 
 export const CONFLICT_KIND = "campaign_conflict";
 /** What a Campaign's drafting waits on that a person can fix. Approving it only says "seen"; it goes away once nothing waits. */
@@ -33,11 +33,11 @@ export const campaignCheck = (): Check => async (tx, action) => {
   if (link.pausedAt) return { kind: "hold", reason: PAUSED };
   if (link.planChanged) return { kind: "hold", reason: PLAN_CHANGED };
   if ("personId" in link) {
-    const tokens = recipientTrackingLinks(storedSpec("email.send", action.spec).text ?? "");
-    if (tokens.length) {
-      // The ledger has verified the approved bytes. A previous revision's token must not hold a new message.
-      const uses = (await recipientLinkUses(tx, action.id)).filter((use) => tokens.some((token) =>
-        use.linkId === token.linkId && use.tokenHash === token.tokenHash && use.hostname === token.hostname));
+    const links = trackingLinksInText(storedSpec("email.send", action.spec).text ?? "");
+    if (links.length) {
+      // The ledger has verified the approved bytes. A link absent from the current revision must not hold a new message.
+      const uses = (await actionTrackingUses(tx, action.id)).filter((use) => links.some((linkInText) =>
+        use.linkId === linkInText.linkId && use.tokenHash === linkInText.tokenHash && use.hostname === linkInText.hostname));
       if (uses.length) {
         const live = await currentEmailTrackingHash(tx, link.campaignId, link.personId);
         if (uses.some((use) => use.inputsHash !== live)) {

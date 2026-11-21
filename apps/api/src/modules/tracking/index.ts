@@ -21,11 +21,11 @@ export async function currentEmailTrackingHash(tx: TrackingTx, campaignId: strin
   return inputsHash({ perPerson: t.perPersonOn, marked: false, country: who?.country ?? null, confidence: who?.confidence ?? null, domainId: t.domainId });
 }
 
-/** Recipient links actually present in the fixed message. Older revisions' uses can still exist. */
-export function recipientTrackingLinks(text: string) {
+/** Tracked links actually present in the fixed message. Older revisions' uses can still exist. */
+export function trackingLinksInText(text: string) {
   return rewriteLinks(text, () => null).destinations.flatMap((destination) => {
     const url = new URL(destination);
-    const parts = /^\/t\/([A-Za-z0-9_-]{22})\/([A-Za-z0-9_-]{43})$/.exec(url.pathname);
-    return parts ? [{ hostname: url.hostname, linkId: parts[1]!, tokenHash: createHash("sha256").update(parts[2]!).digest("hex") }] : [];
+    const parts = /^\/t\/([A-Za-z0-9_-]{22})(?:\/([A-Za-z0-9_-]{43}))?$/.exec(url.pathname);
+    return parts ? [{ hostname: url.hostname, linkId: parts[1]!, tokenHash: parts[2] ? createHash("sha256").update(parts[2]).digest("hex") : null }] : [];
   });
 }

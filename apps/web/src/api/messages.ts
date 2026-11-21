@@ -8,7 +8,7 @@ const COMMON: Record<string, string> = {
   not_found: "We couldn't find that. It may have been removed.",
   stale: "Someone else changed this just now. Reload and try again.",
   stale_version: "Someone changed this while you were editing. Reload and try again.",
-  step_up_required: "This needs a sign-in from the last 10 minutes. Sign out and back in, then try again.",
+  step_up_required: "This needs a recent sign-in. Sign in again, then try once more.",
   failed: "That didn't work. Try again.",
 };
 const OFFLINE = "Direx couldn't be reached. Check your connection and try again.";

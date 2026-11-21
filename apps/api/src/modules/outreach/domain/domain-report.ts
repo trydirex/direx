@@ -62,7 +62,10 @@ function hasReportingUri(value: string | undefined): boolean {
     // DMARC still accepts the obsolete optional !size suffix.
     const uri = entry.trim().replace(/![0-9]+[kmgt]?$/i, "");
     if (!/^[a-z][a-z0-9+.-]*:[a-z0-9._~:/?#[\]@&'()*+;=%$-]+$/i.test(uri) || /%(?![0-9a-f]{2})/i.test(uri)) return false;
-    if (/^mailto:/i.test(uri) && !/^mailto:[^@?]+@[^@?]+(?:\?|$)/i.test(uri)) return false;
+    if (/^mailto:\?/i.test(uri)) {
+      // RFC 6068 also allows the recipient in a query header.
+      if (uri.includes("#") || !uri.slice("mailto:?".length).split("&").some((field) => /^to=[^@?]+@[^@?]+$/i.test(field))) return false;
+    } else if (/^mailto:/i.test(uri) && !/^mailto:[^@?]+@[^@?]+(?:\?|$)/i.test(uri)) return false;
     return URL.canParse(uri);
   }) ?? false;
 }

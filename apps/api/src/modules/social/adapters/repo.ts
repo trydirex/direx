@@ -3,6 +3,7 @@ import { withWorkspace, type WorkspaceTx } from "@direx/db";
 import { actions, credentials, items, workspaces } from "@direx/db/schema";
 import { socialAccountHealth, socialAccounts, socialPaceChanges, socialPosts, socialReservations } from "@direx/db/schema-social";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, not, or, sql } from "drizzle-orm";
+import { mailboxDay } from "../../schedule";
 
 export const inWorkspace = withWorkspace;
 
@@ -166,11 +167,18 @@ export const postAccountOf = async (tx: WorkspaceTx, actionId: string) => {
 
 type Spec = { text?: unknown; followUps?: unknown };
 
-/** What this account published, or may have, in [from, to): its posts through Direx other than this Action, and the ones a person marked posted by hand. */
-export async function specsPostedBetween(tx: WorkspaceTx, a: { credentialId: string; networkId: string }, exceptActionId: string | null, from: Date, to: Date): Promise<Spec[]> {
+/** What this account published, or may have, on the Workspace's day: its posts through Direx other than this Action, and the ones a person marked posted by hand. */
+export async function specsPostedOnDay(tx: WorkspaceTx, a: { credentialId: string; networkId: string }, exceptActionId: string | null, at: Date, timeZone: string): Promise<Spec[]> {
+  const day = mailboxDay(at, timeZone);
+  const midnightUtc = Date.parse(`${day}T00:00:00Z`);
+  const dayMs = 86_400_000;
+  // Bound the query in UTC, then match local dates without assuming local midnight exists.
+  const from = new Date(midnightUtc - dayMs);
+  const to = new Date(midnightUtc + 2 * dayMs);
+  const onDay = (postedAt: Date | null) => postedAt !== null && mailboxDay(postedAt, timeZone) === day;
   const direct = (
     await tx
-      .select({ spec: actions.spec })
+      .select({ spec: actions.spec, postedAt: actions.firstDispatchedAt })
       .from(socialPosts)
       .innerJoin(actions, eq(actions.id, socialPosts.actionId))
       .where(
@@ -183,15 +191,15 @@ export async function specsPostedBetween(tx: WorkspaceTx, a: { credentialId: str
           or(inArray(actions.state, ["sent", "dispatching"]), isNotNull(actions.outcomeUnknownAt)),
         ),
       )
-  ).map((r) => (r.spec ?? {}) as Spec);
+  ).filter((r) => onDay(r.postedAt)).map((r) => (r.spec ?? {}) as Spec);
   // ponytail: a hand post counts on the day its Item was last updated, which is when it was marked posted; store a posted-at time if that ever drifts.
   const byHand = (
     await tx
-      .select({ payload: items.payload })
+      .select({ payload: items.payload, postedAt: items.updatedAt })
       .from(socialPosts)
       .innerJoin(items, eq(items.id, socialPosts.itemId))
       .where(and(eq(socialPosts.credentialId, a.credentialId), eq(socialPosts.networkId, a.networkId), isNull(socialPosts.actionId), eq(items.state, "applied"), gte(items.updatedAt, from), lt(items.updatedAt, to)))
-  ).map((r) => (r.payload ?? {}) as Spec);
+  ).filter((r) => onDay(r.postedAt)).map((r) => (r.payload ?? {}) as Spec);
   return [...direct, ...byHand];
 }
 

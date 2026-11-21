@@ -853,6 +853,33 @@ test("an account's day at dispatch is the Workspace's day, not UTC's", async () 
   }
 });
 
+test("a post before a skipped local midnight does not spend the next day's budget", async () => {
+  await q("update workspaces set time_zone = 'America/Sao_Paulo' where id = $1", [W]);
+  const previous = clock.at;
+  clock.at = new Date("2018-11-04T01:00:00Z");
+  try {
+    const a = await account();
+    const write = async (text: string, at: Date) => {
+      const post = await posts.write(W, { ...a, text, at }, owner);
+      const id = post.itemId!;
+      expect((await approve(id)).status).toBe(200);
+      return id;
+    };
+    // 02:30Z is 23:30 on Nov 3; the clock jumps to 01:00 on Nov 4 at 03:00Z.
+    const before = new Date("2018-11-04T02:30:00Z");
+    const after = new Date("2018-11-04T03:30:00Z");
+    const first = await write("Before the jump", before);
+    const second = await write("After the jump", after);
+    await runAt(first, before);
+    expect((await stateOf(first)).state).toBe("sent");
+    await runAt(second, after);
+    expect((await stateOf(second)).state).toBe("sent");
+  } finally {
+    clock.at = previous;
+    await q("update workspaces set time_zone = 'UTC' where id = $1", [W]);
+  }
+});
+
 test("a paused account holds every post, and a pause halves the budget once", async () => {
   beforeWhen();
   const a = await account();

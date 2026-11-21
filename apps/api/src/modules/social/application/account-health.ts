@@ -3,8 +3,7 @@
 // the network warns. It lowers the risk of a restriction; nothing here can promise there won't be one.
 import { storedSpec } from "@direx/plugin-sdk/host";
 import type { Check } from "../../ledger/index";
-import { localTime, mailboxDay, nextDay } from "../../schedule";
-import { accountById, healthOf, healthOfCredential, inWorkspace, newestReservationFor, peekHealth, postAccountOf, specsPostedBetween, updateHealth, workspaceZone, type HealthRow, type SocialTx } from "../adapters/repo";
+import { accountById, healthOf, healthOfCredential, inWorkspace, newestReservationFor, peekHealth, postAccountOf, specsPostedOnDay, updateHealth, workspaceZone, type HealthRow, type SocialTx } from "../adapters/repo";
 import { atFloor, capOf, CLEAN_DAYS_PER_STEP, ESTABLISHED, FLOOR, halve, overBudget, spendOf, step, type Budget, type Use } from "../domain/budget";
 
 const NOUN = { posts: "posts", links: "links" } as const;
@@ -28,8 +27,7 @@ const DAY = 24 * 60 * 60_000;
 /** What an account used on the Workspace's day holding `at`, other than one Action (ADR 0038). */
 export const usedOnDay = async (tx: SocialTx, workspaceId: string, account: { credentialId: string; networkId: string }, exceptActionId: string | null, at: Date) => {
   const timeZone = await workspaceZone(tx, workspaceId);
-  const on = mailboxDay(at, timeZone);
-  return usedOf(await specsPostedBetween(tx, account, exceptActionId, localTime(on, 0, timeZone), localTime(nextDay(on), 0, timeZone)));
+  return usedOf(await specsPostedOnDay(tx, account, exceptActionId, at, timeZone));
 };
 
 /** A hand post can't be held, since the person posts it, so over budget it only warns. Null when it fits. */

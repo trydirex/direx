@@ -16,7 +16,7 @@ export type MoveStep = "reserved" | "planned";
 
 // A refusal after taking a reservation must roll the reservation back too.
 class RedateRefused extends Error {
-  constructor(readonly reason: Refusal) {
+  constructor(readonly reason: Refusal | "mailbox_day_full" | "account_day_full") {
     super(reason);
   }
 }
@@ -78,8 +78,7 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
       if (action.state === "claimed" || !canMove(action.state, action.holdReason)) return { ok: false, reason: "wrong_state" } as const;
       const actionId = item.actionId;
       const port = await capacity.forAction?.(workspaceId, actionId) ?? capacity;
-      // The Mailbox search is a hint; the reservation still checks capacity in its transaction.
-      const room = port.reserveAutomaticIn ? null : await port.nextTime(workspaceId, actionId, wanted, { now: at });
+      const room = port.reserveAutomaticIn || port.nextTimeIn ? null : await port.nextTime(workspaceId, actionId, wanted, { now: at });
       try {
         return await withGroupRetry(workspaceId, async (tx) => {
           // Take the group before the account and Action. Keep the reservations until the
@@ -89,11 +88,15 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
           const result = placed?.result;
           if (result?.kind === "not_found" || result?.kind === "unavailable") return { ok: false, reason: result.kind } as const;
           if (result?.kind === "full") return { ok: false, reason: "reason" in result ? result.reason : "mailbox_day_full", day: result.day, limit: result.limit } as const;
-          const plannedAt = placed?.slot ?? room;
+          const plannedAt = placed?.slot ?? (port.nextTimeIn ? await port.nextTimeIn(tx, actionId, wanted, at) : room);
           if (!plannedAt) return { ok: false, reason: "mailbox_day_full" } as const;
           const reserved = await reserveTouchIn(tx, workspaceId, actionId, plannedAt, at);
           if (reserved.kind === "not_found") throw new RedateRefused("not_found");
-          if (!placed) await port.reserveIn(tx, workspaceId, actionId, plannedAt, at);
+          if (!placed) {
+            const day = await port.reserveIn(tx, workspaceId, actionId, plannedAt, at);
+            if (day.kind === "not_found") throw new RedateRefused("not_found");
+            if (day.kind === "full") throw new RedateRefused("reason" in day ? day.reason : "mailbox_day_full");
+          }
 
           // The ledger lock protects the due-time snapshot even when neither capacity counts
           // this Action. Re-read after placement: other writers may have moved it while we waited.

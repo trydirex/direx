@@ -2,7 +2,7 @@
 // Where an Action planned for a time takes its place (ADR 0038). Every path that sets a time calls
 // this port; the composition root decides which account each capability counts against. Without one,
 // only Mailboxes count, as ADR 0019 set out.
-import { nextMailboxTime, reserveMailbox, reserveMailboxIn, type MailboxReserveResult } from "../../schedule";
+import { nextMailboxTime, nextMailboxTimeIn, reserveMailbox, reserveMailboxIn, type MailboxReserveResult } from "../../schedule";
 import { inWorkspace, itemIdByAction, readItem, type ItemsTx } from "../adapters/repo";
 import type { Warning } from "../domain/warnings";
 
@@ -31,6 +31,8 @@ export type CapacityPort = {
   reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<AutomaticPlacement | undefined>;
   reserveAutomaticIn?(tx: ItemsTx, workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<AutomaticPlacement | undefined>;
   forAction?(workspaceId: string, actionId: string): Promise<CapacityPort>;
+  /** Find room while holding the account lock until the caller finishes reserving. */
+  nextTimeIn?(tx: ItemsTx, actionId: string, from: Date, now: Date): Promise<Date | null>;
   nextTime(workspaceId: string, actionId: string, from: Date, opts?: { now?: Date }): Promise<Date | null>;
 };
 
@@ -40,6 +42,7 @@ export const mailboxCapacity: CapacityPort = {
   reserveIn: reserveMailboxIn,
   reserve: reserveMailbox,
   nextTime: nextMailboxTime,
+  nextTimeIn: nextMailboxTimeIn,
 };
 
 /** The capability behind an Action, read through its Item. */

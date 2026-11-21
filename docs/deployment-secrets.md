@@ -74,10 +74,9 @@ A connection that runs on an OAuth app takes the first one it finds, in this ord
 
 A self-hosted server with no such package installed skips step 2, so nothing changes for it.
 
-A package that runs Direx through `startServer({ oauthApps })` can supply apps per connection. It
-gets the Workspace, its Organization and the connection, and returns client pairs newest first. Core
-never names that package, and calls it outside any database transaction. The type is `OAuthApps` in
-`apps/api/src/modules/extensions/index.ts`; changing it raises `EXTENSIONS_VERSION`.
+A package that runs Direx through `startServer({ oauthApps })` can supply apps per connection.
+[Extensions](extensions.md#oauthapps) describes what it gets, the order it returns apps in, and how
+to rotate one.
 
 ### Gmail's mailbox app
 

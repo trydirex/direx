@@ -111,27 +111,6 @@ export const specOfAction = async (tx: WorkspaceTx, actionId: string) => {
   return row?.spec ?? null;
 };
 
-/** Another step's post on this account near this time. A cancelled or ended one no longer crowds it. */
-export const withinSlot = async (tx: WorkspaceTx, a: { connection: string; networkId: string; except: { campaignId: string; stepKey: string } | null; at: Date; ms: number }) => {
-  const seconds = a.ms / 1000;
-  const [row] = await tx
-    .select({ id: socialPosts.id })
-    .from(socialPosts)
-    .innerJoin(items, eq(items.id, socialPosts.itemId))
-    .leftJoin(actions, eq(actions.id, socialPosts.actionId))
-    .where(
-      and(
-        eq(socialPosts.connection, a.connection),
-        eq(socialPosts.networkId, a.networkId),
-        a.except ? not(and(eq(socialPosts.campaignId, a.except.campaignId), eq(socialPosts.stepKey, a.except.stepKey))!) : undefined,
-        sql`coalesce(${actions.state}, ${items.state}) <> 'cancelled'`,
-        sql`abs(extract(epoch from (coalesce(${actions.dueAt}, ${items.plannedAt}) - ${a.at.toISOString()}::timestamptz))) < ${seconds}`,
-      ),
-    )
-    .limit(1);
-  return !!row;
-};
-
 /** The account and network one post's Item goes out as. */
 export const postOfItem = (tx: WorkspaceTx, itemId: string) =>
   tx

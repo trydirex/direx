@@ -8,7 +8,7 @@ import { warn, type Items, type ItemKind, type Warning } from "../../items/index
 import type { Media } from "../../media/index";
 import { specHash, type Actor, type Check } from "../../ledger/index";
 import type { Plugins, Prepared as PreparedSpec } from "../../plugins/index";
-import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, replacePost, runByOf, specOfAction, withinSlot, type SocialTx } from "../adapters/repo";
+import { accountOf, existingPost, insertPost, inWorkspace, keepPreview, linkImageOf, listPosts, postOfItem, postToEdit, markManualPosted, ownAppExists, postsInMonth, replacePost, runByOf, specOfAction, type SocialTx } from "../adapters/repo";
 import { canDo } from "../domain/can-do";
 import { isPublicUrl } from "../domain/public-url";
 import { firstLink, imageType, mustRead, type KeptPreview, type LinkPreview } from "../domain/link-preview";
@@ -17,11 +17,8 @@ import { handPostWarning } from "./account-health";
 export const MANUAL_POST = "manual_post";
 /** The most images one post carries here [DEFAULT]; each network's plugin may take fewer. */
 export const MAX_IMAGES = 4;
-/** [DEFAULT] Two posts on one account closer than this share a slot. */
-export const SLOT_MS = 15 * 60_000;
 const LINKS_REMOVED = "Links were removed. This network keeps them only with your own app.";
 const SAME_TEXT = "This network treats one text on several of its accounts as spam. Write a version for each.";
-const SAME_SLOT = "Another post on this account is planned within 15 minutes.";
 /** Warnings about what the words claim; a rewrite checked again replaces them. */
 const CLAIM_CODES: ReadonlySet<string> = new Set(["uncited_number", "banned_claim"]);
 const UNLABELLED = "Say who runs this account on the account itself, then note it under Run by.";
@@ -184,8 +181,6 @@ export function createPosts(deps: PostsDeps) {
     if (!r.ok) return { ...base, ...r };
     const networkId = t.networkId ?? "";
     const warnings: Warning[] = [...extra];
-    const crowded = t.networkId && (await inWorkspace(workspaceId, (tx) => withinSlot(tx, { connection: t.connection, networkId, except: null, at: t.at, ms: SLOT_MS })));
-    if (crowded) warnings.push(warn("unspecified", SAME_SLOT));
     if (r.mode === "manual") warnings.push(...tooLong(r.n, t.text));
     const details = { title: calendarTitle(r.n, t.text), workArea: "social", channel: t.connection, plannedAt: t.at, warnings };
     const record = (itemId: string, actionId: string | null) =>
@@ -212,6 +207,8 @@ export function createPosts(deps: PostsDeps) {
       spec: p.spec,
       credentialId: t.credentialId,
       actor,
+      // A person's time is kept as written; one from an External token is placed on the account's pace (ADR 0038).
+      placement: "userId" in actor ? "exact" : "auto",
       details: { ...details, snapshot: version ? [{ kind: "capability", id: r.provider.publish, version }] : [] },
     });
     await record(item.id, await deps.items().actionIdOf(workspaceId, item.id));
@@ -254,8 +251,6 @@ export function createPosts(deps: PostsDeps) {
         const warnings: Warning[] = [];
         const twin = r.n.noIdenticalAcrossAccounts && targets.some((o) => o !== t && o.connection === t.connection && o.networkId !== t.networkId && o.text === t.text);
         if (twin) warnings.push(warn("unspecified", SAME_TEXT));
-        const crowded = t.networkId && (await inWorkspace(workspaceId, (tx) => withinSlot(tx, { connection: t.connection, networkId, except: step, at, ms: SLOT_MS })));
-        if (crowded) warnings.push(warn("unspecified", SAME_SLOT));
         // One of several accounts on a network that doesn't say who runs it: a warning, never a hold.
         const about = t.credentialId && t.networkId ? await inWorkspace(workspaceId, (tx) => runByOf(tx, t.connection, t.credentialId!, networkId)) : null;
         if (about && about.onNetwork > 1 && !about.runBy) warnings.push(warn("unspecified", UNLABELLED));
@@ -318,10 +313,20 @@ export function createPosts(deps: PostsDeps) {
           // jsonb reorders keys, so the same text must compare as the same.
           if (specHash(same) === specHash(p.spec)) {
             await deps.items().setWarnings(workspaceId, existing.itemId, warnings);
+            // The same words at a new step time are placed again, as a launch move is, so an approval stays when it can.
+            // ponytail: a step moved earlier within the same day keeps its post's time; only a new day or a later time re-places.
+            const was = (await deps.items().view(workspaceId, existing.itemId))?.at;
+            if (was && (was.toISOString().slice(0, 10) !== at.toISOString().slice(0, 10) || was < at)) {
+              const moved = await deps.items().redateItem(workspaceId, existing.itemId, at, actor);
+              if (!moved.ok) {
+                results.push({ ...base, ok: false, reason: moved.reason });
+                continue;
+              }
+            }
             results.push({ ...base, ok: true, itemId: existing.itemId, mode: "publish" });
             continue;
           }
-          const revised = await deps.items().reviseActionItem(workspaceId, existing.itemId, { spec: p.spec, actor, details: { ...details, snapshot } });
+          const revised = await deps.items().reviseActionItem(workspaceId, existing.itemId, { spec: p.spec, actor, placement: "auto", details: { ...details, snapshot } });
           results.push(revised.ok ? { ...base, ok: true, itemId: existing.itemId, mode: "publish" } : { ...base, ok: false, reason: revised.reason });
           continue;
         }
@@ -334,6 +339,7 @@ export function createPosts(deps: PostsDeps) {
             spec: p.spec,
             credentialId: t.credentialId,
             actor,
+            placement: "auto",
             details: { ...details, snapshot },
           }, (tx, itemId, actionId) => record(tx, itemId, actionId));
           await deps.items().submitItem(workspaceId, item.id, actor);

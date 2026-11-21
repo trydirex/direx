@@ -3,13 +3,12 @@
 // the network warns. It lowers the risk of a restriction; nothing here can promise there won't be one.
 import { storedSpec } from "@direx/plugin-sdk/host";
 import type { Check } from "../../ledger/index";
-import { accountById, healthOf, healthOfCredential, inWorkspace, peekHealth, postAccountOf, specsPostedBetween, updateHealth, type HealthRow, type SocialTx } from "../adapters/repo";
+import { localTime, mailboxDay, nextDay } from "../../schedule";
+import { accountById, healthOf, healthOfCredential, inWorkspace, peekHealth, postAccountOf, specsPostedBetween, updateHealth, workspaceZone, type HealthRow, type SocialTx } from "../adapters/repo";
 import { atFloor, capOf, CLEAN_DAYS_PER_STEP, ESTABLISHED, FLOOR, halve, overBudget, spendOf, step, type Budget, type Use } from "../domain/budget";
 
 const NOUN = { posts: "posts", links: "links" } as const;
 
-/** [DEFAULT] The day is a UTC day until Workspaces carry a time zone. */
-export const dayStart = (now: Date) => new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
 
 export const budgetOf = (h: HealthRow): Budget => ({ posts: h.posts, replies: h.replies, links: h.links });
 
@@ -26,16 +25,17 @@ export function usedOf(specs: readonly { text?: unknown; followUps?: unknown }[]
 
 const DAY = 24 * 60 * 60_000;
 
-/** What an account used on the day of `at`, other than one Action. */
-export const usedOnDay = async (tx: SocialTx, account: { credentialId: string; networkId: string }, exceptActionId: string | null, at: Date) => {
-  const from = dayStart(at);
-  return usedOf(await specsPostedBetween(tx, account, exceptActionId, from, new Date(from.getTime() + DAY)));
+/** What an account used on the Workspace's day holding `at`, other than one Action (ADR 0038). */
+export const usedOnDay = async (tx: SocialTx, workspaceId: string, account: { credentialId: string; networkId: string }, exceptActionId: string | null, at: Date) => {
+  const timeZone = await workspaceZone(tx, workspaceId);
+  const on = mailboxDay(at, timeZone);
+  return usedOf(await specsPostedBetween(tx, account, exceptActionId, localTime(on, 0, timeZone), localTime(nextDay(on), 0, timeZone)));
 };
 
 /** A hand post can't be held, since the person posts it, so over budget it only warns. Null when it fits. */
 export async function handPostWarning(tx: SocialTx, workspaceId: string, account: { credentialId: string; networkId: string }, payload: { text?: unknown; followUps?: unknown }, plannedAt: Date, now: Date) {
   const health = await healthOf(tx, workspaceId, account, FLOOR, now);
-  const over = overBudget(budgetOf(health), await usedOnDay(tx, account, null, plannedAt), spendOf(payload));
+  const over = overBudget(budgetOf(health), await usedOnDay(tx, workspaceId, account, null, plannedAt), spendOf(payload));
   if (health.pausedAt) return "This account is paused after a warning from the network. Posting by hand risks it further.";
   return over && `${over.used} of ${over.budget} ${NOUN[over.key]} that day on this account. Posting more by hand raises the risk of a restriction.`;
 }
@@ -50,7 +50,7 @@ export const accountHealthCheck =
     const now = deps.now();
     const health = await healthOf(tx, action.workspaceId, account, FLOOR, now);
     if (health.pausedAt) return { kind: "hold", reason: "account_paused", detail: health.pauseDetail ?? health.pauseReason ?? undefined };
-    const used = await usedOnDay(tx, account, action.id, now);
+    const used = await usedOnDay(tx, action.workspaceId, account, action.id, now);
     const over = overBudget(budgetOf(health), used, spendOf(storedSpec("social.publish", action.spec)));
     return over ? { kind: "hold", reason: "account_budget_reached", detail: `${over.used} of ${over.budget} ${NOUN[over.key]} today on this account` } : { kind: "ok" };
   };
@@ -141,7 +141,7 @@ export const stepUpCredential = (workspaceId: string, credentialId: string, now:
 export const healthLine = (workspaceId: string, account: { credentialId: string; networkId: string }, now: Date) =>
   inWorkspace(workspaceId, async (tx) => {
     const h = await peekHealth(tx, account);
-    const used = await usedOnDay(tx, account, null, now);
+    const used = await usedOnDay(tx, workspaceId, account, null, now);
     return {
       budget: h ? budgetOf(h) : FLOOR,
       used: { posts: used.posts, links: used.links },

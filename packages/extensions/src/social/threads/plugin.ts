@@ -6,6 +6,7 @@ import { accessToken, definePlugin, type ExecuteResult, type MediaLink, type Que
 import { getJson, healthOf, send, type Answer, SocialHttpError, socialHttp, tokenOf, VIDEO_WAIT, type SocialPluginOptions } from "../http";
 import { findLinks, graphemes, held, isEmoji, isRefused, later, MB, notAPost, notConnected, postSpec, preparePost, rateLimited, type Processing, type Refused, runFollowUps, sent, tokenRejected, untilProcessed, videoOf, type VideoRules } from "../post";
 import { threadsManifest } from "./manifest";
+import { threadsPosts } from "./posts";
 
 const GRANT_MS = 90 * 24 * 60 * 60_000;
 /** Threads recommends waiting about this long before publishing a container. */
@@ -139,6 +140,7 @@ export function createThreadsPlugin(o: ThreadsPluginOptions = {}) {
         return { accountId: u.id, accountLabel: `@${u.username}`, accountType: "profile", grantExpiresAt };
       },
       "social.health": async (_input, ctx) => healthOf(() => me(tokenOf(ctx.credential)), [401], [190]),
+      "social.posts": async (input, ctx) => threadsPosts(h, input, tokenOf(ctx.credential)),
     },
   });
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Test only: Threads' container, status and publish calls over real HTTP, from Threads' publishing docs.
-// Like Threads, it fetches a video container's file from the link it was given. It implements just the
-// calls the plugin makes, and records each one.
+// Test only: Threads' container, status and publish calls over real HTTP, from Threads' publishing docs, and
+// its post list and lookup from the retrieval docs. Like Threads, it fetches a video container's file from the
+// link it was given. It implements just the calls the plugin makes, and records each one.
 
 export type FakeThreadsCall = { method: string; path: string; form: Record<string, string> };
 
@@ -11,6 +11,10 @@ export function fakeThreads() {
   const processing: string[] = [];
   /** How many bytes the fake read from each video link it was given. */
   const fetched: number[] = [];
+  /** The account's posts, newest first, as /me/threads lists them and /{id} returns each. */
+  const media: { id: string; timestamp: string }[] = [];
+  /** Answers the next calls take instead, in turn: a refused token, say. */
+  const failNext: Response[] = [];
   const server = Bun.serve({
     port: 0,
     hostname: "127.0.0.1",
@@ -18,6 +22,20 @@ export function fakeThreads() {
       const u = new URL(req.url);
       const form = Object.fromEntries(new URLSearchParams(await req.text()));
       calls.push({ method: req.method, path: u.pathname + u.search, form });
+      if (failNext.length) return failNext.shift()!;
+      const read = req.method === "GET";
+      if (read && u.pathname === "/v1.0/me") return Response.json({ id: "5" });
+      if (read && u.pathname === "/v1.0/me/threads") {
+        const since = Number(u.searchParams.get("since") ?? 0) * 1000;
+        const from = Number(u.searchParams.get("after") ?? 0);
+        const to = from + Number(u.searchParams.get("limit"));
+        const data = media.filter((m) => Date.parse(m.timestamp) >= since).slice(from, to);
+        return Response.json({ data, paging: { cursors: { before: String(from), after: String(to) } } });
+      }
+      if (read && u.pathname.startsWith("/v1.0/")) {
+        const m = media.find((x) => `/v1.0/${x.id}` === u.pathname);
+        return m ? Response.json(m) : Response.json({ error: { message: "Object does not exist", code: 100, error_subcode: 33 } }, { status: 400 });
+      }
       if (u.pathname.endsWith("/threads")) {
         if (form.video_url) fetched.push((await (await fetch(form.video_url)).arrayBuffer()).byteLength);
         return Response.json({ id: "c1" });
@@ -34,6 +52,8 @@ export function fakeThreads() {
   return {
     url: `http://127.0.0.1:${server.port}`,
     calls,
+    media,
+    failNext,
     processing,
     fetched,
     paths: () => calls.map((c) => c.path.split("?")[0]!),
@@ -41,6 +61,8 @@ export function fakeThreads() {
       calls.length = 0;
       processing.length = 0;
       fetched.length = 0;
+      media.length = 0;
+      failNext.length = 0;
     },
     stop: () => server.stop(true),
   };

@@ -108,7 +108,7 @@ test("every OAuth network has a plugin, a provider and a descriptor, and only th
   const connections = plugins.map((p) => p.manifest.connections[0]!.key).sort();
   expect(connections).toEqual(["bluesky", "facebook", "instagram", "linkedin", "linkedin_page", "threads", "tiktok", "x", "youtube"]);
   const reads = ["social.identity", "social.health"];
-  const readers = ["bluesky"];
+  const readers = ["bluesky", "threads"];
   for (const p of plugins) {
     const key = p.manifest.connections[0]!.key;
     expect(p.manifest.capabilities.map((c) => c.name)).toEqual(["instagram", "linkedin_page", "tiktok", "youtube"].includes(key) ? reads : [...reads, ...(readers.includes(key) ? ["social.posts"] : []), "social.publish"]);

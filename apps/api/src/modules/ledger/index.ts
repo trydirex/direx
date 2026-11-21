@@ -7,7 +7,7 @@ import { ensureQueue, sweepOverdue, workSweep, workWakes } from "./adapters/queu
 import { lifecycle } from "./application/actions";
 import { dispatcher, type Check, type Resolver, type Step } from "./application/dispatcher";
 import type { SigningKeys } from "./application/signing";
-import type { LedgerTx } from "./adapters/ledger-repo";
+import { inWorkspace, markOperatorHoldsReleased, operatorHoldsToRelease, type LedgerTx } from "./adapters/ledger-repo";
 
 export type { Actor, ActionRow, ActionState, EventRow, LedgerTx, Triage } from "./adapters/ledger-repo";
 /** Reads Actions' live states without a lock, for modules that derive state from them. */
@@ -68,9 +68,23 @@ export function createLedger(deps: LedgerDeps) {
     onLateChanged: deps.onLateChanged,
     onLater: deps.onLater,
   });
+  const life = lifecycle({ boss: deps.boss, signingKeys: deps.signingKeys, now, resolvers, onLateChanged: deps.onLateChanged });
   return {
-    ...lifecycle({ boss: deps.boss, signingKeys: deps.signingKeys, now, resolvers, onLateChanged: deps.onLateChanged }),
+    ...life,
     run: d.run,
+    /**
+     * What lifted operator holds held goes back to scheduled, where every check runs again. Run each
+     * minute; after a crash the next run finds the same holds and resumes nothing twice.
+     */
+    async releaseOperatorHolds(): Promise<number> {
+      const listed = await operatorHoldsToRelease();
+      let resumed = 0;
+      for (const ws of new Set(listed.flatMap((r) => (r.workspaceId ? [r.workspaceId] : [])))) {
+        resumed += (await inWorkspace(ws, (tx) => life.resumeAllHeldIn(tx, ws, "operator_hold", { system: "operator_hold" }))).resumed;
+      }
+      if (listed.length) await markOperatorHoldsReleased([...new Set(listed.map((r) => r.holdId))]);
+      return resumed;
+    },
     ensureQueue: () => ensureQueue(deps.boss),
     /** Works ledger.dispatch jobs: each one runs the Dispatcher for its Action. */
     work: () => workWakes(deps.boss, (p) => d.run(p.workspaceId, p.actionId)),

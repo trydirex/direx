@@ -47,6 +47,7 @@ export { DOCS_WRITE_BACK } from "./compose/write-back";
 
 export const MAILBOX_POLLS = "outreach.mailbox_polls";
 const SOCIAL_HEALTH_SWEEP = "social.health_sweep";
+const OPERATOR_HOLDS_RELEASE = "ledger.operator_holds_release";
 const SEO_BRIEFS_WEEKLY = "seo.briefs.weekly";
 const COMPETITORS_WEEKLY = "competitors.weekly_read";
 const REPLIES_READ_WITHIN_MS = 60 * 60 * 1000;
@@ -212,6 +213,10 @@ export async function compose(opts: WorkerOptions) {
   const standingRules = createStandingRules({ ledger, port: campaignRulePort, now, mayGrant: mayGrantRules, items: () => items, agentGate: () => agentGate });
   later(() => ledger.work());
   later(() => ledger.workSweep());
+  // A lifted operator hold frees what it held within a minute.
+  later(() => boss.createQueue(OPERATOR_HOLDS_RELEASE));
+  later(() => boss.schedule(OPERATOR_HOLDS_RELEASE, "* * * * *"));
+  later(() => boss.work(OPERATOR_HOLDS_RELEASE, () => ledger.releaseOperatorHolds().then(() => undefined)));
   // Needs the vault and a mailer, so tests that replace effects run without models.
   const { vault, mailer } = opts;
   // The lesson check's eval ships with the code too, so whether lessons can be proposed is read once.

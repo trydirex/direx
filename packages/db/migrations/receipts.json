@@ -676,6 +676,10 @@
     "0164_click_counts.sql": {
       "sha256": "2071873d580c09b1b400684883e25dec6353913e376962dc14c52cc3869a37e0",
       "description": "Add grow-only daily click counts per tracked link and classification key, and the per-minute counter behind the redirect's rate limit (ADR 0035)"
+    },
+    "0165_operator_holds.sql": {
+      "sha256": "34e97757d905a89940d18c837c594c12c317e6a632d2946fff0b562f5e2bcb4c",
+      "description": "Operator holds in schema system: a Workspace, Organization or deployment hold no member can lift, read by the Dispatcher through system.operator_hold_of, released by the worker after a lift, and set or lifted by the owner only"
     }
   }
 }

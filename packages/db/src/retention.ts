@@ -58,6 +58,8 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "system.bootstrap_invites": deployment,
   "system.plugin_install_events": deployment,
   "system.plugin_installs": deployment,
+  // An operator's holds on a Workspace, an Organization or the deployment, kept as their record.
+  "system.operator_holds": deployment,
   // What each Workspace purge removed (ADR 0030 rule 004), and the opt-outs purged Workspaces left as
   // keyed hashes (Q6). Both outlive every purge and every sweep.
   "system.purge_receipts": deployment,

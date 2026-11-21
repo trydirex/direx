@@ -76,6 +76,11 @@
   },
   {
     "kind": "queue",
+    "name": "ledger.operator_holds_release",
+    "options": null
+  },
+  {
+    "kind": "queue",
     "name": "ledger.sweep",
     "options": null
   },
@@ -254,6 +259,14 @@
     "kind": "schedule",
     "name": "docs.write_back",
     "cron": "*/5 * * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
+    "name": "ledger.operator_holds_release",
+    "cron": "* * * * *",
     "options": {
       "data": null
     }
@@ -443,6 +456,11 @@
     "options": {
       "pollingIntervalSeconds": 1
     }
+  },
+  {
+    "kind": "work",
+    "name": "ledger.operator_holds_release",
+    "options": null
   },
   {
     "kind": "work",

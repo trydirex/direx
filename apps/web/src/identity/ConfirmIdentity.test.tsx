@@ -8,7 +8,8 @@ import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { withQueries } from "../testing";
 import { Lessons } from "../lessons/Lessons";
-import { ConfirmIdentity, confirmOnStepUp } from "./ConfirmIdentity";
+import { ConfirmIdentity } from "./ConfirmIdentity";
+import { confirmOnStepUp } from "../api/messages";
 
 const W = "00000000-0000-4000-8000-0000000000aa";
 const reply = (status: number, body: unknown) => Promise.resolve({ ...(status < 400 ? { data: body } : { error: body }), response: new Response(null, { status }) });

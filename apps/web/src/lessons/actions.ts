@@ -5,7 +5,7 @@ import type { components } from "../api/schema";
 import { call, inWorkspace } from "../api/query";
 import { api } from "../client";
 import type { Field } from "../facts/actions";
-import { confirmOnStepUp } from "../identity/ConfirmIdentity";
+import { confirmOnStepUp } from "../api/messages";
 
 export type Lesson = components["schemas"]["Lesson"];
 

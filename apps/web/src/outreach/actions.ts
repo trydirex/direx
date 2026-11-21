@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The outreach calls. Each change returns the API's error code, or null when it worked.
 import { queryOptions } from "@tanstack/react-query";
-import { messageForCode } from "../api/messages";
+import { confirmOnStepUp, messageForCode } from "../api/messages";
 import { call, inWorkspace } from "../api/query";
 import type { components } from "../api/schema";
 import { api } from "../client";
-import { confirmOnStepUp } from "../identity/ConfirmIdentity";
 
 
 export type Overview = components["schemas"]["Outreach"];

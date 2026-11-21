@@ -26,3 +26,22 @@ export function messageFor(error: unknown, local: Record<string, string> = {}): 
   if (error instanceof TypeError) return OFFLINE;
   return COMMON.failed!;
 }
+
+// A step_up_required answer on a screen with no sign-in of its own opens the shell's "Confirm it's you"
+// (ADR 0037 rule 005). The hook lives here, not in identity/ConfirmIdentity, so the actions the first
+// page loads don't pull its Dialog and sign-in into that bundle.
+let openConfirm: (() => void) | undefined;
+
+/** Hands `code` back unchanged, and opens "Confirm it's you" when it is step_up_required. */
+export function confirmOnStepUp<T extends string | null>(code: T): T {
+  if (code === "step_up_required") openConfirm?.();
+  return code;
+}
+
+/** Registers what opens "Confirm it's you"; the returned function unregisters it. */
+export function onStepUp(show: () => void): () => void {
+  openConfirm = show;
+  return () => {
+    if (openConfirm === show) openConfirm = undefined;
+  };
+}

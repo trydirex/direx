@@ -7,24 +7,11 @@ import { useEffect, useState } from "react";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import { Button } from "@/components/Button";
 import { SignIn } from "./SignIn";
-
-let open: (() => void) | undefined;
-
-/** Hands `code` back unchanged, and opens the sign-in when it is step_up_required. */
-export function confirmOnStepUp<T extends string | null>(code: T): T {
-  if (code === "step_up_required") open?.();
-  return code;
-}
+import { onStepUp } from "@/api/messages";
 
 export function ConfirmIdentity() {
   const [isOpen, setOpen] = useState(false);
-  useEffect(() => {
-    const show = () => setOpen(true);
-    open = show;
-    return () => {
-      if (open === show) open = undefined;
-    };
-  }, []);
+  useEffect(() => onStepUp(() => setOpen(true)), []);
   return (
     <Dialog isOpen={isOpen} onOpenChange={setOpen} purpose="form" width={448} aria-label="Confirm it's you">
       {isOpen && (

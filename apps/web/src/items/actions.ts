@@ -6,7 +6,7 @@ import type { components } from "../api/schema";
 import { call, inWorkspace } from "../api/query";
 import { api } from "../client";
 import { ACTION_LABEL, KIND_LABEL } from "./type-labels";
-import { confirmOnStepUp } from "../identity/ConfirmIdentity";
+import { confirmOnStepUp } from "../api/messages";
 export { TYPES } from "./type-labels";
 
 type S = components["schemas"];

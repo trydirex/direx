@@ -51,6 +51,8 @@ describe("readState", () => {
     ["a failed first read", row({ postsReadState: "failed", postsReadReason: "auth" }), true, { state: "failed", reason: "auth", at: null }],
     ["a failed later read", row({ postsReadAt: at(3), postsReadState: "failed", postsReadReason: "rate_limited", postsCursor: "c" }), true, { state: "failed", reason: "rate_limited", at: at(3) }],
     ["a later read running", row({ postsReadAt: at(1), postsReadState: "reading", postsCursor: "c" }), true, { state: "ok", at: at(1) }],
+    ["a later read running without a cursor after a recent success", row({ postsReadAt: at(1), postsReadState: "reading" }), true, { state: "ok", at: at(1) }],
+    ["a later read running without a cursor after a stale success", row({ postsReadAt: at(3), postsReadState: "reading" }), true, { state: "stale", at: at(3) }],
     ["read within twice the interval", row({ postsReadAt: at(2), postsReadState: "ok", postsCursor: "c" }), true, { state: "ok", at: at(2) }],
     ["no read in twice the interval", row({ postsReadAt: at(2.5), postsReadState: "ok", postsCursor: "c" }), true, { state: "stale", at: at(2.5) }],
   ] as const)("%s", (_, r, canRead, expected) => expect(readState(r, now, HOUR, canRead)).toEqual(expected));

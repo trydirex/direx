@@ -37,7 +37,7 @@ export const readState = (
 ): ReadState => {
   if (!canRead) return { state: "not_checked" };
   if (row.postsReadState === "failed") return { state: "failed", reason: row.postsReadReason, at: row.postsReadAt };
-  if (row.postsReadAt === null || (row.postsReadState === "reading" && row.postsCursor === null)) return { state: "first_read" };
+  if (row.postsReadAt === null) return { state: "first_read" };
   if (now.getTime() - row.postsReadAt.getTime() > 2 * intervalMs) return { state: "stale", at: row.postsReadAt };
   return { state: "ok", at: row.postsReadAt };
 };

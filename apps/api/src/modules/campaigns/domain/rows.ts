@@ -30,7 +30,7 @@ export type PersonRow<Basis extends string, Entity extends string = string> = {
 };
 
 /** A calendar date as midnight UTC, or null when it isn't one (2026-13-01 and 2026-02-30 aren't). */
-function dateOf(value: string): Date | null {
+export function dateOf(value: string): Date | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const d = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(d.getTime()) && d.toISOString().startsWith(value) ? d : null;

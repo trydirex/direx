@@ -9,7 +9,7 @@ import { activeActions, addRole, insertOutcome, joinCampaign, lastSentAt, liveEl
 import { mailboxDay, timeZoneOf } from "../../schedule";
 import { CONFLICT_KIND } from "./coordination";
 import { parseCsv, type CsvRow } from "../domain/csv";
-import { MAX_EVIDENCE, readRow, type PersonRow, type RowRefusal } from "../domain/rows";
+import { dateOf, MAX_EVIDENCE, readRow, type PersonRow, type RowRefusal } from "../domain/rows";
 
 /** The most people one call takes, by CSV or by rows. A caller with more splits them into calls of this size. */
 export const MAX_ROWS = 1000;
@@ -46,7 +46,6 @@ export type PersonResult =
 export type CustomerSkip = "invalid_email" | "no_opt_in" | "suppressed" | "bad_opt_in_date" | "no_country" | "wrong_column_count" | RowRefusal;
 type CustomerRow = { status: "added" | "updated"; personId: string; email: string } | { status: "skipped"; reason: CustomerSkip; email?: string };
 const OPTED_IN = new Set(["yes", "true", "1"]);
-const isDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && new Date(`${s}T00:00:00Z`).toISOString().startsWith(s);
 
 // The evidence field holds a summary; the caller keeps the full record, so a long one is cut, not refused.
 const summary = (evidence: string) => {
@@ -145,7 +144,7 @@ export function campaignPeople({ outreach, items, now, keptEligibility }: { outr
     const email = key.value;
     if (!OPTED_IN.has((v.opted_in ?? "").toLowerCase())) return { status: "skipped", reason: "no_opt_in", email };
     const on = v.opted_in_on ?? "";
-    if (on && !isDate(on)) return { status: "skipped", reason: "bad_opt_in_date", email };
+    if (on && !dateOf(on)) return { status: "skipped", reason: "bad_opt_in_date", email };
     const read = readRow({ email, first_name: v.name ?? "", company: v.company ?? "", country: v.country ?? "" }, VOCAB);
     if (!read.ok) return { status: "skipped", reason: read.reason, email };
     const person = await outreach().ensurePerson(workspaceId, email);

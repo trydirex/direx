@@ -64,7 +64,23 @@ export const creditPhrase = (text: string): string | null => text.match(CREDIT)?
 
 // A winner needs a comparison; "too few to compare" gives none.
 const WINNER = /\b(better|best|worse|worst|outperform\w*|beat|beats|won|winner|wins|(?:more|most|less|least)\s+(?:effective|successful)|stronger|strongest|weaker|weakest|works? best)\b/i;
-export const claimsWinner = (text: string, comparable: boolean): boolean => !comparable && WINNER.test(text);
+// "no channel is judged better" says the opposite of a winner (real eval, 2026-11-20): a negation in
+// the few words before the winner word cancels it only within the same clause. "not only better"
+// adds to the claim, so it doesn't count.
+const NEGATION = String.raw`\b(no|not|never|neither|nor|none|cannot|can't|isn't|aren't|wasn't|weren't|without)\b`;
+const NEGATED = new RegExp(String.raw`${NEGATION}(?!\s+only\b)(?:\W+\w+){0,4}\W*$`, "i");
+const CLAUSE_BOUNDARY = /[.!?;,:…—–\r\n]|\b(?:but|whereas)\b/i;
+// Keep the negation in "was not, in fact, better". An aside cannot hide a winner or cross a clause boundary.
+const ASIDE_AFTER_NEGATION = new RegExp(String.raw`${NEGATION}[ \t]*,(?:(?!${CLAUSE_BOUNDARY.source}|${WINNER.source}).){1,30},`, "gi");
+export function claimsWinner(text: string, comparable: boolean): boolean {
+  if (comparable) return false;
+  const plain = text.replace(ASIDE_AFTER_NEGATION, "$1 ");
+  for (const m of plain.matchAll(new RegExp(WINNER.source, "gi"))) {
+    const clause = plain.slice(0, m.index).split(CLAUSE_BOUNDARY).at(-1)!;
+    if (!NEGATED.test(clause)) return true;
+  }
+  return false;
+}
 
 const same = (a: string, b: string) => a.trim().toLowerCase().replace(/\s+/g, " ") === b.trim().toLowerCase().replace(/\s+/g, " ");
 const words = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
@@ -80,6 +96,8 @@ export function writeUpProblem(o: WriteUpOutput, brief: Brief): string | null {
     const credit = creditPhrase(t);
     if (credit) return `credit:${credit.toLowerCase()}`;
     if (claimsWinner(t, brief.comparable)) return "winner_without_comparison";
+    // Ids belong under cites; a person reads the paragraph (seen in the real eval, 2026-11-20).
+    if ([...brief.readingIds].some((id) => t.includes(id))) return "reading_id_in_text";
   }
   for (const id of [...o.cites, ...o.suggestions.flatMap((s) => s.readingIds)]) if (!brief.readingIds.has(id)) return `unknown_reading:${id}`;
   for (const s of o.suggestions) {

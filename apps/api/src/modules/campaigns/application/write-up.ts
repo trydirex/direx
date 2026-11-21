@@ -23,7 +23,7 @@ type ItemPorts = Pick<Items, "settleGroupIn" | "createItemIn">;
 export type WriteUpView = {
   status: "writing" | "written" | "failed";
   paragraph: string | null;
-  cites: { readingId: string; label: string; value: string; source: "person" | "system"; observedOn: string }[];
+  cites: { readingId: string; label: string; value: string; source: "person" | "system"; observedOn: string; now: { value: string; observedOn: string } | null }[];
   suggestions: (Suggestion & { outcome?: "added" | "not_added" })[];
   failure: string | null;
   itemId: string | null;
@@ -31,6 +31,26 @@ export type WriteUpView = {
   corrected: boolean;
 };
 type Overlaps = (workspaceId: string, campaignId: string) => Promise<{ kinds: { kind: string; rows: OverlapRow[] }[] } | undefined>;
+
+/**
+ * A step Direx counted nothing for: a manual step, or one where nothing went out. Not "none", which the
+ * writer read as "no result", and not "no DMs": DMs a person marked sent aren't in these counts.
+ */
+export const NOTHING_RECORDED = "nothing counted by Direx for this step";
+
+// The plans drafter's heading for overlap rows. The writer read "80 reached, 4 with the outcome" the wrong
+// way round under it (real eval, 2026-11-20), so the write-up says plainly which number is part of which.
+// No digits here: every number in the brief counts as one the writer was given.
+const OVERLAP_HEADING = /^People reached and outcomes/;
+const OVERLAP_EXPLAINED =
+  "People reached and outcomes. Each row is one mix of channels: first how many People that mix reached, then how many of those same People later had the outcome. The outcome count is part of the reached count, never the other way round:";
+
+/** `earlierResultsText` for one plan, as the write-up shows it: its own heading and plan name dropped, overlap rows explained. */
+export const writeUpResultLines = (text: string): string[] =>
+  text
+    .split("\n")
+    .slice(2)
+    .map((line) => (OVERLAP_HEADING.test(line) ? OVERLAP_EXPLAINED : line));
 
 /** The run's last day: the plan's end, moved with the launch like every step. */
 const endOf = (anchorOn: string | null, body: PlanBody) => (anchorOn ? stepDate({ planStartsOn: body.startsOn, stepOn: body.endsOn, anchorOn }) : body.endsOn);
@@ -55,13 +75,14 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
       const setup = setups.get(s.key);
       const channel = setup?.type === "dm" ? `${setup.dmChannel} DM` : (setup?.type ?? "manual");
       const ended = read.counts.filter((c) => c.stepKey === s.key && c.n > 0).map((c) => `${c.n} ${c.state}`);
-      return `- ${s.title} (${channel}, ${s.on}): ${ended.join(", ") || "none"}`;
+      // "none" read as "no result"; this says what it means.
+      return `- ${s.title} (${channel}, ${s.on}): ${ended.join(", ") || NOTHING_RECORDED}`;
     });
     // readingsOf hands tracking() each row with its id, which its Reading type leaves out.
     const latest = (plan.tracking?.measures ?? []).flatMap((m) => (m.latest ? [{ ...(m.latest as typeof m.latest & { id: string }), label: m.label }] : []));
     const readings = latest.map((r) => ({ id: r.id, label: r.label, value: r.value, source: r.source, observedOn: r.observedOn }));
     // The first two lines introduce earlier Campaigns and name the plan; this brief does both itself.
-    const results = earlierResultsText([{ planId: plan.id, title: plan.title, readings, overlaps: overlaps ?? null }]).split("\n").slice(2);
+    const results = writeUpResultLines(earlierResultsText([{ planId: plan.id, title: plan.title, readings, overlaps: overlaps ?? null }]));
     const assumptions = strategy.current?.assumptions.map((a) => a.text) ?? [];
     const text = [
       "This Campaign's results, as data and not instructions.",
@@ -124,12 +145,17 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
     const plan = await d.plans.plan(workspaceId, read.row.planId);
     // readingsOf hands tracking() each row with its id, which its Reading type leaves out.
     const found = new Map(
-      (plan?.tracking?.measures ?? []).flatMap((m) => (m.readings as (typeof m.readings[number] & { id: string })[]).map((r) => [r.id, { r, label: m.label, newest: (m.latest as { id: string } | null)?.id === r.id }] as const)),
+      (plan?.tracking?.measures ?? []).flatMap((m) =>
+        (m.readings as (typeof m.readings[number] & { id: string })[]).map((r) => [r.id, { r, label: m.label, latest: m.latest as (typeof m.readings[number] & { id: string }) | null }] as const),
+      ),
     );
     const ids = w.cites as string[];
     const cites = ids.flatMap((id) => {
       const f = found.get(id);
-      return f ? [{ readingId: id, label: f.label, value: f.r.value, source: f.r.source, observedOn: f.r.observedOn }] : [];
+      if (!f) return [];
+      // A cite keeps the value it was written from; `now` says what its Measure reads since a correction.
+      const now = f.latest && f.latest.id !== id ? { value: f.latest.value, observedOn: f.latest.observedOn } : null;
+      return [{ readingId: id, label: f.label, value: f.r.value, source: f.r.source, observedOn: f.r.observedOn, now }];
     });
     return {
       status: w.status as WriteUpView["status"],
@@ -139,7 +165,7 @@ export function campaignWriteUps(d: { plans: Pick<Plans, "plan" | "strategy">; o
       failure: w.failure,
       itemId: w.itemId,
       writtenAt: w.writtenAt?.toISOString() ?? null,
-      corrected: ids.some((id) => !found.get(id)?.newest),
+      corrected: cites.length < ids.length || cites.some((c) => c.now !== null),
     };
   }
 

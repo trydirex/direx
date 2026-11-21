@@ -201,9 +201,16 @@ test("a number with no source warns, and a cited current one passes", async () =
   expect((await templateOf(cited.id)).template).toMatchObject({ warnings: [], needsDecision: [] });
 
   const stale = await ready();
+  const citationRuns = async () => (await repo.inWorkspace(W, repo.versionCounts)).filter((v) => v.agent === "campaign_drafter").reduce((n, v) => n + v.citationRuns, 0);
+  const before = await citationRuns();
   script(() => anthropicTool("propose", email("Used by 200 teams.", [{ factId: fact.id, version: fact.version + 7 }])));
-  await run(stale.input);
+  const r = await run(stale.input);
   expect((await templateOf(stale.id)).template).toMatchObject({ citations: [], warnings: [{ code: "uncited_number", text: 'A number with no source: "200"' }] });
+  // The drop is recorded as one event naming the Fact, with none of its words, and the drift check counts the run.
+  const events = await repo.inWorkspace(W, (tx) => repo.eventsOf(tx, r.run.id));
+  expect(events.filter((e) => e.kind === "citation")).toEqual([expect.objectContaining({ outcome: "stale", ref: fact.id, resultDigest: null, modelCallId: null })]);
+  expect(JSON.stringify(events)).not.toContain("200 teams");
+  expect(await citationRuns()).toBe(before + 1);
 });
 
 test("a price no Fact holds needs a decision, and the Fact's own price doesn't", async () => {

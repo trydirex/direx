@@ -92,7 +92,7 @@ export async function appendPart(tx: WorkspaceTx, run: Pick<RunRow, "id" | "work
   return true;
 }
 
-export type NewEvent = { kind: "model_call" | "tool_call" | "proposal" | "rejection"; name: string; argumentsDigest?: string; resultDigest?: string; outcome: string; ref?: string; modelCallId?: string };
+export type NewEvent = { kind: "model_call" | "tool_call" | "proposal" | "rejection" | "citation"; name: string; argumentsDigest?: string; resultDigest?: string; outcome: string; ref?: string; modelCallId?: string };
 
 export async function appendEvent(tx: WorkspaceTx, run: Pick<RunRow, "id" | "workspaceId">, event: NewEvent, at: Date): Promise<void> {
   await lockRun(tx, run.id);

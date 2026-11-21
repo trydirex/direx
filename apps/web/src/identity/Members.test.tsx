@@ -66,25 +66,27 @@ test("changing a role sends it, and a refusal shows its message", async () => {
   expect(s.PATCH).toHaveBeenCalledWith("/api/w/{workspaceId}/members/{userId}", { params: { path: { workspaceId: W, userId: "u1" } }, body: { role: "viewer" } });
 });
 
-test("removing a member that needs a recent sign-in asks for one and keeps the change", async () => {
+test("removing a member that needs a recent sign-in asks for one and keeps nothing to run later (ADR 0037 rule 005)", async () => {
   const s = serveWrites(() => reply(403, { error: "step_up_required" }));
   render(withQueries(<Members workspace={workspace} />));
   await userEvent.click(await screen.findByRole("button", { name: "Remove Sam" }));
   await userEvent.click(await screen.findByRole("button", { name: "Remove" }));
   expect(await screen.findByRole("heading", { name: "Confirm it's you" })).toBeTruthy();
   expect(s.DELETE).toHaveBeenCalledWith("/api/w/{workspaceId}/members/{userId}", { params: { path: { workspaceId: W, userId: "u1" } } });
-  expect(JSON.parse(sessionStorage.getItem("direx.pendingChange")!)).toEqual({ workspaceId: W, userId: "u1", role: null });
+  expect(screen.getByText("Changing a role or removing a member needs a recent sign-in. Sign in again, then make the change once more.")).toBeTruthy();
+  expect(sessionStorage.length).toBe(0);
 });
 
-test("a change that waited for sign-in runs once when the page opens", async () => {
+test("opening the page runs no change, even one an older Direx saved for after sign-in (ADR 0037 rule 005)", async () => {
   sessionStorage.setItem("direx.pendingChange", JSON.stringify({ workspaceId: W, userId: "u1", role: "owner" }));
   const s = serveWrites(() => reply(200, { ok: true }));
   render(withQueries(<Members workspace={workspace} />));
-  await vi.waitFor(() => expect(s.PATCH).toHaveBeenCalledTimes(1));
-  expect(s.PATCH).toHaveBeenCalledWith("/api/w/{workspaceId}/members/{userId}", { params: { path: { workspaceId: W, userId: "u1" } }, body: { role: "owner" } });
-  expect(sessionStorage.getItem("direx.pendingChange")).toBeNull();
   expect(await screen.findByText("sam@example.com")).toBeTruthy();
+  expect(s.PATCH).not.toHaveBeenCalled();
+  expect(s.DELETE).not.toHaveBeenCalled();
   expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Confirm it's you" })).toBeNull();
+  sessionStorage.clear();
 });
 
 test("inviting someone sends the email and role, then clears the field and says so", async () => {

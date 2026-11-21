@@ -65,12 +65,28 @@ test("each record missing, or answered with an error, says which", async () => {
   expect(await report({})).toMatchObject({ spf: "missing", dkim: "not_found", dmarc: "missing" });
   expect(await report({ ...GOOD, "acme.test": ["v=spf1 include:spf.protection.outlook.com -all"] })).toMatchObject({ spf: "no_provider_include" });
   expect(await report({ ...GOOD, "acme.test": "ESERVFAIL", "_dmarc.acme.test": "ETIMEOUT", "google._domainkey.acme.test": "ETIMEOUT" })).toMatchObject({ spf: "unknown", dkim: "unknown", dmarc: "unknown" });
-  expect(await report({ ...GOOD, "_dmarc.acme.test": ["v=DMARC1; rua=mailto:d@acme.test"] })).toMatchObject({ dmarc: "missing" });
+  expect(await report({ ...GOOD, "_dmarc.acme.test": ["v=DMARC1; rua=not-a-uri"] })).toMatchObject({ dmarc: "missing" });
   expect(await report({ ...GOOD, "google._domainkey.acme.test": ["v=DKIM1; p="] })).toMatchObject({ dkim: "not_found" });
   expect(await report(GOOD, {}, "ENODATA")).toMatchObject({ mx: "missing" });
   expect(await report(GOOD, {}, [{ exchange: "." }])).toMatchObject({ mx: "missing" });
   expect(await report(GOOD, {}, "ESERVFAIL")).toMatchObject({ mx: "unknown" });
   for (const dmarc of ["none", "reject"]) expect(await report({ ...GOOD, "_dmarc.acme.test": [`v=DMARC1; p=${dmarc}`] })).toMatchObject({ dmarc });
+});
+
+test.each([
+  ["v \t= DMARC1 ; p=reject", "reject", true],
+  ["v=dmarc1; p=reject", "missing", false],
+  ["v=DMARC1; rua=mailto:d@acme.test", "none", true],
+  ["v=DMARC1; p=invalid; rua=junk,mailto:d@acme.test!10m", "none", true],
+  ["v=DMARC1; p=reject; sp=invalid; rua=mailto:d@acme.test", "none", true],
+  ["v=DMARC1; p=reject; sp=invalid", "missing", false],
+  ["v=DMARC1; p=reject; np=; rua=mailto:not-an-address", "missing", false],
+  ["v=DMARC1; p=reject; np=invalid; rua=mailto:d%zz@acme.test", "missing", false],
+  ["v=DMARC1; p=reject; sp=none; np=quarantine; rua=mailto:d@acme.test", "reject", true],
+] as const)("reports the effective DMARC policy for %s", async (record, dmarc, auth) => {
+  const r = await report({ ...GOOD, "_dmarc.acme.test": [record] });
+  expect(r.dmarc).toBe(dmarc);
+  expect(authenticated(r)).toBe(auth);
 });
 
 const sendingDomain = "sales.acme.test";
@@ -83,6 +99,10 @@ test.each([
   ["an inherited sp tag", ["site-verification=x"], ["v=DMARC1; p=reject; SP = QUARANTINE"], "quarantine", true],
   ["an inherited p tag", "ENODATA", ["v=DMARC1; p=reject"], "reject", true],
   ["a local policy", ["v=DMARC1; p=none; sp=reject"], "ETIMEOUT", "none", true],
+  ["a local reporting fallback", ["v=DMARC1; rua=mailto:d@acme.test"], ["v=DMARC1; p=reject"], "none", true],
+  ["an invalid local policy", ["v=DMARC1; p=reject; np=invalid"], ["v=DMARC1; p=reject"], "missing", false],
+  ["an inherited reporting fallback", "ENODATA", ["v=DMARC1; p=reject; sp=invalid; rua=mailto:d@acme.test"], "none", true],
+  ["an invalid inherited policy", "ENODATA", ["v=DMARC1; p=reject; sp=invalid"], "missing", false],
   ["a local lookup failure", "ETIMEOUT", ["v=DMARC1; p=reject"], "unknown", false],
   ["a parent lookup failure", "ENOTFOUND", "ESERVFAIL", "unknown", false],
   ["no policy in the tree", "ENODATA", "ENOTFOUND", "missing", false],

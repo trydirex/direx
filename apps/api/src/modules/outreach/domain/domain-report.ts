@@ -53,12 +53,23 @@ function spfOf(r: Lookup<string[][]>, provider: MailProvider | null): DomainRepo
 }
 
 function dmarcPolicy(value: string | undefined) {
-  return value === "none" || value === "quarantine" || value === "reject" ? value : undefined;
+  const policy = value?.toLowerCase();
+  return policy === "none" || policy === "quarantine" || policy === "reject" ? policy : undefined;
+}
+
+function hasReportingUri(value: string | undefined): boolean {
+  return value?.split(",").some((entry) => {
+    // DMARC still accepts the obsolete optional !size suffix.
+    const uri = entry.trim().replace(/![0-9]+[kmgt]?$/i, "");
+    if (!/^[a-z][a-z0-9+.-]*:[a-z0-9._~:/?#[\]@&'()*+;=%$-]+$/i.test(uri) || /%(?![0-9a-f]{2})/i.test(uri)) return false;
+    if (/^mailto:/i.test(uri) && !/^mailto:[^@?]+@[^@?]+(?:\?|$)/i.test(uri)) return false;
+    return URL.canParse(uri);
+  }) ?? false;
 }
 
 async function discoverDmarc(domain: string, dns: DomainDns): Promise<DomainReport["dmarc"]> {
   const labels = domain.split(".");
-  let inherited: { labels: number; policy: NonNullable<ReturnType<typeof dmarcPolicy>> } | undefined;
+  let inherited: { labels: number; policy: Exclude<DomainReport["dmarc"], "unknown"> } | undefined;
 
   // RFC 9989: query the sending domain first, then walk up from at most seven labels.
   for (let count = labels.length; count > 0; count = Math.min(count - 1, 7)) {
@@ -68,21 +79,24 @@ async function discoverDmarc(domain: string, dns: DomainDns): Promise<DomainRepo
       if (!answer.missing) return "unknown";
       continue;
     }
-    const policies = records(answer.value).filter((t) => /^v=DMARC1\s*;/i.test(t.trim()));
+    const policies = records(answer.value).filter((t) => /^[vV][ \t]*=[ \t]*DMARC1[ \t]*(?:;|$)/.test(t.trim()));
     const [record] = policies;
     if (policies.length !== 1 || !record) continue;
     const tags = new Map<string, string>();
-    for (const field of record.toLowerCase().split(";")) {
+    for (const field of record.split(";")) {
       const equals = field.indexOf("=");
       if (equals === -1) continue;
-      const key = field.slice(0, equals).trim();
+      const key = field.slice(0, equals).trim().toLowerCase();
       if (!tags.has(key)) tags.set(key, field.slice(equals + 1).trim());
     }
     const policy = dmarcPolicy(tags.get("p"));
-    if (!policy) continue;
-    if (count === labels.length) return policy;
-    const effective = dmarcPolicy(tags.get("sp")) ?? policy;
-    const psd = tags.get("psd");
+    const subdomain = dmarcPolicy(tags.get("sp"));
+    const invalid = !policy || (tags.has("sp") && !subdomain) || (tags.has("np") && !dmarcPolicy(tags.get("np")));
+    const effective = invalid
+      ? hasReportingUri(tags.get("rua")) ? "none" : "missing"
+      : count === labels.length ? policy : subdomain ?? policy;
+    if (count === labels.length) return effective;
+    const psd = tags.get("psd")?.toLowerCase();
     if (psd === "n") return effective;
     // At a public suffix, the organization is one label below it.
     if (psd === "y") return inherited?.labels === count + 1 ? inherited.policy : effective;

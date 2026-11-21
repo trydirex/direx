@@ -141,8 +141,37 @@ const WORDS: Record<string, string> = {
   exists: "This Workspace already has a webhook. Rotate its secret instead.",
   nothing_to_undo: "Only an opt-out read from a reply can be undone.",
   step_up_required: "Confirm it's you: sign in again, then try once more.",
+  no_email_column: "The first row needs a column called email.",
+  bad_quote: "A quote mark in this list isn't closed. Check the list and try again.",
+  too_many_rows: "That's more than 1,000 rows. Import them in smaller lists.",
+  too_large: "That CSV is too large. Split it into smaller batches, each with the header row.",
+  connection_failed: "Direx couldn't be reached. Check your connection and try again.",
 };
 export const say = (error: string) => messageForCode(error, WORDS);
+
+export type Customer = components["schemas"]["Customer"];
+export type CustomerImport = components["schemas"]["CustomerImport"];
+export const customersQuery = (workspaceId: string) =>
+  queryOptions({ queryKey: inWorkspace(workspaceId, "customers"), queryFn: () => call(api.GET("/api/w/{workspaceId}/customers", inW(workspaceId))) });
+/** A CSV of Customers: who was added, who already was one, and who was left out and why; or the refusal's code. */
+export async function importCustomers(workspaceId: string, csv: string): Promise<CustomerImport | { error: string }> {
+  const r = await api.POST("/api/w/{workspaceId}/customers/import", { ...inW(workspaceId), body: { csv } })
+    .catch((error: unknown) => error instanceof TypeError ? "connection_failed" : "failed");
+  if (typeof r === "string") return { error: r };
+  return r.data ?? { error: code(r) ?? "failed" };
+}
+/** Why a row of a Customer import was left out, in words. */
+const SKIP_WORDS: Record<string, string> = {
+  no_opt_in: "Not added: no opt-in recorded",
+  invalid_email: "Not added: not a valid email address",
+  suppressed: "Not added: this address asked not to be contacted",
+  bad_opt_in_date: "Not added: the opt-in date isn't a date (use YYYY-MM-DD)",
+  no_country: "Not added: no country, and none on record",
+  bad_country: "Not added: the country isn't a two-letter code",
+  too_long: "Not added: a value is too long",
+  wrong_column_count: "Not added: this row has the wrong number of columns",
+};
+export const sayCustomerSkip = (reason: string) => SKIP_WORDS[reason] ?? "Not added: something in this row isn't right";
 
 // What country research suggests checking. It never stops a send and is never legal advice.
 const WARNING_WORDS: Record<EligibilityWarning, (country: string) => string> = {

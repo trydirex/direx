@@ -91,6 +91,42 @@ export function lifecycle({ boss, signingKeys, now, resolvers, onLateChanged }: 
   // The same, for a row on its way to a resend: it stays settled-only until the call is known.
   const mayHaveSent = (row: ActionRow) => unknown(row) || (row.state === "claimed" && row.outcomeUnknownAt !== null);
 
+  /**
+   * A move to a new time. The person approved a time as well as a draft, so an approved
+   * Action needs approving again, under the same id. The caller reserves the new slot
+   * first. The wake for the old time then finds nothing due.
+   */
+  function moveActionIn(tx: LedgerTx, workspaceId: string, actionId: string, actor: Actor) {
+    return changeIn(tx, actionId, async (tx, row, at) => {
+      if (mayHaveSent(row)) return { ok: false, reason: "outcome_unknown" };
+      if (!["scheduled", "claimed", "held"].includes(row.state)) return { ok: false, reason: "wrong_state" };
+      await voidLiveApproval(tx, actionId, at);
+      const set = { dueAt: null, approvalRequestedAt: at, retries: 0, nextAttemptAt: null };
+      const next = await transition(tx, row, { state: "needs_approval", set }, actor, at);
+      if (next !== "stale") await expiryWake(tx, workspaceId, actionId, at);
+      return next;
+    });
+  }
+
+  /**
+   * A launch moved later. The approval binds the draft and what it touches, not the time, and
+   * a later send gives the person more time, not less, so it stands. Never earlier: that goes
+   * through moveAction and a new approval. A held Action keeps its hold and gets the new time
+   * for when it resumes. The caller reserves the new slot first.
+   */
+  function redateActionIn(tx: LedgerTx, workspaceId: string, actionId: string, dueAt: Date, actor: Actor) {
+    return changeIn(tx, actionId, async (tx, row, at) => {
+      if (mayHaveSent(row)) return { ok: false, reason: "outcome_unknown" };
+      if (row.state !== "scheduled" && row.state !== "held") return { ok: false, reason: "wrong_state" };
+      if (dueAt <= at || (row.dueAt && dueAt <= row.dueAt)) return { ok: false, reason: "not_later" };
+      // Any hold stays, a late one included: a Campaign's launch can move with no person choosing.
+      if (row.state === "held") return transition(tx, row, { state: "held", reason: row.holdReason!, ...(row.reasonDetail && { detail: row.reasonDetail }), ...(row.reasonPlan && { plan: row.reasonPlan }), set: { dueAt } }, actor, at);
+      const next = await transition(tx, row, { state: "scheduled", set: { dueAt } }, actor, at);
+      if (next !== "stale") await sendWake(boss, tx, { workspaceId, actionId }, dueAt);
+      return next;
+    });
+  }
+
   type Signer = { approverId: string; standingRuleId?: string; producerDigest?: string; actor: Actor };
 
   async function bindApproval(
@@ -323,41 +359,13 @@ export function lifecycle({ boss, signingKeys, now, resolvers, onLateChanged }: 
       return tally;
     },
 
-    /**
-     * A move to a new time. The person approved a time as well as a draft, so an approved
-     * Action needs approving again, under the same id. The caller reserves the new slot
-     * first. The wake for the old time then finds nothing due.
-     */
-    moveAction(workspaceId: string, actionId: string, actor: Actor) {
-      return change(workspaceId, actionId, async (tx, row, at) => {
-        if (mayHaveSent(row)) return { ok: false, reason: "outcome_unknown" };
-        if (!["scheduled", "claimed", "held"].includes(row.state)) return { ok: false, reason: "wrong_state" };
-        await voidLiveApproval(tx, actionId, at);
-        const set = { dueAt: null, approvalRequestedAt: at, retries: 0, nextAttemptAt: null };
-        const next = await transition(tx, row, { state: "needs_approval", set }, actor, at);
-        if (next !== "stale") await expiryWake(tx, workspaceId, actionId, at);
-        return next;
-      });
-    },
-
-    /**
-     * A launch moved later. The approval binds the draft and what it touches, not the time, and
-     * a later send gives the person more time, not less, so it stands. Never earlier: that goes
-     * through moveAction and a new approval. A held Action keeps its hold and gets the new time
-     * for when it resumes. The caller reserves the new slot first.
-     */
-    redateAction(workspaceId: string, actionId: string, dueAt: Date, actor: Actor) {
-      return change(workspaceId, actionId, async (tx, row, at) => {
-        if (mayHaveSent(row)) return { ok: false, reason: "outcome_unknown" };
-        if (row.state !== "scheduled" && row.state !== "held") return { ok: false, reason: "wrong_state" };
-        if (dueAt <= at || (row.dueAt && dueAt <= row.dueAt)) return { ok: false, reason: "not_later" };
-        // Any hold stays, a late one included: a Campaign's launch can move with no person choosing.
-        if (row.state === "held") return transition(tx, row, { state: "held", reason: row.holdReason!, ...(row.reasonDetail && { detail: row.reasonDetail }), ...(row.reasonPlan && { plan: row.reasonPlan }), set: { dueAt } }, actor, at);
-        const next = await transition(tx, row, { state: "scheduled", set: { dueAt } }, actor, at);
-        if (next !== "stale") await sendWake(boss, tx, { workspaceId, actionId }, dueAt);
-        return next;
-      });
-    },
+    lockActionIn: lockAction,
+    moveActionIn,
+    moveAction: (workspaceId: string, actionId: string, actor: Actor) =>
+      inWorkspace(workspaceId, (tx) => moveActionIn(tx, workspaceId, actionId, actor)),
+    redateActionIn,
+    redateAction: (workspaceId: string, actionId: string, dueAt: Date, actor: Actor) =>
+      inWorkspace(workspaceId, (tx) => redateActionIn(tx, workspaceId, actionId, dueAt, actor)),
 
     /** Sorting and hiding only: it can't affect what goes out, so it leaves the claim token alone. */
     setTriage(workspaceId: string, actionId: string, triage: Triage) {

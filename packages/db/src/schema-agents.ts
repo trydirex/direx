@@ -107,7 +107,7 @@ export const agentRunEvents = pgTable(
   (t) => [
     primaryKey({ name: "agent_run_events_pkey", columns: [t.workspaceId, t.runId, t.seq] }),
     foreignKey({ name: "agent_run_events_run_fk", columns: [t.workspaceId, t.runId], foreignColumns: [agentRuns.workspaceId, agentRuns.id] }),
-    check("agent_run_events_kind_check", sql`${t.kind} in ('model_call', 'tool_call', 'proposal', 'rejection')`),
+    check("agent_run_events_kind_check", sql`${t.kind} in ('model_call', 'tool_call', 'proposal', 'rejection', 'citation')`),
   ],
 );
 

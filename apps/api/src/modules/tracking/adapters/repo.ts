@@ -71,25 +71,38 @@ export async function countryOf(tx: TrackingTx, personId: string) {
   return row;
 }
 
+/** Reads the original destination of a link on this domain in the current Workspace. */
+export async function linkDestination(tx: TrackingTx, domainId: string, id: string): Promise<string | undefined> {
+  const [row] = await tx.select({ destination: trackedLinks.destination }).from(trackedLinks)
+    .where(and(eq(trackedLinks.domainId, domainId), eq(trackedLinks.id, id)));
+  return row?.destination;
+}
+
 /** The step's link to this destination: the existing one, else `id` made now. Links never change. */
-export async function linkFor(tx: TrackingTx, l: { id: string; workspaceId: string; campaignId: string; stepKey: string; domainId: string; destination: string; now: Date }): Promise<string> {
+export async function linkFor(tx: TrackingTx, l: { id: string; workspaceId: string; campaignId: string; stepKey: string; domainId: string; destination: string; checkOnly: boolean; now: Date }): Promise<string> {
   await tx
     .insert(trackedLinks)
-    .values({ id: l.id, workspaceId: l.workspaceId, campaignId: l.campaignId, stepKey: l.stepKey, domainId: l.domainId, destination: l.destination, createdAt: l.now })
+    .values({ id: l.id, workspaceId: l.workspaceId, campaignId: l.campaignId, stepKey: l.stepKey, domainId: l.domainId, destination: l.destination, checkOnly: l.checkOnly, createdAt: l.now })
     .onConflictDoNothing();
   const [row] = await tx
     .select({ id: trackedLinks.id })
     .from(trackedLinks)
-    .where(and(eq(trackedLinks.campaignId, l.campaignId), eq(trackedLinks.stepKey, l.stepKey), eq(trackedLinks.domainId, l.domainId), eq(trackedLinks.destination, l.destination), eq(trackedLinks.checkOnly, false)));
+    .where(and(eq(trackedLinks.campaignId, l.campaignId), eq(trackedLinks.stepKey, l.stepKey), eq(trackedLinks.domainId, l.domainId), eq(trackedLinks.destination, l.destination), eq(trackedLinks.checkOnly, l.checkOnly)));
   return row!.id;
 }
 
-/** Records the Item's Action as using each link, in the caller's transaction. */
-export async function insertUses(tx: TrackingTx, workspaceId: string, itemId: string, inputsHash: string, uses: { linkId: string; tokenHash: string | null; personId: string | null }[], now: Date): Promise<void> {
+export type UseTarget = { itemId: string } | { actionId: string } | { dmId: string };
+
+/** Records the message (an Item's Action, an Action or a DM) as using each link, in the caller's transaction. */
+export async function insertUses(tx: TrackingTx, workspaceId: string, target: UseTarget, inputsHash: string, uses: { linkId: string; tokenHash: string | null; personId: string | null }[], now: Date): Promise<void> {
   if (!uses.length) return;
-  const [item] = await tx.select({ actionId: items.actionId }).from(items).where(eq(items.id, itemId));
-  if (!item?.actionId) throw new Error(`tracking: item ${itemId} has no Action`);
-  await tx.insert(trackedLinkUses).values(uses.map((u) => ({ workspaceId, actionId: item.actionId, linkId: u.linkId, tokenHash: u.tokenHash, personId: u.personId, inputsHash, createdAt: now })));
+  let message: { actionId: string } | { dmId: string };
+  if ("itemId" in target) {
+    const [item] = await tx.select({ actionId: items.actionId }).from(items).where(eq(items.id, target.itemId));
+    if (!item?.actionId) throw new Error(`tracking: item ${target.itemId} has no Action`);
+    message = { actionId: item.actionId };
+  } else message = target;
+  await tx.insert(trackedLinkUses).values(uses.map((u) => ({ workspaceId, ...message, linkId: u.linkId, tokenHash: u.tokenHash, personId: u.personId, inputsHash, createdAt: now })));
 }
 
 /** The edge's question: may it get a certificate for this host? */

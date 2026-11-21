@@ -17,6 +17,7 @@ import { startConnect } from "../credentials/actions";
 import { dayWords } from "../seo/actions";
 import { Secret } from "../credentials/Credentials";
 import { Wizard } from "./Wizard";
+import { AccountPace } from "./Pace";
 import { SignIn } from "../identity/SignIn";
 import {
   accountsQuery,
@@ -237,6 +238,7 @@ export function Social(p: { workspace: S["MyWorkspace"]; me: string; notice?: st
                   {list.map((a) => (
                     <AccountCard
                       key={a.id}
+                      workspaceId={workspace.id}
                       a={a}
                       mine={a.ownerUserId === p.me}
                       manage={manage}
@@ -504,6 +506,7 @@ function About({ a, save }: { a: Account; save: (b: { runBy: string | null; angl
 
 /** One connected account: what it is and whether it works, what it can do today, and the rest behind Limits and settings. */
 function AccountCard({
+  workspaceId,
   a,
   mine,
   manage,
@@ -512,6 +515,7 @@ function AccountCard({
   about,
   established,
 }: {
+  workspaceId: string;
   a: Account;
   mine: boolean;
   manage: boolean;
@@ -558,6 +562,7 @@ function AccountCard({
           </Button>
         )}
         {(mine || manage) && a.siblings > 0 && <About a={a} save={about} />}
+        <AccountPace workspaceId={workspaceId} accountId={a.id} name={a.name} mayEdit={manage} />
         {(mine || manage) && (
           <Confirm
             title={`Disconnect ${a.name}?`}

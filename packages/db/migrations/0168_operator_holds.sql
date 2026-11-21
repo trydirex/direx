@@ -31,7 +31,7 @@ CREATE INDEX operator_holds_unreleased_idx ON system.operator_holds (lifted_at) 
 -- The operator's reason stays out: it can be an internal note, and the Workspace sees what it reads.
 CREATE FUNCTION system.operator_hold_of(p_workspace uuid)
 RETURNS text
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog
+LANGUAGE sql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
 AS $$
   SELECT h.scope FROM system.operator_holds h
   WHERE h.lifted_at IS NULL
@@ -40,6 +40,9 @@ AS $$
       OR (h.scope = 'organization' AND h.target = (SELECT w.org_id FROM public.workspaces w WHERE w.id = p_workspace)))
   ORDER BY h.set_at
   LIMIT 1
+  -- A lift updates this row. It cannot become visible to the release worker until
+  -- every transaction holding an Action on this evidence has committed.
+  FOR SHARE OF h
 $$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION system.operator_hold_of(uuid) FROM PUBLIC;

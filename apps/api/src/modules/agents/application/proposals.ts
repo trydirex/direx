@@ -22,7 +22,9 @@ export type SinkContext = { runId: string; input: unknown; tainted: boolean; pag
  * plan's draft, which a person submits later. Such a sink must be safe to call twice, since nothing
  * marks it finished for a retry to see.
  */
-export type SinkResult = { ok: true; itemId: string | null } | { ok: false; code: string };
+export type SinkResult = ({ ok: true; itemId: string | null } | { ok: false; code: string }) & { dropped?: readonly DroppedCitation[] };
+/** A citation a sink left out and why, recorded as a `citation` event. `id` names what was cited, never its words. */
+export type DroppedCitation = { id: string; result: string };
 export type Sink = (workspaceId: string, proposal: Proposal, context: SinkContext) => Promise<SinkResult>;
 
 /**
@@ -52,7 +54,7 @@ export function createProposals(d: ProposalsDeps) {
     const seen = new Set<string>();
     for (const p of d.definitions[run.agent]!.proposals(output as never)) {
       const argumentsDigest = digestOf(JSON.stringify(p.body));
-      const event = (tx: repo.RunTx, e: Pick<repo.NewEvent, "kind" | "outcome">) => repo.appendEvent(tx, run, { ...e, name: p.kind, argumentsDigest }, d.now());
+      const event = (tx: repo.RunTx, e: Pick<repo.NewEvent, "kind" | "outcome" | "ref">) => repo.appendEvent(tx, run, { ...e, name: p.kind, argumentsDigest }, d.now());
 
       if (seen.has(p.outputKey)) {
         await inWorkspace(run.workspaceId, (tx) => event(tx, { kind: "rejection", outcome: "duplicate_key" }));
@@ -82,6 +84,7 @@ export function createProposals(d: ProposalsDeps) {
         else if (!result.ok) await repo.settleProposal(tx, run.id, p.outputKey, { rejectionCode: result.code });
         else if (result.itemId) await repo.settleProposal(tx, run.id, p.outputKey, { itemId: result.itemId });
         await event(tx, result.ok ? { kind: "proposal", outcome: "ok" } : { kind: "rejection", outcome: result.code });
+        for (const c of result.dropped ?? []) await event(tx, { kind: "citation", outcome: c.result, ref: c.id });
         return (await repo.readRun(tx, run.id))!.status as RunStatus;
       });
       // The run ended during the hand-over, so its end didn't see this Item.

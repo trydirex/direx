@@ -11,7 +11,8 @@ import { CreateOrg } from "./CreateOrg";
 import { Members } from "./Members";
 import { signInWithPassword, signUpWithPassword } from "./auth";
 import { ResetPassword, SignIn } from "./SignIn";
-import { applyChange, savePending, takePending } from "./step-up";
+import * as stepUp from "./step-up";
+import { applyChange } from "./step-up";
 import { WorkspaceSwitcher } from "./WorkspaceSwitcher";
 import { withQueries, selectOptions } from "../testing";
 
@@ -103,19 +104,15 @@ test("sign-up tells a ready session from one that needs the email link, and expl
   fetchMock.mockRestore();
 });
 
-test("a change refused for step-up waits in storage and is taken once, for its Workspace only", async () => {
+test("a role change or removal returns the API's code, and nothing is kept to run after sign-in (ADR 0037 rule 005)", async () => {
   patch.mockResolvedValueOnce({ error: { error: "step_up_required" } } as never).mockResolvedValueOnce({ data: { ok: true } } as never);
+  const del = vi.spyOn(api, "DELETE").mockResolvedValueOnce({ data: { ok: true } } as never);
   const change = { workspaceId: W, userId: "u1", role: "viewer" as const };
+  expect(Object.keys(stepUp)).toEqual(["applyChange"]);
   expect(await applyChange(change)).toBe("step_up_required");
-
-  const store = new Map<string, string>();
-  const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v), removeItem: (k: string) => void store.delete(k) } as Storage;
-  savePending(change, storage);
-  expect(takePending("another-workspace", storage)).toBeNull();
-  savePending(change, storage);
-  const pending = takePending(W, storage);
-  expect(pending).toEqual(change);
-  expect(takePending(W, storage)).toBeNull();
-  expect(await applyChange(pending!)).toBeNull();
+  expect(await applyChange(change)).toBeNull();
+  expect(patch).toHaveBeenCalledTimes(2);
+  expect(await applyChange({ ...change, role: null })).toBeNull();
+  expect(del).toHaveBeenCalledWith("/api/w/{workspaceId}/members/{userId}", { params: { path: { workspaceId: W, userId: "u1" } } });
   expect(patch).toHaveBeenLastCalledWith("/api/w/{workspaceId}/members/{userId}", { params: { path: { workspaceId: W, userId: "u1" } }, body: { role: "viewer" } });
 });

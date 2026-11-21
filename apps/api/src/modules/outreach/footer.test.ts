@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test } from "vitest";
-import { isPublicHttps, optOutFooter, REPLY_STOP } from "./domain/footer";
+import { isPublicHttps, optOutFooter, REPLY_STOP, TRACKED_PER_RECIPIENT } from "./domain/footer";
+import { ownWords } from "./domain/reply-rules";
 
 test.each(["https://app.direx.example", "https://direx.example:8443/base", "https://203.0.113.7", "https://[2001:db8::1]"])("%s is public HTTPS", (url) => {
   expect(isPublicHttps(url)).toBe(true);
@@ -31,4 +32,13 @@ test("the footer asks for a stop reply, and carries the link only when there is 
   const who = { senderName: "Sam at Acme", postalAddress: "1 Main St" };
   expect(optOutFooter({ ...who, unsubscribeUrl: null })).toBe(`--\nSam at Acme\n1 Main St\n${REPLY_STOP}`);
   expect(optOutFooter({ ...who, unsubscribeUrl: "https://d.example/u/1" })).toBe(`--\nSam at Acme\n1 Main St\n${REPLY_STOP}\nUnsubscribe: https://d.example/u/1`);
+});
+
+test("only an email whose links carry a token says so, just before the reply-stop line, and a reply still drops the footer", () => {
+  const who = { senderName: "Sam at Acme", postalAddress: "1 Main St", unsubscribeUrl: "https://d.example/u/1" };
+  const tracked = optOutFooter({ ...who, trackedPerRecipient: true });
+  expect(tracked).toBe(`--\nSam at Acme\n1 Main St\n${TRACKED_PER_RECIPIENT}\n${REPLY_STOP}\nUnsubscribe: https://d.example/u/1`);
+  expect(optOutFooter({ ...who, trackedPerRecipient: false })).toBe(optOutFooter(who));
+  expect(optOutFooter(who)).not.toContain(TRACKED_PER_RECIPIENT);
+  expect(ownWords(`Sounds good, call me.\n\n${tracked}`)).toBe("Sounds good, call me.");
 });

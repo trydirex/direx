@@ -15,7 +15,8 @@ import { appClient, ownerClient } from "../../../../../test/db";
 import { passMailboxCheck, TEST_SECRET, testIdentity, testLedger } from "./fixtures/support";
 import { createOutreach, mailFrom, newsletterSync, outreachFloors, outreachRoutes } from "./index";
 import { inWorkspace, upsertSubscribers } from "./adapters/repo";
-import { REPLY_STOP } from "./domain/footer";
+import { REPLY_STOP, TRACKED_PER_RECIPIENT } from "./domain/footer";
+import { createTrackingDomains } from "../tracking/index";
 
 process.env.DIREX_AUTH_SECRET = TEST_SECRET;
 
@@ -385,6 +386,39 @@ test("revising keeps the Action, the footer and the one-click header, and voids 
   expect(message(before).text).not.toContain("Same words");
   expect(message(before).text).toContain("Unsubscribe: https://direx.example/api/unsubscribe/");
   expect(header(before, "List-Unsubscribe-Post")).toBe("List-Unsubscribe=One-Click");
+});
+
+test("a tracking Campaign's email carries its links on the tracking domain, says a US Person's are tracked, and records each use", async () => {
+  const hostname = `links${crypto.randomUUID().slice(0, 8)}.example.com`;
+  let txt = "";
+  const domains = createTrackingDomains({ dns: { records: async () => ({ cname: ["t.direx.example"], txt: [txt] }), handshake: async () => true }, target: () => "t.direx.example" });
+  const d = await domains.add(W, owner, hostname);
+  if (typeof d === "string") throw new Error(d);
+  txt = d.txtValue;
+  await domains.check(W, d.id);
+  const [plan] = await q("insert into marketing_plans (workspace_id, title, created_at, updated_at) values ($1, 't', now(), now()) returning id", [W]);
+  const [campaign] = await q(
+    `insert into campaigns (workspace_id, plan_id, owner_user_id, tracking_domain_id, tracking_on, tracking_set_by, tracking_wording_version, per_person_on, per_person_set_by, per_person_wording_version, created_at, updated_at)
+     values ($1, $2, $3, $4, true, $3, 1, true, $3, 1, now(), now()) returning id`,
+    [W, plan.id, owner, d.id],
+  );
+  const tracking = { campaignId: campaign.id as string, stepKey: "s1" };
+  const { personId } = await addPerson();
+  const item = itemOf(await outreach.compose(W, composed(personId, { text: "See https://acme.example/a", tracking }), owner));
+  const uses = () => q("select l.destination, u.token_hash, u.person_id from tracked_link_uses u join tracked_links l on l.id = u.link_id join items i on i.action_id = u.action_id where i.id = $1 order by l.destination", [item.id]);
+  const used = (destination: string) => ({ destination, token_hash: expect.stringMatching(/^[0-9a-f]{64}$/), person_id: personId });
+  expect(await uses()).toEqual([used("https://acme.example/a")]);
+
+  // A revise records the new text's links; the old use stays, as uses are never deleted.
+  expect((await outreach.revise(W, item.id, composed(personId, { text: "Now https://acme.example/b", tracking }), owner)).ok).toBe(true);
+  expect(await uses()).toEqual([used("https://acme.example/a"), used("https://acme.example/b")]);
+
+  const before = fake.sent.length;
+  await ledger.run(W, await approve(item.id));
+  const { text } = message(before);
+  expect(text).toMatch(new RegExp(`^Now https://${hostname.replaceAll(".", "\\.")}/t/[A-Za-z0-9_-]{22}/[A-Za-z0-9_-]{43}\\n`));
+  expect(text).not.toContain("acme.example");
+  expect(text).toContain(`\n${TRACKED_PER_RECIPIENT}\n${REPLY_STOP}\nUnsubscribe: https://direx.example/api/unsubscribe/`);
 });
 
 test("revising a sent email is refused and nothing changes", async () => {

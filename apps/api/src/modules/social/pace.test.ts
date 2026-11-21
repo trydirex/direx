@@ -35,6 +35,14 @@ describe("the offset", () => {
 });
 
 describe("whether a time keeps the pace", () => {
+  it("rejects times before a spring-forward opening that does not exist", () => {
+    const pace = { ...DAY, from: 150, until: 240 };
+    const zone = "America/New_York";
+    expect(offPace(at("2026-03-08T06:45:00Z"), pace, zone, [])).toBe("outside_hours");
+    expect(offPace(at("2026-03-08T07:00:00Z"), pace, zone, [])).toBeNull();
+    expect(offPace(at("2026-03-08T08:00:00Z"), pace, zone, [])).toBe("outside_hours");
+  });
+
   it("is outside the hours before opening, at closing and on a weekend that doesn't post", () => {
     expect(offPace(at("2026-11-23T07:59:00Z"), DAY, UTC, [])).toBe("outside_hours");
     expect(offPace(at("2026-11-23T20:00:00Z"), DAY, UTC, [])).toBe("outside_hours");
@@ -58,6 +66,24 @@ describe("placing a post", () => {
     const t = place({ wanted: at("2026-11-23T06:00:00Z"), pace: DAY, timeZone: UTC, taken: [], seed })!;
     expect(t.getTime()).toBe(at("2026-11-23T08:00:00Z").getTime() + off);
     expect(t.getUTCMinutes() % 15).not.toBe(0);
+  });
+
+  it("keeps the grid off quarter hours for an arbitrary opening minute", () => {
+    const a = { wanted: at("2026-11-23T06:00:00Z"), pace: { ...DAY, from: 493 }, timeZone: UTC, taken: [], seed: "" };
+    const placed = place(a)!;
+    expect(placed).toEqual(at("2026-11-23T08:17:00Z"));
+    expect(place({ ...a, wanted: placed })).toEqual(placed);
+  });
+
+  it("skips the missing part of a spring-forward window", () => {
+    const a = { wanted: at("2026-03-08T06:45:00Z"), pace: { ...DAY, from: 150, until: 240 }, timeZone: "America/New_York", taken: [], seed: "" };
+    expect(place(a)).toEqual(at("2026-03-08T07:02:00Z"));
+    expect(place({ ...a, pace: { ...a.pace, until: 175 } })).toBeNull();
+  });
+
+  it("finds a later occurrence of a slot when the local clock repeats", () => {
+    const a = { wanted: at("2026-11-01T05:45:00Z"), pace: { ...DAY, from: 60, until: 90 }, timeZone: "America/New_York", taken: [], seed: "" };
+    expect(place(a)).toEqual(at("2026-11-01T06:02:00Z"));
   });
 
   it("keeps the gap from the account's other posts", () => {

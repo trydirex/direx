@@ -1,0 +1,118 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// A post's place on its Social account's day (ADR 0038): placed inside the account's hours and gap,
+// counted against its budget, refused to a person on a spent day, and safe under many writers.
+import { describe, expect, it } from "vitest";
+import { appClient } from "../../../../../test/db";
+import { createVault, credentialLabel, rootKeyFromEnv } from "../credentials/index";
+import { routeCapacity } from "../items/index";
+import { itemsWorld, person } from "../items/fixtures/items";
+import { socialCapacity } from "./application/capacity";
+import { offPace } from "./application/pace";
+
+const PUBLISH = "com.example.testnet/social.publish";
+const PACE = { from: 8 * 60, until: 20 * 60, weekends: true, gapMinutes: 60 };
+const HOUR = 3_600_000;
+
+async function world() {
+  const capacity = routeCapacity((c) => (c.endsWith("/social.publish") ? socialCapacity({ networks: () => [{ connection: "testnet", pace: PACE }] }) : undefined));
+  const w = await itemsWorld({ resolvers: { credential: credentialLabel }, capacity });
+  const vault = createVault({ rootKey: rootKeyFromEnv({ DIREX_MASTER_KEY: "11".repeat(32) })!, now: () => w.clock.at });
+  const made = await vault.create({ workspaceId: w.W, actorUserId: person.userId, scope: "workspace", kind: "api_key", key: "page", name: "Page", meta: {}, value: { key: "x" } });
+  if (!made.ok) throw new Error(made.reason);
+  const credentialId = made.credential.id;
+  const db = await appClient();
+  const q = async (text: string, params: unknown[] = []) => {
+    await db.query("begin");
+    await db.query("select set_config('app.workspace_id', $1, true)", [w.W]);
+    const r = await db.query(text, params);
+    await db.query("commit");
+    return r.rows;
+  };
+  await q("insert into social_accounts (workspace_id, credential_id, connection, account_type, network_id, name) values ($1, $2, 'testnet', 'page', 'acct-1', 'Page')", [w.W, credentialId]);
+  const post = (plannedAt: Date, placement: "auto" | "exact" = "auto") =>
+    w.items.createActionItem(w.W, {
+      idempotencyKey: crypto.randomUUID(),
+      capability: PUBLISH,
+      dedupe: "blind",
+      spec: { text: "hello", followUps: [], target: "acct-1" },
+      credentialId,
+      actor: person,
+      placement,
+      details: { title: "A post", channel: "post", warnings: [], plannedAt },
+    });
+  const reserved = async (day: string) => ((await q("select distinct on (action_id) action_id, slot from social_reservations where day = $1 order by action_id, created_at desc", [day])) as { slot: Date }[]).map((r) => r.slot);
+  return { ...w, post, reserved, q, done: () => db.end() };
+}
+
+// The world's clock starts on Monday 2026-11-02 at 09:00 UTC, and the Workspace is on UTC.
+const tomorrow = (h: number, m = 0) => new Date(Date.UTC(2026, 10, 3, h, m));
+const today = (h: number, m = 0) => new Date(Date.UTC(2026, 10, 2, h, m));
+
+describe("a Social account's day", () => {
+  it("places a step's posts on the wanted day inside the hours, apart by the gap and never on a quarter hour", async () => {
+    const w = await world();
+    const made = [await w.post(tomorrow(8)), await w.post(tomorrow(8)), await w.post(tomorrow(8))];
+    const times = made.map((i) => i.at!);
+    for (const t of times) {
+      expect(t.getUTCDate()).toBe(3);
+      expect(t.getUTCMinutes() % 15).not.toBe(0);
+      expect(offPace(t, PACE, "UTC", times.filter((o) => o !== t))).toBeNull();
+    }
+    expect((await w.reserved("2026-11-03")).length).toBe(3);
+    await w.done();
+  });
+
+  it("refuses a person's approval or move into today once its budget is spent, naming the day and the budget", async () => {
+    const w = await world();
+    // A new account's budget is one post a day.
+    await w.submit(await w.post(today(12)));
+    const second = await w.submit(await w.post(today(15)));
+    expect(await w.items.approve(w.W, second.id, second.revision, w.who)).toEqual({ ok: false, reason: "account_day_full", day: "2026-11-02", limit: 1 });
+    const third = await w.submit(await w.post(tomorrow(12)));
+    expect(await w.items.moveItem(w.W, third.id, today(17), person)).toEqual({ ok: false, reason: "account_day_full", day: "2026-11-02", limit: 1 });
+    await w.done();
+  });
+
+  it("checks a later day against the most the budget could reach", async () => {
+    const w = await world();
+    for (let i = 0; i < 5; i++) await w.post(tomorrow(8));
+    expect((await w.reserved("2026-11-03")).length).toBe(5);
+    const sixth = await w.submit(await w.post(tomorrow(8)));
+    expect(await w.items.approve(w.W, sixth.id, sixth.revision, w.who)).toMatchObject({ ok: false, reason: "account_day_full", limit: 5 });
+    await w.done();
+  });
+
+  it("keeps a person's exact time inside the gap, with one warning", async () => {
+    const w = await world();
+    await w.post(tomorrow(10), "exact");
+    const close = await w.post(tomorrow(10, 20), "exact");
+    expect(close.at).toEqual(tomorrow(10, 20));
+    expect(close.warnings.map((x) => x.text)).toEqual(["Another post on this account is planned within 60 minutes."]);
+    await w.done();
+  });
+
+  it("keeps a placed post where it is when a launch moves it by a day", async () => {
+    const w = await world();
+    const placed = await w.post(tomorrow(8));
+    const dayLater = new Date(placed.at!.getTime() + 24 * HOUR);
+    expect(await w.items.redateItem(w.W, placed.id, dayLater, person)).toMatchObject({ ok: true });
+    expect(await w.reserved("2026-11-04")).toEqual([dayLater]);
+    await w.done();
+  });
+
+  it("never lets many writers at once land inside the gap or go over the budget", async () => {
+    const w = await world();
+    await Promise.all(Array.from({ length: 10 }, () => w.post(tomorrow(8))));
+    const slots = (await w.reserved("2026-11-03")).map((d) => d.getTime()).sort((a, b) => a - b);
+    expect(slots.length).toBe(5);
+    for (let i = 1; i < slots.length; i++) expect(slots[i]! - slots[i - 1]!).toBeGreaterThanOrEqual(PACE.gapMinutes * 60_000);
+    await w.done();
+  });
+
+  it("leaves email to the Mailbox side", async () => {
+    const w = await world();
+    const e = await w.newTouch(await w.newPerson(), tomorrow(9));
+    expect(e.at).toEqual(tomorrow(9));
+    await w.done();
+  });
+});

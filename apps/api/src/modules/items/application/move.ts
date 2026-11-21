@@ -30,7 +30,7 @@ export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: 
         if (reserved.kind === "full") return { ok: false, reason: "slot_full", cap: reserved.cap };
         if (reserved.kind === "not_found") return { ok: false, reason: "not_found" };
         const day = await capacity.reserve(workspaceId, item.actionId, plannedAt, { now: at });
-        if (day.kind === "full") return { ok: false, reason: "mailbox_day_full", day: day.day, limit: day.limit };
+        if (day.kind === "full") return { ok: false, reason: "reason" in day ? day.reason : "mailbox_day_full", day: day.day, limit: day.limit };
       }
       await onStep?.("reserved");
       await inWorkspace(workspaceId, (tx) => setPlannedAt(tx, id, plannedAt, at));

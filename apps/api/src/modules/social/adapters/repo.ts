@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { withWorkspace, type WorkspaceTx } from "@direx/db";
-import { actions, credentials, items } from "@direx/db/schema";
-import { socialAccountHealth, socialAccounts, socialPosts } from "@direx/db/schema-social";
-import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, ne, not, or, sql } from "drizzle-orm";
+import { actions, credentials, items, workspaces } from "@direx/db/schema";
+import { socialAccountHealth, socialAccounts, socialPosts, socialReservations } from "@direx/db/schema-social";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, ne, not, or, sql } from "drizzle-orm";
 
 export const inWorkspace = withWorkspace;
 
@@ -248,3 +248,59 @@ export const postsInMonth = async (tx: WorkspaceTx, capability: string, exceptAc
     .where(and(eq(actions.capability, capability), ne(actions.id, exceptActionId), gte(actions.firstDispatchedAt, start), or(inArray(actions.state, ["sent", "dispatching"]), isNotNull(actions.outcomeUnknownAt))));
   return row?.n ?? 0;
 };
+
+// --- Pace (ADR 0038): an account's day held as one reservation per post, as Mailboxes are. ---
+
+/** Serializes everything that places or reserves a post on one account, for the caller's transaction. */
+export async function lockAccount(tx: WorkspaceTx, a: Account): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`social:${a.credentialId}:${a.networkId}`}, 0))`);
+}
+
+/** The account's network and its own pace columns, or null when no such account is connected. */
+export async function paceRowOf(tx: WorkspaceTx, a: Account) {
+  const [row] = await tx
+    .select({ connection: socialAccounts.connection, postingFrom: socialAccounts.postingFrom, postingUntil: socialAccounts.postingUntil, postingWeekends: socialAccounts.postingWeekends, gapMinutes: socialAccounts.gapMinutes })
+    .from(socialAccounts)
+    .where(and(eq(socialAccounts.credentialId, a.credentialId), eq(socialAccounts.networkId, a.networkId)));
+  return row ?? null;
+}
+
+export async function workspaceZone(tx: WorkspaceTx, workspaceId: string): Promise<string> {
+  const [row] = await tx.select({ timeZone: workspaces.timeZone }).from(workspaces).where(eq(workspaces.id, workspaceId));
+  return row?.timeZone ?? "UTC";
+}
+
+/** The Action behind a post, as the capacity port needs it. */
+export async function postActionOf(tx: WorkspaceTx, actionId: string) {
+  const [row] = await tx.select({ capability: actions.capability, credentialId: actions.credentialId, spec: actions.spec, idempotencyKey: actions.idempotencyKey }).from(actions).where(eq(actions.id, actionId));
+  return row ?? null;
+}
+
+export type ReservationRow = { actionId: string; day: string; slot: Date };
+
+/** The newest reservation of every post that has one on the account's days in [from, to]. */
+export async function newestReservationsAround(tx: WorkspaceTx, a: Account, from: string, to: string): Promise<ReservationRow[]> {
+  const near = tx
+    .select({ actionId: socialReservations.actionId })
+    .from(socialReservations)
+    .where(and(eq(socialReservations.credentialId, a.credentialId), eq(socialReservations.networkId, a.networkId), gte(socialReservations.day, from), lte(socialReservations.day, to)));
+  return tx
+    .selectDistinctOn([socialReservations.actionId], { actionId: socialReservations.actionId, day: socialReservations.day, slot: socialReservations.slot })
+    .from(socialReservations)
+    .where(inArray(socialReservations.actionId, near))
+    .orderBy(socialReservations.actionId, desc(socialReservations.createdAt));
+}
+
+export async function newestReservationFor(tx: WorkspaceTx, actionId: string): Promise<ReservationRow | undefined> {
+  const [row] = await tx
+    .select({ actionId: socialReservations.actionId, day: socialReservations.day, slot: socialReservations.slot })
+    .from(socialReservations)
+    .where(eq(socialReservations.actionId, actionId))
+    .orderBy(desc(socialReservations.createdAt))
+    .limit(1);
+  return row;
+}
+
+export async function insertReservation(tx: WorkspaceTx, r: { workspaceId: string; actionId: string; day: string; slot: Date; createdAt: Date } & Account): Promise<void> {
+  await tx.insert(socialReservations).values(r);
+}

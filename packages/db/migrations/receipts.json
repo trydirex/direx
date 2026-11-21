@@ -692,6 +692,10 @@
     "0168_operator_holds.sql": {
       "sha256": "34e97757d905a89940d18c837c594c12c317e6a632d2946fff0b562f5e2bcb4c",
       "description": "Operator holds in schema system: a Workspace, Organization or deployment hold no member can lift, read by the Dispatcher through system.operator_hold_of, released by the worker after a lift, and set or lifted by the owner only"
+    },
+    "0169_outside_posts.sql": {
+      "sha256": "033ca8f124801e0e132e7166786852a78300b8b38b439dce30ed6e6bb5e7c9b6",
+      "description": "Create outside_posts, the posts each Social account published outside Direx (ADR 0039), with forced RLS, a paired foreign key to social_accounts that cascades on disconnect, and the system.sweep_outside_posts retention sweep; add the posts read state columns to social_accounts"
     }
   }
 }

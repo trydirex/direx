@@ -115,6 +115,17 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
     sweep: "system.sweep_competitor_snapshots",
     appDeletes: true,
   },
+  // A Social account's posts made outside Direx (ADR 0039 rules 002 and 013), swept by migration 0169.
+  // keep_until is posted_at plus the network's own limit, at most 90 days. The app deletes a post its
+  // network deleted; disconnect deletes the account's posts by cascade. The matcher, the dispatch
+  // check and Voice offers join `readers` when they are built.
+  "public.outside_posts": {
+    class: "operational",
+    window: "keep_until < now()",
+    readers: ["apps/api/src/modules/social: the outside reader, which stores, re-classifies and reconciles an account's posts inside its window"],
+    sweep: "system.sweep_outside_posts",
+    appDeletes: true,
+  },
   // Pruned by the app as it counts (apps/api/src/modules/tracking/application/redirect.ts), which holds DELETE.
   "public.tracking_counters": {
     class: "operational",

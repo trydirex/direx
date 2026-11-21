@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // The outreach calls. Each change returns the API's error code, or null when it worked.
 import { queryOptions } from "@tanstack/react-query";
-import { messageForCode } from "../api/messages";
+import { confirmOnStepUp, messageForCode } from "../api/messages";
 import { call, inWorkspace } from "../api/query";
 import type { components } from "../api/schema";
 import { api } from "../client";
@@ -14,7 +14,7 @@ export type EligibilityRecord = components["schemas"]["EligibilityRecord"];
 type EligibilityWarning = EligibilityRecord["warnings"][number];
 
 const inW = (workspaceId: string) => ({ params: { path: { workspaceId } } });
-const code = (r: { error?: { error?: string } }) => (r.error ? (r.error.error ?? "failed") : null);
+const code = (r: { error?: { error?: string } }) => (r.error ? confirmOnStepUp(r.error.error ?? "failed") : null);
 
 export const overview = async (workspaceId: string) => (await api.GET("/api/w/{workspaceId}/outreach", inW(workspaceId))).data;
 export const outreachQuery = (workspaceId: string) =>

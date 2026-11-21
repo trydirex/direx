@@ -5,6 +5,7 @@ import type { components } from "../api/schema";
 import { call, inWorkspace } from "../api/query";
 import { api } from "../client";
 import type { Field } from "../facts/actions";
+import { confirmOnStepUp } from "../api/messages";
 
 export type Lesson = components["schemas"]["Lesson"];
 
@@ -21,7 +22,7 @@ const MESSAGES: Record<string, string> = {
   lesson_check_unavailable: "Direx couldn't check that sentence just now. Try again in a moment.",
   lesson_check_refused: "Direx can't keep that one.",
   target_changed: "Someone changed this lesson just now. Reload and try again.",
-  step_up_required: "This needs a sign-in from the last 10 minutes. Sign out and back in, then try again.",
+  step_up_required: "This needs a recent sign-in. Sign in again, then try once more.",
   not_found: "That lesson is gone.",
   fact_slot_filled: "Brand already has a fact there. Change it on the Brand page, or pick another place for this one.",
   forbidden: "Your role doesn't allow that.",
@@ -37,7 +38,7 @@ export const sayLesson = (code: string, reasons: readonly string[] = []) =>
   `${MESSAGES[code] ?? "That didn't go through. Try again."}${reasons.length ? ` (${reasons.map((r) => REASONS[r] ?? r).join("; ")})` : ""}`;
 
 type Outcome = { error: string; reasons?: string[] } | null;
-const outcome = (error: { error: string; reasons?: string[] } | undefined): Outcome => (error ? { error: error.error, ...(error.reasons && { reasons: error.reasons }) } : null);
+const outcome = (error: { error: string; reasons?: string[] } | undefined): Outcome => (error ? { error: confirmOnStepUp(error.error), ...(error.reasons && { reasons: error.reasons }) } : null);
 const at = (workspaceId: string) => ({ path: { workspaceId } });
 const on = (workspaceId: string, id: string) => ({ path: { workspaceId, id } });
 

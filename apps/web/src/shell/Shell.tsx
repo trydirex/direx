@@ -23,6 +23,7 @@ import { Drawer } from "@astryxdesign/core/Drawer";
 import { Popover } from "@astryxdesign/core/Popover";
 import { RailTip, railButton } from "./RailTip";
 import { Toaster } from "@/components/toast";
+import { ConfirmIdentity } from "@/identity/ConfirmIdentity";
 import { CommandPalette } from "./CommandPalette";
 import { CommandsProvider } from "./commands";
 import { deletedWorkspacesQuery, meQuery, type MyWorkspace } from "./session";
@@ -66,6 +67,7 @@ export function SetupFrame(p: { children: ReactNode }) {
         {p.children}
       </div>
       <Toaster />
+      <ConfirmIdentity />
     </AstryxProvider>
   );
 }
@@ -269,6 +271,7 @@ export function Shell(p: { workspaces: MyWorkspace[]; current: MyWorkspace; Sear
         </div>
       </Drawer>
       <Toaster />
+      <ConfirmIdentity />
       </AskProvider>
     </CommandsProvider>
     </AstryxProvider>

@@ -47,7 +47,7 @@ test("an Owner retires a lesson, and a refusal says why", async () => {
   await userEvent.click(screen.getByRole("button", { name: `Remove ${lesson.text}` }));
   await userEvent.click(await screen.findByRole("button", { name: "Remove" }));
   expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/lessons/{id}/retire", { ...on, body: { version: 1 } });
-  expect((await screen.findByRole("alert")).textContent).toContain("This needs a sign-in from the last 10 minutes.");
+  expect((await screen.findByRole("alert")).textContent).toContain("This needs a recent sign-in.");
 });
 
 test("an Owner rewrites a lesson, and a refused rewrite lists the reasons", async () => {

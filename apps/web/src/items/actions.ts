@@ -6,6 +6,7 @@ import type { components } from "../api/schema";
 import { call, inWorkspace } from "../api/query";
 import { api } from "../client";
 import { ACTION_LABEL, KIND_LABEL } from "./type-labels";
+import { confirmOnStepUp } from "../api/messages";
 export { TYPES } from "./type-labels";
 
 type S = components["schemas"];
@@ -63,7 +64,7 @@ export const ITEM_MESSAGES: Record<string, string> = {
   forbidden: "Your role doesn't allow that.",
   target_changed: "Brand changed after this was suggested. Dismiss it and check the current value.",
   choice_required: "Pick one of the options.",
-  step_up_required: "This needs a sign-in from the last 10 minutes. Sign out and back in, then approve it.",
+  step_up_required: "This needs a recent sign-in. Sign in again, then approve it once more.",
   one_at_a_time: "Read this one and approve it on its own.",
   lesson_budget_full: "This writer's lessons are full. Retire or shorten one on the Lessons page first.",
   no_free_slot: "This Person has no free send time in the next two weeks. Move it to a later date.",
@@ -228,7 +229,7 @@ export async function rewrite(workspaceId: string, id: string, asked: { preset: 
 export async function approve(workspaceId: string, i: Pick<Item, "id" | "revision">, choice?: string, openedAt?: string, praise?: boolean): Promise<string | null> {
   const body = { revision: i.revision, ...(choice && { choice }), ...(openedAt && { openedAt }), ...(praise && { praise }) };
   const { error } = await api.POST("/api/w/{workspaceId}/items/{id}/approve", { params: one(workspaceId, i.id), body });
-  return error ? error.error : null;
+  return error ? confirmOnStepUp(error.error) : null;
 }
 
 export type BulkResult = { done: number; ids: string[]; refused: { id: string; reason: string }[] };

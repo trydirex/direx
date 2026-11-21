@@ -20,7 +20,7 @@ import { BRIEF_OUTPUT_KEY, briefSink, createPageReader, seoDefinitions, seoKinds
 import { COMPARISON_OUTPUT_KEY, competitorDefinitions, competitorKinds, createLabels, createMoves, LABELS_OUTPUT_KEY, POST_OUTPUT_KEY } from "./modules/competitors/index";
 import { newsletterAfterSend, newsletterKinds, newsletterWeekly } from "./modules/newsletter/index";
 import { createStandingRules, ruleStillCovers, standingRuleKinds, suspendForAgent, suspendOnProviderLimit, suspendOnStale } from "./modules/standing-rules/index";
-import { connectedMailboxes, createReplies, createReplyDesk, mailMembers, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, pauseOnProviderAbuse, probeRecipient, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
+import { connectedMailboxes, createReplies, createReplyDesk, mailMembers, replyDeskKind, finishHeaderCheck, humanReply, isProbeCapability, mailFrom, newsletterSync, optOutReviewKind, outreachFloors, pauseOnProviderAbuse, probeRecipient, slowOnSendingLimit, sweepRamps, probeWordingVersion, recordSentMail, sendingPaused, type Outreach, type ProbeFor, type SendFor } from "./modules/outreach/index";
 import { planDefinitions, planKinds, planSinks } from "./modules/plans/index";
 import { createLedger, type SigningKeys } from "./modules/ledger/index";
 import { accountHealthCheck, pauseOnAccountLimit, postAppearance, postLimitCheck, previewOf, socialCapacity, socialKinds } from "./modules/social/index";
@@ -48,6 +48,7 @@ export { DOCS_WRITE_BACK } from "./compose/write-back";
 export const MAILBOX_POLLS = "outreach.mailbox_polls";
 const SOCIAL_HEALTH_SWEEP = "social.health_sweep";
 const OPERATOR_HOLDS_RELEASE = "ledger.operator_holds_release";
+const MAILBOX_RAMP_SWEEP = "outreach.mailbox_ramp_sweep";
 const SEO_BRIEFS_WEEKLY = "seo.briefs.weekly";
 const COMPETITORS_WEEKLY = "competitors.weekly_read";
 const REPLIES_READ_WITHIN_MS = 60 * 60 * 1000;
@@ -204,6 +205,7 @@ export async function compose(opts: WorkerOptions) {
     onAccountLimit: async (tx, action, limit, detail) => {
       await pauseOnAccountLimit({ now })(tx, action, limit, detail);
       await pauseOnProviderAbuse({ now })(tx, action, limit);
+      await slowOnSendingLimit({ now })(tx, action, limit);
       await stopOnAccountLimit(now)(tx, action, limit);
     },
     // items is built after the ledger; the hook only runs once dispatch has started.
@@ -340,6 +342,10 @@ export async function compose(opts: WorkerOptions) {
       });
       writeBackJobs({ boss, later, provider: docsProvider, connected: connectedMailboxes, writeBack });
     }
+    // A new Mailbox's ramp grows a step after clean days, read nightly.
+    later(() => boss.createQueue(MAILBOX_RAMP_SWEEP));
+    later(() => boss.schedule(MAILBOX_RAMP_SWEEP, "0 5 * * *"));
+    later(() => boss.work(MAILBOX_RAMP_SWEEP, async () => sweepRamps(await connectedMailboxes(plugins.mailboxConnections()), now())));
     later(() => boss.createQueue(MAILBOX_POLLS));
     later(() => boss.schedule(MAILBOX_POLLS, "* * * * *"));
     // A pending Mailbox check finishes with the reply poll, which already reads that inbox.

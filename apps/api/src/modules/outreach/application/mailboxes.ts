@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// A Mailbox's pause. Too many of its emails bouncing for good stops it, so does its provider refusing
-// an email as abuse, and so can a person; only a person's resume starts it again, and what the pause
-// held then goes through every check again.
+// A Mailbox's pause and ramp. Too many of its emails bouncing for good stops it, so does its provider
+// refusing an email as abuse, and so can a person; only a person's resume starts it again, and what
+// the pause held then goes through every check again. A new Mailbox's ramp grows after clean days
+// and halves on any of those warnings, a person's pause aside.
 import type { Ledger } from "../../ledger";
 import { MAILBOX_PROBE, PLACEMENT_EFFECTS } from "../../plugins";
-import { clearPause, latestSends, pauseOf, pausedMailboxes, setPause } from "../adapters/pauses";
+import { clearPause, halveRampOf, latestSends, pauseOf, pausedMailboxes, rampOf, setPause, setRamp } from "../adapters/pauses";
 import { inWorkspace, type OutreachTx } from "../adapters/repo";
+import { sweepRamp } from "../domain/ramp";
 import { PAUSE_WINDOW, shouldPause } from "../domain/sending";
 
 export const MAILBOX_PAUSED = "mailbox_paused";
@@ -17,7 +19,9 @@ export const mailboxPaused = async (tx: OutreachTx, credentialId: string | null)
 export async function pauseOnBounces(tx: OutreachTx, credentialId: string, at: Date): Promise<void> {
   const state = await pauseOf(tx, credentialId);
   if (!state || state.pausedAt) return;
-  if (shouldPause(await latestSends(tx, credentialId, state.resumedAt, PAUSE_WINDOW))) await setPause(tx, credentialId, { reason: "bounces", by: null, at, resumedAt: state.resumedAt });
+  if (!shouldPause(await latestSends(tx, credentialId, state.resumedAt, PAUSE_WINDOW))) return;
+  await setPause(tx, credentialId, { reason: "bounces", by: null, at, resumedAt: state.resumedAt });
+  await halveRampOf(tx, credentialId, at);
 }
 
 // Every effect that sends an email from a Mailbox.
@@ -32,8 +36,30 @@ export const pauseOnProviderAbuse =
   (deps: { now: () => Date }) =>
   async (rawTx: unknown, action: { capability: string; credentialId: string | null }, limit: "sending_limit" | "abuse"): Promise<void> => {
     if (limit !== "abuse" || !action.credentialId || !MAIL_EFFECTS.has(action.capability.slice(action.capability.lastIndexOf("/") + 1))) return;
-    await setPause(rawTx as OutreachTx, action.credentialId, { reason: "provider_abuse", by: null, at: deps.now() });
+    const at = deps.now();
+    await setPause(rawTx as OutreachTx, action.credentialId, { reason: "provider_abuse", by: null, at });
+    await halveRampOf(rawTx as OutreachTx, action.credentialId, at);
   };
+
+/** The ledger's hook: a provider saying a Mailbox's email is over its sending limit halves the Mailbox's ramp. */
+export const slowOnSendingLimit =
+  (deps: { now: () => Date }) =>
+  async (rawTx: unknown, action: { capability: string; credentialId: string | null }, limit: "sending_limit" | "abuse"): Promise<void> => {
+    if (limit !== "sending_limit" || !action.credentialId || !MAIL_EFFECTS.has(action.capability.slice(action.capability.lastIndexOf("/") + 1))) return;
+    await halveRampOf(rawTx as OutreachTx, action.credentialId, deps.now());
+  };
+
+/** The nightly sweep: each Mailbox on a ramp grows a step after clean days, or starts them again after a bounce. */
+export async function sweepRamps(mailboxes: readonly { workspaceId: string; credentialId: string }[], now: Date): Promise<void> {
+  for (const m of mailboxes) {
+    await inWorkspace(m.workspaceId, async (tx) => {
+      const state = await rampOf(tx, m.credentialId);
+      if (!state) return;
+      const next = sweepRamp(state, now);
+      if (next.restart) await setRamp(tx, m.credentialId, next.ramp, now);
+    });
+  }
+}
 
 export function createMailboxPauses(deps: { ledger: () => Pick<Ledger, "resumeMailboxPaused">; now?: () => Date }) {
   const now = deps.now ?? (() => new Date());

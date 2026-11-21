@@ -680,6 +680,10 @@
     "0165_operator_holds.sql": {
       "sha256": "557f485d7364bbd3fa40fc1a5ec8876bdf8f3c3752da9a9fc00150e1fe919c13",
       "description": "Operator holds in schema system: a Workspace, Organization or deployment hold no member can lift, read by the Dispatcher through system.operator_hold_of, released by the worker after a lift, and set or lifted by the owner only"
+    },
+    "0166_mailbox_pause_provider_abuse.sql": {
+      "sha256": "89aa724013fd52b48ee55381890fbc6032788cb391513ba8085896219b4bd95a",
+      "description": "Adds provider_abuse to the Mailbox pause reasons, so a provider refusing an email as abuse pauses the Mailbox until a person resumes it"
     }
   }
 }

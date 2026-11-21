@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// A Mailbox's pause. Too many bounces pause it on their own, and anyone who edits can pause it by hand.
+// A Mailbox's pause. Too many bounces or its provider refusing an email as abuse pause it on their own,
+// and anyone who edits can pause it by hand.
 // Resuming lets what the pause held go, so only someone who approves sees Resume.
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -9,6 +10,7 @@ import { pausesQuery, setPaused } from "./actions";
 
 const WHY = {
   bounces: "Paused because 3 of its latest emails bounced. Nothing goes from it until someone resumes it, so check the addresses it sent to first.",
+  provider_abuse: "Paused because its email provider refused an email as spam or abuse. Nothing goes from it until someone resumes it, so check what it sent and to whom first.",
   person: "Paused by hand. Nothing goes from it until someone resumes it.",
 } as const;
 

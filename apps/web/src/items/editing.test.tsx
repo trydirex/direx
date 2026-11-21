@@ -47,12 +47,12 @@ afterEach(() => {
 });
 
 /** One Item; after a save it reads back as `after` says. */
-function serve(o: { item: () => Item; content?: unknown; appearance?: unknown }) {
+function serve(o: { item: () => Item; content?: unknown; appearance?: unknown; trackedLinks?: { url: string; destination: string }[] }) {
   vi.spyOn(api, "GET").mockImplementation(((path: string) => {
     const i = o.item();
     if (path === "/api/w/{workspaceId}/items") return reply(200, { items: [i], needsYouCount: 1 });
     if (path === "/api/w/{workspaceId}/review-rates") return reply(200, { decisions: 0, medianSeconds: null, changedShare: null, warning: false });
-    if (path === "/api/w/{workspaceId}/items/{id}") return reply(200, { item: i, content: o.content ?? EMAIL, timeline: [], ruleGrantedBy: null, appearance: o.appearance ?? null });
+    if (path === "/api/w/{workspaceId}/items/{id}") return reply(200, { item: i, content: o.content ?? EMAIL, timeline: [], ruleGrantedBy: null, appearance: o.appearance ?? null, trackedLinks: o.trackedLinks ?? [] });
     return reply(404, { error: "not_found" });
   }) as never);
   const put = vi.spyOn(api, "PUT").mockImplementation((() => reply(200, { ok: true })) as never);
@@ -60,6 +60,23 @@ function serve(o: { item: () => Item; content?: unknown; appearance?: unknown })
   return { put, post };
 }
 const panel = (role: Role = "marketer") => show(<ItemPanel workspaceId={W} id="i1" role={role} />);
+
+test("an email's tracked links show where each one goes, and an email without any shows no block", async () => {
+  const links = [
+    { url: "https://links.acme.test/t/AAAAAAAAAAAAAAAAAAAAAA", destination: "https://acme.example/pricing" },
+    { url: "https://links.acme.test/t/BBBBBBBBBBBBBBBBBBBBBB", destination: "https://xn--bcher-kva.example/a" },
+  ];
+  serve({ item: () => item(), trackedLinks: links });
+  panel();
+  const block = await screen.findByRole("region", { name: "Tracked links" });
+  expect(within(block).getAllByRole("listitem").map((li) => li.textContent)).toEqual(links.map((l) => `${l.url}Goes to ${l.destination}`));
+  cleanup();
+  vi.restoreAllMocks();
+  serve({ item: () => item() });
+  panel();
+  await screen.findByRole("region", { name: "Email" });
+  expect(screen.queryByRole("region", { name: "Tracked links" })).toBeNull();
+});
 
 test("the footer is left out of what a person edits", () => {
   expect(withoutFooter(EMAIL.text)).toBe("Hi Kim,\nWe do bookkeeping.");

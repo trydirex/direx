@@ -302,8 +302,16 @@ export async function newestReservationFor(tx: WorkspaceTx, actionId: string): P
   return row;
 }
 
-export async function insertReservation(tx: WorkspaceTx, r: { workspaceId: string; actionId: string; day: string; slot: Date; createdAt: Date } & Account): Promise<void> {
-  await tx.insert(socialReservations).values(r);
+export async function insertReservation(tx: WorkspaceTx, r: { workspaceId: string; actionId: string; day: string; slot: Date } & Account): Promise<void> {
+  // Keep the order of reservations under the account lock, even if a worker or the database clock moved backward.
+  await tx.insert(socialReservations).values({
+    ...r,
+    createdAt: sql`greatest(clock_timestamp(), (
+      select max(${socialReservations.createdAt}) + interval '1 microsecond'
+      from ${socialReservations}
+      where ${socialReservations.workspaceId} = ${r.workspaceId} and ${socialReservations.actionId} = ${r.actionId}
+    ))`,
+  });
 }
 
 // --- Pace settings (ADR 0038) ---

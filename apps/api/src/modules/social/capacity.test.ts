@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // A post's place on its Social account's day (ADR 0038): placed inside the account's hours and gap,
 // counted against its budget, refused to a person on a spent day, and safe under many writers.
-import { closeDb } from "@direx/db";
-import { closeAuthDb } from "@direx/db/auth";
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { appClient } from "../../../../../test/db";
 import { createVault, credentialLabel, rootKeyFromEnv } from "../credentials/index";
 import { routeCapacity } from "../items/index";
@@ -52,6 +50,10 @@ async function world() {
 // The world's clock starts on Monday 2026-11-02 at 09:00 UTC, and the Workspace is on UTC.
 const tomorrow = (h: number, m = 0) => new Date(Date.UTC(2026, 10, 3, h, m));
 const today = (h: number, m = 0) => new Date(Date.UTC(2026, 10, 2, h, m));
+
+// Set the bound before the first fixture opens the shared app pool.
+beforeAll(() => { vi.stubEnv("DIREX_DB_POOL_MAX", "2"); });
+afterAll(() => { vi.unstubAllEnvs(); });
 
 describe("a Social account's day", () => {
   it("places a step's posts on the wanted day inside the hours, apart by the gap and never on a quarter hour", async () => {
@@ -119,6 +121,24 @@ describe("a Social account's day", () => {
     await w.done();
   });
 
+  it("supersedes a reservation written by a worker with a clock ahead", async () => {
+    const w = await world();
+    const post = await w.post(tomorrow(12), "exact");
+    const id = await actionIdOf(w.W, post.id);
+    try {
+      await w.q(`insert into social_reservations (workspace_id, action_id, credential_id, network_id, day, slot, created_at)
+        select workspace_id, action_id, credential_id, network_id, day, slot, clock_timestamp() + interval '1 hour'
+        from social_reservations where action_id = $1`, [id]);
+      expect(await w.items.moveItem(w.W, post.id, today(14), person)).toMatchObject({ ok: true });
+      expect(await w.q("select day from social_reservations where action_id = $1 order by created_at desc limit 1", [id]))
+        .toEqual([{ day: "2026-11-02" }]);
+      const other = await w.submit(await w.post(tomorrow(14), "exact"));
+      expect(await w.items.moveItem(w.W, other.id, today(17), person)).toMatchObject({ ok: false, reason: "account_day_full" });
+    } finally {
+      await w.done();
+    }
+  });
+
   it("keeps a placed post where it is when a launch moves it by a day", async () => {
     const w = await world();
     const placed = await w.post(tomorrow(8));
@@ -155,9 +175,6 @@ describe("a Social account's day", () => {
     await w.post(new Date(w.clock.at.getTime() + HOUR), "exact");
     // This fixture has no publishing effect; start at the late hold the dispatcher would record.
     await w.q("update actions set state = 'held', hold_reason = 'late', next_attempt_at = null where id = any($1::uuid[])", [ids]);
-    await closeAuthDb();
-    await closeDb();
-    vi.stubEnv("DIREX_DB_POOL_MAX", "2");
     try {
       const results = await Promise.all(posts.map((post) => w.items.resume(w.W, post.id, person)));
       expect(results.every((result) => result.ok)).toBe(true);
@@ -171,9 +188,6 @@ describe("a Social account's day", () => {
       );
       expect(touches.map((row) => row.slot)).toEqual(expect.arrayContaining(slots));
     } finally {
-      vi.unstubAllEnvs();
-      await closeAuthDb();
-      await closeDb();
       await w.done();
     }
   });

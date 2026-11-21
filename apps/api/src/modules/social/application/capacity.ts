@@ -86,8 +86,7 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
       const used = (await countedAround(tx, a, on, now, actionId)).filter((r) => r.day === on).length;
       if (used >= limit) return { kind: "full", day: on, limit, reason: "account_day_full" };
     }
-    // Wall time, not the caller's clock: it orders an Action's reservations.
-    await insertReservation(tx, { workspaceId, actionId, ...a, day: on, slot, createdAt: new Date() });
+    await insertReservation(tx, { workspaceId, actionId, ...a, day: on, slot });
     return { kind: "reserved", day: on };
   }
 

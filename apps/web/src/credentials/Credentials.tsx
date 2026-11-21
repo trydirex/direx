@@ -192,7 +192,9 @@ export function Credentials(p: { workspace: S["MyWorkspace"]; me: string; tab?: 
       workspaceId={workspace.id}
       provider={gmail}
       app={credentials.data?.find((c) => c.scope === "workspace" && c.key === GMAIL_APP)}
-      accounts={credentials.data?.filter((c) => c.kind === "oauth2" && c.connection === GMAIL).length ?? 0}
+      // Only working accounts would newly need reconnecting; ones already waiting are counted apart.
+      accounts={credentials.data?.filter((c) => c.kind === "oauth2" && c.connection === GMAIL && c.status === "active").length ?? 0}
+      waiting={credentials.data?.filter((c) => c.kind === "oauth2" && c.connection === GMAIL && c.status === "needs_reauth").length ?? 0}
       manage={manage}
       settle={settle}
     />
@@ -421,7 +423,7 @@ const GMAIL_APP = `oauth_app:${GMAIL}`;
  * Workspace's own. A token works only with the app that issued it, so before any of the three, with
  * Gmail accounts connected, the page says each will need reconnecting. The secret is never shown.
  */
-function GmailApp(p: { workspaceId: string; provider?: MailboxProvider; app?: Credential; accounts: number; manage: boolean; settle: Settle }) {
+function GmailApp(p: { workspaceId: string; provider?: MailboxProvider; app?: Credential; accounts: number; waiting: number; manage: boolean; settle: Settle }) {
   const { workspaceId, app, manage, accounts } = p;
   const [ask, setAsk] = useState<{ confirm: string; act: () => Promise<string | null> }>();
   const going = useAction();
@@ -461,6 +463,8 @@ function GmailApp(p: { workspaceId: string; provider?: MailboxProvider; app?: Cr
       ) : (
         <>
           {!p.provider && <p className="text-muted-foreground">{manage ? "Gmail can't connect until a Google app is set up." : "Gmail can't connect until an Owner or Admin sets up a Google app."}</p>}
+          {/* A Gmail account marked "Reconnect needed" has no way back until an app exists; say so here. */}
+          {!p.provider && p.waiting > 0 && <p className="text-muted-foreground">{p.waiting === 1 ? "Your Gmail account that needs reconnecting can reconnect once one is." : "Your Gmail accounts that need reconnecting can reconnect once one is."}</p>}
           {manage && <Wizard label="Google Cloud" title="Use your own Google app" wizard={steps} save={(f) => first("Save", () => create(f))} />}
         </>
       )}
@@ -530,7 +534,12 @@ function Actions({ workspaceId, c, mayChange, mayRotate, settle }: Can) {
         {mayChange && (
           <Confirm
             title={`${c.kind === "oauth2" ? "Disconnect" : "Delete"} ${c.name}?`}
-            body="Direx can't use it after this. Anything that needs it waits until it's connected again."
+            body={
+              // The Gmail app is also managed beside Connect Gmail; deleting it here reconnects Gmail the same way.
+              c.key === GMAIL_APP
+                ? "Gmail falls back to the server's Google app, if there is one, and each Gmail account needs reconnecting once. Until each one is, its scheduled email waits."
+                : "Direx can't use it after this. Anything that needs it waits until it's connected again."
+            }
             confirm={c.kind === "oauth2" ? "Disconnect" : "Delete"}
             onConfirm={async () => settle(await remove(workspaceId, c.id))}
             trigger={

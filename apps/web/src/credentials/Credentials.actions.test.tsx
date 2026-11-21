@@ -455,6 +455,25 @@ test("with its own app, Gmail says so and still offers Connect when the server h
   expect(screen.queryByText("Change")).toBeNull();
 });
 
+test("a Gmail account already waiting to reconnect isn't counted again, and the page says it can reconnect once an app is set", async () => {
+  serve({ providers: [], existingProviders: [google], credentials: [{ ...gmailAccount("cy"), status: "needs_reauth" }] });
+  const post = vi.spyOn(api, "POST").mockImplementation(ok as never);
+  as("owner");
+  expect(await screen.findByText("Your Gmail account that needs reconnecting can reconnect once one is.")).toBeTruthy();
+  // No working account would newly need reconnecting, so Save goes straight through.
+  await fillWizard("Use your own Google app");
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(screen.queryByRole("region", { name: "Gmail accounts to reconnect" })).toBeNull();
+});
+
+test("deleting the Gmail app under Advanced says Gmail falls back and its accounts reconnect", async () => {
+  serve({ providers: [{ ...google, app: "own" }], existingProviders: [google], credentials: [gmailApp, gmailAccount("ana")] });
+  as("owner");
+  await userEvent.click(await screen.findByText("Advanced: API keys"));
+  await userEvent.click(await screen.findByRole("button", { name: "Delete Gmail app" }));
+  expect(await screen.findByText("Gmail falls back to the server's Google app, if there is one, and each Gmail account needs reconnecting once. Until each one is, its scheduled email waits.")).toBeTruthy();
+});
+
 test("Remove warns about the Gmail account, deletes the own app, and then says Gmail can't connect until an app is set", async () => {
   const { data } = serve({ providers: [{ ...google, app: "own" }], existingProviders: [google], credentials: [gmailApp, gmailAccount("ana")] });
   const del = vi.spyOn(api, "DELETE").mockImplementation(ok as never);

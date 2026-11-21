@@ -12,6 +12,7 @@ import { contactSummaries, countReplies, suppressionReasons, emailForToken, elig
 import { eligibilityWarnings, notEligible, type Basis, type Confidence, type EntityType } from "../domain/eligibility";
 import { isPublicHttps, optOutFooter } from "../domain/footer";
 import type { Models } from "../../models/index";
+import { fixLinks, recordUses, type TrackingInput } from "../../tracking/index";
 import { mailboxHold } from "./header-check";
 import { resultLines } from "./results";
 import { holdOf, holdResult, holdView } from "./holds";
@@ -67,6 +68,8 @@ export type Compose = {
   snapshot?: SnapshotEntry[] | undefined;
   /** False keeps it a draft, for an email a person must change before anyone can approve it. */
   submit?: boolean | undefined;
+  /** A Campaign step's email: its links become tracked links while the Campaign tracks them. */
+  tracking?: TrackingInput | undefined;
 };
 export type Composed = { ok: true; item: ItemView } | { ok: false; reason: "sender_identity_missing" | "person_not_found" | "credential_not_found" | "mailbox_replies_only" };
 
@@ -119,7 +122,9 @@ export function createOutreach(deps: OutreachDeps) {
 
     const base = deps.baseUrl();
     const url = isPublicHttps(base) ? `${base}/api/unsubscribe/${workspaceId}/${token}` : null;
-    const text = `${a.text}\n\n${optOutFooter({ senderName: found.senderName, postalAddress: found.postalAddress, unsubscribeUrl: url })}`;
+    // Only the person's text carries tracked links; the footer and its unsubscribe link never do.
+    const links = a.tracking ? await fixLinks(workspaceId, { ...a.tracking, personId: a.personId, text: a.text, now: at }) : null;
+    const text = `${links?.text ?? a.text}\n\n${optOutFooter({ senderName: found.senderName, postalAddress: found.postalAddress, unsubscribeUrl: url, trackedPerRecipient: links?.perRecipient ?? false })}`;
     const { spec } = await send.prepare(workspaceId, { to: [found.email], subject: a.subject, text, ...(url ? { listUnsubscribe: url } : {}) });
     const snapshot: SnapshotEntry[] = [...(a.snapshot ?? []), ...(send.version ? [{ kind: "capability", id: send.id, version: send.version }] : [])];
     return {
@@ -127,6 +132,7 @@ export function createOutreach(deps: OutreachDeps) {
       a,
       send,
       token: { hash: hash(token), email: found.email, at },
+      links,
       spec: Object.assign({}, spec, { touch: { personId: a.personId, touchClass: a.touchClass, ...(found.subscriber ? { newsletterSubscriber: true } : {}) } }),
       details: { title: a.subject, workArea: "outreach", channel: "email", plannedAt: a.plannedAt ?? null, warnings, groupKey: a.groupKey, groupLabel: a.groupLabel, snapshot },
     } as const;
@@ -148,14 +154,20 @@ export function createOutreach(deps: OutreachDeps) {
       actor,
       details: p.details,
     });
-    if (made.created) await insertToken(tx, workspaceId, p.token.hash, p.token.email, p.token.at);
+    if (made.created) {
+      await insertToken(tx, workspaceId, p.token.hash, p.token.email, p.token.at);
+      if (p.links) await recordUses(tx, workspaceId, made.item.id, p.links, p.token.at);
+    }
     return made;
   }
 
   /** New text under the same Action, in the caller's transaction. Any approval it had is void. */
   async function reviseIn(tx: OutreachTx, workspaceId: string, itemId: string, p: Prepared, actor: Actor) {
     const r = await deps.items().reviseActionItemIn(tx, workspaceId, itemId, { spec: p.spec, actor, details: p.details });
-    if (r.ok) await insertToken(tx, workspaceId, p.token.hash, p.token.email, p.token.at);
+    if (r.ok) {
+      await insertToken(tx, workspaceId, p.token.hash, p.token.email, p.token.at);
+      if (p.links) await recordUses(tx, workspaceId, itemId, p.links, p.token.at);
+    }
     return r;
   }
 

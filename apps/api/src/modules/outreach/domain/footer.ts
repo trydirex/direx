@@ -22,7 +22,10 @@ export function isPublicHttps(url: string): boolean {
   return host.includes(".");
 }
 
+/** Said by an email whose links carry a per-Person token, and by no other (ADR 0035 rule 013). */
+export const TRACKED_PER_RECIPIENT = "Links in this email are tracked per recipient to measure engagement.";
+
 /** The footer, the same for a cold email and for the probe that tests a Mailbox. */
-export function optOutFooter(a: { senderName: string; postalAddress: string; unsubscribeUrl: string | null }): string {
-  return `--\n${a.senderName}\n${a.postalAddress}\n${REPLY_STOP}${a.unsubscribeUrl ? `\nUnsubscribe: ${a.unsubscribeUrl}` : ""}`;
+export function optOutFooter(a: { senderName: string; postalAddress: string; unsubscribeUrl: string | null; trackedPerRecipient?: boolean }): string {
+  return `--\n${a.senderName}\n${a.postalAddress}\n${a.trackedPerRecipient ? `${TRACKED_PER_RECIPIENT}\n` : ""}${REPLY_STOP}${a.unsubscribeUrl ? `\nUnsubscribe: ${a.unsubscribeUrl}` : ""}`;
 }

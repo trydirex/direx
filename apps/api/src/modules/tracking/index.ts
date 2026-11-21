@@ -3,4 +3,5 @@
 // edge's question about them, served on an internal port.
 export { systemDns, type DnsLookup } from "./adapters/dns";
 export { createTrackingDomains, type TrackingDomains } from "./application/domains";
+export { fixLinks, recordUses, type FixedLinks, type TrackingInput } from "./application/links";
 export { trackingAskApp, trackingRoutes } from "./routes";

@@ -15,8 +15,19 @@ const HOUR = 3_600_000;
 // Two connections for this file's pool: a writer that waits for a second one while it holds the account lock stalls.
 process.env.DIREX_DB_POOL_MAX = "2";
 
-async function world() {
-  const capacity = routeCapacity((c) => (c.endsWith("/social.publish") ? socialCapacity({ networks: () => [{ connection: "testnet", pace: PACE }] }) : undefined));
+async function world(beforePlacement?: (wanted: Date) => Promise<void>) {
+  const posts = socialCapacity({ networks: () => [{ connection: "testnet", pace: PACE }] });
+  const capacity = routeCapacity((c) => c.endsWith("/social.publish") ? {
+    ...posts,
+    reserveAutomatic: async (...args) => {
+      await beforePlacement?.(args[2]);
+      return posts.reserveAutomatic!(...args);
+    },
+    reserveAutomaticIn: async (...args) => {
+      await beforePlacement?.(args[3]);
+      return posts.reserveAutomaticIn!(...args);
+    },
+  } : undefined);
   const w = await itemsWorld({ resolvers: { credential: credentialLabel }, capacity });
   const vault = createVault({ rootKey: rootKeyFromEnv({ DIREX_MASTER_KEY: "11".repeat(32) })!, now: () => w.clock.at });
   const made = await vault.create({ workspaceId: w.W, actorUserId: person.userId, scope: "workspace", kind: "api_key", key: "page", name: "Page", meta: {}, value: { key: "x" } });
@@ -144,6 +155,54 @@ describe("a Social account's day", () => {
     expect(await w.items.redateItem(w.W, placed.id, dayLater, person)).toMatchObject({ ok: true });
     expect(await w.reserved("2026-11-04")).toEqual([dayLater]);
     await w.done();
+  });
+
+  it("keeps approval when automatic redating returns the same slot", async () => {
+    const w = await world();
+    try {
+      const wanted = tomorrow(8);
+      const post = await w.submit(await w.post(wanted));
+      expect(post.at!.getTime()).toBeGreaterThan(wanted.getTime());
+      expect(await w.items.approve(w.W, post.id, post.revision, w.who)).toMatchObject({ ok: true });
+      const id = await actionIdOf(w.W, post.id);
+      expect(await w.items.redateItem(w.W, post.id, wanted, person)).toEqual({ ok: true, kept: true, backToApproval: false, overCap: false });
+      expect(await w.ledger.getAction(w.W, id)).toMatchObject({ state: "scheduled", dueAt: post.at });
+      expect(await w.reserved("2026-11-03")).toEqual([post.at]);
+    } finally {
+      await w.done();
+    }
+  });
+
+  it("rechecks approval when a concurrent redate moves the old slot later", async () => {
+    const wanted = tomorrow(8);
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const w = await world(async (slot) => {
+      if (slot.getTime() === wanted.getTime()) {
+        entered.resolve();
+        await release.promise;
+      }
+    });
+    try {
+      const post = await w.submit(await w.post(wanted));
+      expect(await w.items.approve(w.W, post.id, post.revision, w.who)).toMatchObject({ ok: true });
+      const actionId = await actionIdOf(w.W, post.id);
+      const earlier = w.items.redateItem(w.W, post.id, wanted, person);
+      try {
+        await Promise.race([entered.promise, earlier.then(() => { throw new Error("redate did not reach placement"); })]);
+        expect(await w.items.redateItem(w.W, post.id, tomorrow(16), person)).toMatchObject({ ok: true, kept: true });
+        expect((await w.ledger.getAction(w.W, actionId))!.dueAt!.getTime()).toBeGreaterThan(post.at!.getTime());
+      } finally {
+        release.resolve();
+        await earlier;
+      }
+      expect(await earlier).toEqual({ ok: true, kept: false, backToApproval: true, overCap: false });
+      expect(await w.items.detail(w.W, post.id)).toMatchObject({ item: { state: "needs_approval", at: post.at } });
+      expect(await w.ledger.getAction(w.W, actionId)).toMatchObject({ state: "needs_approval", dueAt: null });
+      expect(await w.reserved("2026-11-03")).toEqual([post.at]);
+    } finally {
+      await w.done();
+    }
   });
 
   it("leaves an approved post on its original schedule when the redate day is full", async () => {

@@ -103,11 +103,13 @@ const signedInRoute = createRoute({
     }, [options.isPending]);
     const invite = useRouterState({ select: (s) => s.location.pathname.startsWith("/invite/") });
     const claim = useRouterState({ select: (s) => /^\/claim(?:\/|$)/.test(s.location.pathname) });
-    // A Workspace invite's or the bootstrap link's token, held for sign-up (ADR 0024).
-    const inviteToken = useRouterState({ select: (s) => /^\/(?:invite\/[^/]+|claim)\/([0-9a-f]{64})$/.exec(s.location.pathname)?.[1] });
-    // Sign-in mails its return path in confirmation and magic links, so the bootstrap token must not
-    // be in it (DX-R-0024-005). /claim reads the token from the cookie held above.
-    const callbackURL = claim ? "/claim" : here();
+    const signup = useRouterState({ select: (s) => s.location.pathname.startsWith("/signup/") });
+    // A Workspace invite's, the bootstrap link's or a sign-up link's token, held for sign-up (ADR 0024).
+    const inviteToken = useRouterState({ select: (s) => /^\/(?:invite\/[^/]+|claim|signup)\/([0-9a-f]{64})$/.exec(s.location.pathname)?.[1] });
+    // Sign-in mails its return path in confirmation and magic links, so the bootstrap token and a
+    // sign-up code must not be in it (DX-R-0024-005). /claim reads the token from the cookie held
+    // above; a sign-up code has done its work once the account exists.
+    const callbackURL = claim ? "/claim" : signup ? "/" : here();
     // Outside the shell, so the loading and error states get their own margin.
     if (me.data === undefined || (me.data === null && options.isPending && !optionsTimedOut)) {
       return (
@@ -127,10 +129,12 @@ const signedInRoute = createRoute({
     // A server with no accounts yet opens on sign-up, or explains the bootstrap link (ADR 0024). A slow
     // or failed answer leaves firstRun unset, so a server with people on it always shows sign-in.
     const firstRun = options.data?.firstRun;
-    if (firstRun === "sign_up") return <SignIn callbackURL={callbackURL} inviteToken={claim ? inviteToken : undefined} initialMode="sign_up" offerSignUp />;
+    if (firstRun === "sign_up") return <SignIn callbackURL={callbackURL} inviteToken={claim || signup ? inviteToken : undefined} initialMode="sign_up" offerSignUp />;
     if (firstRun === "needs_link" && claim)
       return <SignIn signUpTitle="Set up Direx" note="Sign up to become this server's first Server admin." callbackURL={callbackURL} inviteToken={inviteToken} initialMode="sign_up" offerSignUp />;
     if (firstRun === "needs_link" && !invite) return <NotSetUp />;
+    // A sign-up link, as a server whose Admission takes sign-up codes hands out, opens on sign-up.
+    if (signup) return <SignIn callbackURL={callbackURL} inviteToken={inviteToken} initialMode="sign_up" offerSignUp />;
     return <SignIn title={invite ? "Sign in to accept your invite" : claim ? "Sign in to claim this server" : undefined} callbackURL={callbackURL} inviteToken={inviteToken} offerSignUp />;
   },
 });
@@ -216,6 +220,13 @@ const heldClaimRoute = createRoute({
   component: function HeldClaimRoute() {
     return <ClaimServer email={useContext(MeContext)!.email} onClaimed={() => location.assign("/new-org")} />;
   },
+});
+
+/** A sign-up link opened by someone already signed in: the code only counts at sign-up, so go on in. */
+const signupRoute = createRoute({
+  getParentRoute: () => signedInRoute,
+  path: "/signup/$code",
+  component: () => <Navigate to="/" replace />,
 });
 
 const newOrgRoute = createRoute({
@@ -802,6 +813,7 @@ export const routeTree = rootRoute.addChildren([
     inviteRoute,
     claimRoute,
     heldClaimRoute,
+    signupRoute,
     newOrgRoute,
     serverRoute,
     addPasswordRoute,

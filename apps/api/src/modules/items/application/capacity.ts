@@ -2,7 +2,7 @@
 // Where an Action planned for a time takes its place (ADR 0038). Every path that sets a time calls
 // this port; the composition root decides which account each capability counts against. Without one,
 // only Mailboxes count, as ADR 0019 set out.
-import { nextMailboxTime, reserveMailbox, reserveMailboxIn, type MailboxReserveResult } from "../../schedule";
+import { nextMailboxTime, nextMailboxTimeIn, reserveMailbox, reserveMailboxIn, type MailboxReserveResult } from "../../schedule";
 import { inWorkspace, itemIdByAction, readItem, type ItemsTx } from "../adapters/repo";
 import type { Warning } from "../domain/warnings";
 
@@ -21,12 +21,18 @@ export type CapacityResult = MailboxReserveResult | { kind: "full"; day: string;
 /** `lock` runs before the account's own lock, `check` once the slot is placed, both in its transaction. */
 export type SlotCheck = { lock(tx: ItemsTx): Promise<void>; check(tx: ItemsTx, slot: Date): Promise<"ok" | "unavailable" | "not_found"> };
 
+type AutomaticPlacement = { slot: Date; result: CapacityResult | { kind: "unavailable" } };
+
 export type CapacityPort = {
   placeIn(tx: ItemsTx, workspaceId: string, t: PlaceTarget, now: Date): Promise<Placed>;
   reserveIn(tx: ItemsTx, workspaceId: string, actionId: string, slot: Date, now: Date): Promise<CapacityResult>;
   reserve(workspaceId: string, actionId: string, slot: Date, opts?: { now?: Date }): Promise<CapacityResult>;
   /** Atomically place and reserve, optionally locking first and checking the slot in the same transaction before inserting. Undefined uses the usual flow. */
-  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<{ slot: Date; result: CapacityResult | { kind: "unavailable" } } | undefined>;
+  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<AutomaticPlacement | undefined>;
+  reserveAutomaticIn?(tx: ItemsTx, workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<AutomaticPlacement | undefined>;
+  forAction?(workspaceId: string, actionId: string): Promise<CapacityPort>;
+  /** Find room while holding the account lock until the caller finishes reserving. */
+  nextTimeIn?(tx: ItemsTx, actionId: string, from: Date, now: Date): Promise<Date | null>;
   nextTime(workspaceId: string, actionId: string, from: Date, opts?: { now?: Date }): Promise<Date | null>;
 };
 
@@ -36,6 +42,7 @@ export const mailboxCapacity: CapacityPort = {
   reserveIn: reserveMailboxIn,
   reserve: reserveMailbox,
   nextTime: nextMailboxTime,
+  nextTimeIn: nextMailboxTimeIn,
 };
 
 /** The capability behind an Action, read through its Item. */
@@ -55,6 +62,7 @@ export function routeCapacity(route: (capability: string) => CapacityPort | unde
     reserveIn: async (tx, workspaceId, actionId, slot, now) => (await pick(tx, actionId)).reserveIn(tx, workspaceId, actionId, slot, now),
     reserve: async (workspaceId, actionId, slot, opts) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).reserve(workspaceId, actionId, slot, opts),
     reserveAutomatic: async (workspaceId, actionId, wanted, now, checkSlot) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).reserveAutomatic?.(workspaceId, actionId, wanted, now, checkSlot),
+    forAction: (workspaceId, actionId) => inWorkspace(workspaceId, (tx) => pick(tx, actionId)),
     nextTime: async (workspaceId, actionId, from, opts) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).nextTime(workspaceId, actionId, from, opts),
   };
 }

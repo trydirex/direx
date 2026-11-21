@@ -1,6 +1,11 @@
 [
   {
     "kind": "queue",
+    "name": "agents.drift_check",
+    "options": null
+  },
+  {
+    "kind": "queue",
     "name": "agents.run",
     "options": {
       "retryLimit": 5,
@@ -225,6 +230,14 @@
   },
   {
     "kind": "schedule",
+    "name": "agents.drift_check",
+    "cron": "0 5 * * *",
+    "options": {
+      "data": null
+    }
+  },
+  {
+    "kind": "schedule",
     "name": "campaigns.readings_sweep",
     "cron": "0 6 * * *",
     "options": {
@@ -390,6 +403,11 @@
     "options": {
       "data": null
     }
+  },
+  {
+    "kind": "work",
+    "name": "agents.drift_check",
+    "options": null
   },
   {
     "kind": "work",

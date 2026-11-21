@@ -73,12 +73,12 @@ test("the wizard shows the callback URL and scopes, and takes the secret in a pa
   expect(owner).toMatch(/<input(?=[^>]*type="password")(?=[^>]*autoComplete="new-password")(?=[^>]*required="")(?=[^>]*value="")[^>]*>/);
   const marketer = page("marketer", { networks });
   expect(marketer).not.toContain("Client secret");
-  expect(marketer).toContain("An Owner or Admin can set this up");
+  expect(marketer).toContain("An Owner or Admin can set these up");
 });
 
 test("a network waiting on the person's own app says so, and its wizard names the console and warns about the callback URL", () => {
   const plain = text(page("owner", { networks: [net({ canConnect: false, app: null, wizard })] }));
-  expect(plain).toMatch(/Net\s+Set up your own app to connect/);
+  expect(plain).toMatch(/Set up with your own app\s+This server connects these networks/);
   expect(plain).not.toContain("Waiting for the network to approve Direx");
   expect(plain).toMatch(/Open the\s+Net developer console/);
   expect(plain).not.toContain("https callback URL");

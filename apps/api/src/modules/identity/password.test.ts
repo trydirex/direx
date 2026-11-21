@@ -153,10 +153,11 @@ test("outside dev, repeated sign-in attempts from one address are rate limited",
 });
 
 test("the sign-in rate limit counts in the database, so every API process sees the same attempts", async () => {
-  const ip = `203.0.113.${Math.floor(Math.random() * 250) + 1}`;
+  const ip = "203.0.113.251"; // Outside the range used by the other rate limit tests.
   const key = `${ip}|/sign-in/email`;
   const owner = await ownerClient();
   try {
+    await owner.query("delete from auth.rate_limit where key = $1", [key]);
     expect((await signIn(prod, newEmail(), "wrong password here", ip)).status).toBe(401);
     const { rows } = await owner.query<{ count: number; last_request: string }>("select count, last_request from auth.rate_limit where key = $1", [key]);
     expect(rows).toHaveLength(1);

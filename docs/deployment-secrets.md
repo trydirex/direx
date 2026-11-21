@@ -37,7 +37,7 @@ Every read of a value writes an access event.
 | `media.s3` | Object storage for uploaded files. See below. | At the next start |
 | `signin.google`, `signin.microsoft` | The client secret of the OAuth app people sign in with. Its client id stays in `DIREX_GOOGLE_CLIENT_ID` or `DIREX_MICROSOFT_CLIENT_ID`. | At the next start |
 | `provider.anthropic`, `provider.openai`, `provider.google`, `provider.openrouter` | A model provider API key. | On the next model call |
-| `social_app.<network>` | A social network's app, as `<client id>:<client secret>`. | The next time it's needed |
+| `social_app.<network>` | A network's app, as `<client id>:<client secret>`. `social_app.google` is the app Gmail Mailboxes connect through. | The next time it's needed |
 
 The server reads `auth.secret`, `smtp.url`, `media.s3` and the two `signin` secrets once, when it
 starts, so restart it after changing any of them.
@@ -62,6 +62,23 @@ sign-ins instead.
 A `social_app.<network>` value is used when a Workspace hasn't added its own app for that network.
 The network name uses lowercase letters, digits, `_` and `-`, up to 40 characters. The client id
 can't contain a colon.
+
+### Gmail's mailbox app
+
+`social_app.google` is the server's app for Gmail Mailboxes, kept apart from the app people sign in
+with. Gmail uses a Workspace's own Google app first, then `social_app.google`, then the sign-in app
+(`DIREX_GOOGLE_CLIENT_ID` with `signin.google`). Without `social_app.google`, a Workspace with no
+app of its own uses the sign-in app, as before. [Your own Google app](mailboxes.md#your-own-google-app)
+has the Google Cloud steps; the same steps make this app. Then store it:
+
+```
+printf %s "$CLIENT_ID:$CLIENT_SECRET" | bun apps/api/src/secrets.ts set social_app.google
+```
+
+Set it before any Gmail Mailbox connects. A refresh token works only with the app that issued it, so
+once `social_app.google` is set, each Gmail Mailbox that connected through the sign-in app stops
+refreshing and needs reconnecting once, unless its Workspace has its own app. Until it is
+reconnected, its scheduled email waits.
 
 ### Notion's sign-in
 

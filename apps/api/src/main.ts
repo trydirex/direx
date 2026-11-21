@@ -119,8 +119,8 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
   const getVault = (): Vault =>
     (vault ??= vaultFromEnv(identity.config(), async (ws, id) => worker()?.resumeHeld(ws, id), {
       appProviders: [...socialProviders(), NOTION_OAUTH_PROVIDER],
-      googleApps: [GOOGLE_PROVIDER],
-      googleAppProviders: [GOOGLE_SEARCH_CONSOLE_PROVIDER],
+      // Gmail and Search Console each use the Workspace's own Google app, then the server's app for that connection, then the sign-in pair.
+      googleAppProviders: [GOOGLE_PROVIDER, GOOGLE_SEARCH_CONSOLE_PROVIDER],
       identify: (ws, connection, token) => social.identify(ws, connection, token),
     }));
   const social = createSocial({
@@ -155,8 +155,18 @@ export function createApp({ worker, deployment, admission: supplied, mediaStore,
       // Links connect social accounts only; a Mailbox is connected where its owner is signed in.
       linkNetwork: (connection) => socialNetworks().find((n) => n.connection === connection)?.label,
       mailboxes: {
-        // Connecting Gmail uses the Google sign-in client, so without one it isn't offered.
-        providers: () => mailboxProviders().filter((p) => p.deployments.includes(deploymentFromEnv()) && (p.connect !== "oauth" || !!identity.config().google)),
+        // An OAuth provider is offered only where some app can connect it, and says whose.
+        providers: async (workspaceId) => {
+          const here = mailboxProviders().filter((p) => p.deployments.includes(deploymentFromEnv()));
+          const offered = await Promise.all(
+            here.map(async (p) => {
+              if (p.connect !== "oauth") return p;
+              const app = await getVault().appSource(workspaceId, p.connection);
+              return app && { ...p, app };
+            }),
+          );
+          return offered.filter((p) => !!p);
+        },
         eligibleProviders: () => mailboxProviders().filter((p) => p.deployments.includes(deploymentFromEnv())),
         check: (workspaceId, connection, credential) => need(worker()?.checkMailbox, "Mailbox check")(workspaceId, connection, credential),
         probe: (workspaceId, credentialId, member, wordingVersion) => headerChecks.start(workspaceId, credentialId, { approverId: approverFromMember(member), userId: member.userId, may: (p) => can(member.role, p as Permission), wordingVersion }),

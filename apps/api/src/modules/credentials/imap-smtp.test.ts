@@ -46,8 +46,8 @@ await ledger.ensureQueue();
 const cutOffLedger = ledgerOf(cutOff.effects);
 
 const offered = mailboxProviders();
-const onSelfHost = { providers: () => offered.filter((p) => p.deployments.includes("self_host")), eligibleProviders: () => offered.filter((p) => p.deployments.includes("self_host")), check: plugins.checkMailbox };
-const onCloud = { providers: () => offered.filter((p) => p.deployments.includes("cloud")), eligibleProviders: () => offered.filter((p) => p.deployments.includes("cloud")), check: plugins.checkMailbox };
+const onSelfHost = { providers: async () => offered.filter((p) => p.deployments.includes("self_host")), eligibleProviders: () => offered.filter((p) => p.deployments.includes("self_host")), check: plugins.checkMailbox };
+const onCloud = { providers: async () => offered.filter((p) => p.deployments.includes("cloud")), eligibleProviders: () => offered.filter((p) => p.deployments.includes("cloud")), check: plugins.checkMailbox };
 const { call, workspace } = testApp(vault, "http://direx.test", onSelfHost);
 const cloud = testApp(vault, "http://direx.test", onCloud);
 const { ws: W, owner } = await workspace();

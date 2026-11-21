@@ -156,6 +156,11 @@ export async function updateLive(
   return row ?? null;
 }
 
+/** Serialize app changes with callback persistence, including when there is no app row to lock. */
+export async function lockWorkspaceApp(tx: WorkspaceTx, workspaceId: string, connection: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${JSON.stringify(["oauth-app", workspaceId, connection])}, 0))`);
+}
+
 /** Every live, active token for one connection in this Workspace now needs a person to reconnect it. */
 export async function markConnectionNeedsReauth(tx: WorkspaceTx, workspaceId: string, connection: string, at: Date) {
   await tx

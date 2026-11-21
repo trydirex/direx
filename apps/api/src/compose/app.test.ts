@@ -62,6 +62,32 @@ test("Gmail is offered as a Mailbox only once the Google client is set up", asyn
   expect(await offered()).toEqual(["google", "imap_smtp"]);
 });
 
+test("Gmail is offered where some app connects it, says whose app, and one Workspace's own app offers it nowhere else", async () => {
+  vi.stubEnv("DIREX_DEPLOYMENT", "self_host");
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "");
+  const offered = async (workspace: string) => {
+    const res = await createApp({ worker: () => undefined }).app.request(`/api/w/${workspace}/mailbox-providers`, { headers: { cookie } });
+    const { providers } = (await res.json()) as { providers: { connection: string; app?: string }[] };
+    expect(providers.find((p) => p.connection === "imap_smtp")).not.toHaveProperty("app");
+    return providers.find((p) => p.connection === "google") ?? null;
+  };
+  const own = (await createOrg(cookie, "Own app")).workspace.id;
+  const other = (await createOrg(cookie, "No app")).workspace.id;
+  expect(await offered(own)).toBeNull();
+
+  const { app, vault } = createApp({ worker: () => undefined });
+  const me = (await (await app.request("/api/me", { headers: { cookie } })).json()) as { user: { id: string } };
+  const saved = await vault().create({ workspaceId: own, actorUserId: me.user.id, scope: "workspace", kind: "basic", key: "oauth_app:google", name: "Gmail app", meta: { username: "own-id" }, value: { password: "own-secret" } });
+  expect(saved.ok).toBe(true);
+  expect(await offered(own)).toMatchObject({ connection: "google", connect: "oauth", app: "own" });
+  expect(await offered(other)).toBeNull();
+
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "google-client");
+  vi.stubEnv("DIREX_GOOGLE_CLIENT_SECRET", "g");
+  expect(await offered(other)).toMatchObject({ connection: "google", app: "system" });
+  expect(await offered(own)).toMatchObject({ app: "own" });
+});
+
 test("stored Gmail stays recognizable without a Google client, while deployment restrictions still apply", async () => {
   vi.stubEnv("DIREX_GOOGLE_CLIENT_ID", "");
   vi.stubEnv("DIREX_DEPLOYMENT", "self_host");

@@ -20,10 +20,9 @@ export { ensureRootKey, replaceRootKey, rootKeyProblem } from "./application/roo
 export { migrationsPending, type MigrationState } from "./adapters/repo";
 
 /**
- * The vault the API and the worker run with: the root key from env, and the `googleApps` the
- * composition root passes when Google's sign-in pair is set, since one OAuth app signs people in,
- * connects Mailboxes, each as its own connection with its own scopes. `googleAppProviders` are
- * Google connections a Workspace may bring its own app for, such as Search Console; without one
+ * The vault the API and the worker run with: the root key from env. `googleApps` always use
+ * Google's sign-in pair, and are offered only when it is set. `googleAppProviders` are Google
+ * connections a Workspace may bring its own app for, such as Gmail and Search Console; without one
  * they use the server's app for that connection, then the sign-in pair.
  */
 export function vaultFromEnv(

@@ -4,7 +4,7 @@
 // the Mailbox's plugin; a DM's in the transaction that makes the DM. Uses are written with the message.
 // A link no use points at never redirects.
 import { createHash, randomBytes } from "node:crypto";
-import { campaignTracking, countryOf, inWorkspace, insertUses, linkFor, type TrackingTx, type UseTarget } from "../adapters/repo";
+import { campaignTracking, countryOf, inWorkspace, insertUses, linkDestination, linkFor, type TrackingTx, type UseTarget } from "../adapters/repo";
 import { rewriteLinks } from "../domain/rewrite";
 
 /** Which Campaign step a message belongs to; the Campaign says whether and where it tracks. */
@@ -15,6 +15,7 @@ export type FixedLinks = { text: string; perRecipient: boolean; inputsHash: stri
 const PER_PERSON_COUNTRY = "US";
 // A domain whose DNS is checked can get its certificate on the first click; one stopped makes no links.
 const MAKES_LINKS = new Set(["dns_ok", "verified"]);
+const TRACKED_PATH = /^\/t\/([A-Za-z0-9_-]{22})(?:\/[A-Za-z0-9_-]{43})?$/;
 const RECIPIENT_PATH = /^\/t\/[A-Za-z0-9_-]{22}\/[A-Za-z0-9_-]{43}$/;
 
 const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
@@ -38,14 +39,29 @@ export async function fixLinksIn(tx: TrackingTx, workspaceId: string, a: Trackin
   const inputs: TrackingInputs = { perPerson: t.perPersonOn, marked: false, country: who?.country ?? null, confidence: who?.confidence ?? null, domainId: t.domainId };
   const perPerson = a.personId !== null && !checkOnly && inputs.perPerson && !inputs.marked && inputs.country === PER_PERSON_COUNTRY && inputs.confidence === "stated";
   const urls = new Map<string, string>();
+  const fixedDestinations = new Map<string, string>();
   const uses: FixedLinks["uses"] = [];
-  for (const destination of rewriteLinks(a.text, () => null).destinations) {
-    // A link already on this domain, as in text edited from a fixed draft, isn't wrapped again.
-    if (new URL(destination).hostname === t.hostname) continue;
-    const linkId = await linkFor(tx, { id: randomBytes(16).toString("base64url"), workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, domainId: t.domainId, destination, checkOnly, now: a.now });
-    const secret = perPerson ? token() : null;
-    urls.set(destination, `https://${t.hostname}/t/${linkId}${secret ? `/${secret}` : ""}`);
-    uses.push({ linkId, tokenHash: secret && sha256(secret), personId: secret && a.personId });
+  for (const source of rewriteLinks(a.text, () => null).destinations) {
+    const url = new URL(source);
+    let destination = source;
+    if (url.hostname === t.hostname) {
+      // Ordinary drafts keep existing links. A probe must go straight to the destination
+      // to avoid counting against the original link or including its recipient token.
+      const id = checkOnly ? TRACKED_PATH.exec(url.pathname)?.[1] : undefined;
+      if (!id) continue;
+      const original = await linkDestination(tx, t.domainId, id);
+      if (!original) continue;
+      destination = original;
+    }
+    let fixed = fixedDestinations.get(destination);
+    if (!fixed) {
+      const linkId = await linkFor(tx, { id: randomBytes(16).toString("base64url"), workspaceId, campaignId: a.campaignId, stepKey: a.stepKey, domainId: t.domainId, destination, checkOnly, now: a.now });
+      const secret = perPerson ? token() : null;
+      fixed = `https://${t.hostname}/t/${linkId}${secret ? `/${secret}` : ""}`;
+      fixedDestinations.set(destination, fixed);
+      uses.push({ linkId, tokenHash: secret && sha256(secret), personId: secret && a.personId });
+    }
+    urls.set(source, fixed);
   }
   let perRecipient = false;
   const { text } = rewriteLinks(a.text, (destination) => {

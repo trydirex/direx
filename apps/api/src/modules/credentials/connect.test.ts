@@ -457,6 +457,23 @@ test("with only its own Google app and no sign-in pair, a Workspace connects Gma
   expect(await g.refreshed(ws, mailbox.id)).toEqual({ token: { accessToken: expect.stringMatching(/^at-/), expiresAt: expect.any(String) }, calls: 1 });
 });
 
+test("disconnect revokes Gmail after the Workspace removes its only Google app", async () => {
+  const g = gmailVault();
+  const { ws, owner } = await newWorkspace();
+  const app = await g.saveOwnApp(ws, owner, g.accepted);
+  if (!app.ok) throw new Error(app.reason);
+  const mailbox = await g.connectGmail(ws, owner);
+
+  expect(await g.vault.remove({ workspaceId: ws, id: app.credential.id, actorUserId: owner })).toEqual({ ok: true });
+  expect(await g.vault.appSource(ws, "google")).toBeNull();
+  expect(await g.vault.find(ws, mailbox.id)).toMatchObject({ status: "needs_reauth" });
+
+  expect(await g.vault.remove({ workspaceId: ws, id: mailbox.id, actorUserId: owner })).toEqual({ ok: true });
+  expect(g.fake.calls.revoked).toEqual([expect.stringMatching(/^rt-/)]);
+  expect(await g.vault.find(ws, mailbox.id)).toBeNull();
+  expect(await g.vault.events(ws, mailbox.id)).toContainEqual(expect.objectContaining({ consumer: "disconnect", outcome: "ok", errorCode: null }));
+});
+
 test("a Workspace's own app beats the sign-in pair for Gmail, refreshes with it, and serves no other Workspace", async () => {
   const g = gmailVault({ clientId: "signin-id", clientSecret: "signin-secret" });
   const a = await newWorkspace();

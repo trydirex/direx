@@ -5,7 +5,7 @@
 // refresh token.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { RootKey } from "../adapters/crypto";
-import { refreshTokens, renewToken, revokeToken, type AppProvider, type ClientPair, type Provider } from "../adapters/provider";
+import { refreshTokens, revokeWithoutClient, renewToken, revokeToken, type AppProvider, type ClientPair, type Provider } from "../adapters/provider";
 import {
   findCredential,
   insertCredential,
@@ -108,23 +108,52 @@ export function createVault(deps: VaultDeps) {
   const templateFor = (connection: string | null) => providers.find((p) => p.connection === connection) ?? appProviders.find((p) => p.connection === connection);
 
   /** A Workspace's own app is a workspace-scoped basic credential: the client id as username, the secret as password. */
-  async function workspaceApp(workspaceId: string, connection: string): Promise<ClientPair | null> {
-    return withWorkspace(workspaceId, async (tx) => {
-      const row = (await listLive(tx, workspaceId)).find((c) => c.scope === "workspace" && c.kind === "basic" && c.key === `oauth_app:${connection}`);
-      if (!row) return null;
-      const value = (await keys.open(tx, row)) as SecretValue<"basic"> | null;
-      const clientId = (row.meta as { username?: string }).username;
-      return value && clientId ? { clientId, clientSecret: value.password } : null;
-    });
+  async function workspaceApp(tx: WorkspaceTx, workspaceId: string, connection: string): Promise<ClientPair | null> {
+    const row = (await listLive(tx, workspaceId)).find((c) => c.scope === "workspace" && c.kind === "basic" && c.key === `oauth_app:${connection}`);
+    if (!row) return null;
+    const value = (await keys.open(tx, row)) as SecretValue<"basic"> | null;
+    const clientId = (row.meta as { username?: string }).username;
+    return value && clientId ? { clientId, clientSecret: value.password } : null;
   }
 
-  async function providerFor(workspaceId: string, connection: string | null): Promise<Provider | undefined> {
+  type ProviderFor = (connection: string | null) => Promise<Provider | undefined>;
+  async function resolveProvider(connection: string | null, ownApp: (connection: string) => Promise<ClientPair | null>, systemApp: VaultDeps["systemApp"]): Promise<Provider | undefined> {
     const fixed = providers.find((p) => p.connection === connection);
     if (fixed || !connection) return fixed;
     const template = appProviders.find((p) => p.connection === connection);
     if (!template) return undefined;
-    const pair = (await workspaceApp(workspaceId, connection)) ?? (await deps.systemApp?.(connection)) ?? null;
+    const pair = (await ownApp(connection)) ?? (await systemApp?.(connection));
     return pair ? { ...template, ...pair } : undefined;
+  }
+
+  const readOwnApp = (workspaceId: string, connection: string) =>
+    withWorkspace(workspaceId, (tx) => workspaceApp(tx, workspaceId, connection));
+
+  const providerFor = (workspaceId: string, connection: string | null) =>
+    resolveProvider(connection, (name) => readOwnApp(workspaceId, name), deps.systemApp);
+
+  class NeedSystemApp extends Error {
+    constructor(readonly connection: string) { super("Read the system app outside the Workspace transaction"); }
+  }
+
+  // A server app may itself need a vault checkout in the system Workspace. Release this
+  // connection before reading it, then retry from the start (including readiness, lock
+  // and own-app precedence). The lookup must be requested before any provider call or write.
+  async function withProviderWorkspace<T>(workspaceId: string, run: (tx: WorkspaceTx, provider: ProviderFor) => Promise<T>): Promise<T> {
+    const fallback = new Map<string, ClientPair | null>();
+    for (;;) {
+      try {
+        return await withWorkspace(workspaceId, (tx) =>
+          run(tx, (connection) => resolveProvider(connection, (name) => workspaceApp(tx, workspaceId, name),
+            deps.systemApp && (async (name) => {
+              if (!fallback.has(name)) throw new NeedSystemApp(name);
+              return fallback.get(name) ?? null;
+            }))));
+      } catch (e) {
+        if (!(e instanceof NeedSystemApp)) throw e;
+        fallback.set(e.connection, (await deps.systemApp?.(e.connection)) ?? null);
+      }
+    }
   }
 
   async function create(
@@ -212,15 +241,16 @@ export function createVault(deps: VaultDeps) {
     stepUp?: boolean;
   }): Promise<Done<object> | Refusal<"missing">> {
     const { workspaceId, id, actorUserId } = input;
-    return withWorkspace(workspaceId, async (tx) => {
+    return withProviderWorkspace(workspaceId, async (tx, provider) => {
       const row = await findCredential(tx, workspaceId, id, true);
       if (!row || row.deletedAt) return { ok: false, reason: "missing" };
       let revoked = true;
       if (row.kind === "oauth2") {
         const value = (await keys.open(tx, row)) as SecretValue<"oauth2"> | null;
-        const p = await providerFor(workspaceId, row.connection);
+        const template = templateFor(row.connection);
+        const p = template && revokeWithoutClient(template) ? template : await provider(row.connection);
         const accountId = (row.meta as { accountId?: string }).accountId;
-        revoked = Boolean(value && p) && (await revokeToken(p!, value!.refreshToken ?? value!.accessToken, timeoutMs, accountId));
+        revoked = value && p ? await revokeToken(p, value.refreshToken ?? value.accessToken, timeoutMs, accountId) : false;
       }
       const at = now();
       await updateLive(tx, workspaceId, id, row.version, { ciphertext: null, nonce: null, deletedAt: at, updatedAt: at });
@@ -277,7 +307,7 @@ export function createVault(deps: VaultDeps) {
   type Outcome = { outcome: "ok" | "refreshed"; value: SecretValue } | { outcome: "needs_reauth" | "error"; code: string };
 
   /** Under the row lock: another worker may have refreshed while this one waited. */
-  async function refreshLocked(tx: WorkspaceTx, workspaceId: string, id: string): Promise<Outcome> {
+  async function refreshLocked(tx: WorkspaceTx, workspaceId: string, id: string, provider: ProviderFor): Promise<Outcome> {
     const row = (await findCredential(tx, workspaceId, id, true))!;
     const current = (await keys.open(tx, row)) as SecretValue<"oauth2"> | null;
     if (!current) return { outcome: "error", code: "decrypt_failed" };
@@ -294,7 +324,7 @@ export function createVault(deps: VaultDeps) {
     if (template && (kind === "reconnect" || (kind === "refresh_token" && !current.refreshToken))) {
       return expired ? needsReauth("token_expired") : { outcome: "ok", value: current };
     }
-    const p = await providerFor(workspaceId, row.connection);
+    const p = await provider(row.connection);
     if (!p) return { outcome: "error", code: "no_provider" };
     const r = kind === "self_renew" ? await renewToken(p, current.accessToken, timeoutMs) : await refreshTokens(p, current.refreshToken!, timeoutMs);
     const at = now();
@@ -319,7 +349,7 @@ export function createVault(deps: VaultDeps) {
    * returns null without one.
    */
   async function resolve(workspaceId: string, id: string, consumer: ResolveConsumer, actionId?: string, connections?: readonly string[]): Promise<Resolved | null> {
-    return withWorkspace(workspaceId, async (tx) => {
+    return withProviderWorkspace(workspaceId, async (tx, provider) => {
       const row = await findCredential(tx, workspaceId, id);
       if (!row) return null;
       const event = (outcome: "ok" | "refreshed" | "needs_reauth" | "refused" | "error", errorCode: string | null = null) =>
@@ -340,7 +370,7 @@ export function createVault(deps: VaultDeps) {
       const value = await keys.open(tx, row);
       if (!value) r = { outcome: "error", code: "decrypt_failed" };
       else if (row.kind === "oauth2" && dueForRenewal(templateFor(row.connection)?.renewal?.kind === "self_renew", new Date((value as SecretValue<"oauth2">).expiresAt), now()))
-        r = await refreshLocked(tx, workspaceId, id);
+        r = await refreshLocked(tx, workspaceId, id, provider);
       else r = { outcome: "ok", value };
 
       if (!("value" in r)) {
@@ -378,7 +408,7 @@ export function createVault(deps: VaultDeps) {
 
   /** Whose app a connection would use here, without using it. */
   async function appSource(workspaceId: string, connection: string): Promise<"own" | "system" | null> {
-    if (await workspaceApp(workspaceId, connection)) return "own";
+    if (await readOwnApp(workspaceId, connection)) return "own";
     return (await deps.systemApp?.(connection)) ? "system" : null;
   }
 

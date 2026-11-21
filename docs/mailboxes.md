@@ -30,7 +30,11 @@ set to Internal needs no verification from Google and has no cap on users.
 
 Gmail picks an app in this order:
 
-1. The Workspace's own app, set in Settings, then Email and keys, then Mailboxes.
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:e25b8b5a362cfba95c5de4c07450f77de82b135f61b299f7cfb851bb9ea4648a -->
+
+1. The Workspace's own app, set through the credentials API below.
 2. The server's mailbox app, the system secret `social_app.google`. See
    [Deployment secrets](deployment-secrets.md#gmails-mailbox-app).
 3. The server's sign-in app, `DIREX_GOOGLE_CLIENT_ID` with the `signin.google` secret.
@@ -48,9 +52,25 @@ To set up your own:
 4. Under Credentials, create an OAuth client ID of type Web application. Add the authorized
    redirect URI `<base URL>/api/connections/callback`, for example
    `https://direx.example.com/api/connections/callback`.
-5. In Direx, open Settings, then Email and keys, then Mailboxes, and paste the client ID and client
-   secret. Only an Owner or Admin can, and Direx asks them to sign in again first. Direx shows the
-   client ID afterwards, never the secret.
+5. As a Workspace Owner or Admin, sign in again and make an authenticated JSON request to
+   `POST /api/w/{workspaceId}/credentials` within 10 minutes of signing in. Use your Workspace ID
+   in the path. Put the Google client ID in `meta.username` and the client secret in
+   `value.password`:
+
+   ```json
+   {
+     "scope": "workspace",
+     "kind": "basic",
+     "key": "oauth_app:google",
+     "name": "Gmail app",
+     "meta": { "username": "<Google client ID>" },
+     "value": { "password": "<Google client secret>" }
+   }
+   ```
+
+   The API returns the credential metadata, including the client ID. It never returns the secret.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Direx asks Google for `gmail.modify` and the account's email address, and nothing else.
 

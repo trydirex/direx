@@ -131,7 +131,7 @@ function accountOf(p: Provider, body: Record<string, unknown>) {
 }
 
 /** A POST body as a form, or as JSON for a provider that takes it. */
-function encoded(p: Provider, headers: Record<string, string>, params: Record<string, string>) {
+function encoded(p: Pick<Provider, "tokenBody">, headers: Record<string, string>, params: Record<string, string>) {
   const json = p.tokenBody === "json";
   return { headers: { ...headers, "content-type": json ? "application/json" : "application/x-www-form-urlencoded" }, body: json ? JSON.stringify(params) : new URLSearchParams(params) };
 }
@@ -174,8 +174,12 @@ export async function renewToken(p: Provider, token: string, timeoutMs: number):
   return withExpiry(await tokenCall(p, "GET", p.renewal.url, { grant_type: p.renewal.grantType, access_token: token }, timeoutMs));
 }
 
+/** Whether this endpoint can be called even after the OAuth app is removed. */
+export const revokeWithoutClient = (p: AppProvider) =>
+  !!p.revokeUrl && (p.revokeMethod === "DELETE" || (p.tokenAuth !== "basic" && !p.revokeClient));
+
 /** True when the provider accepted the revoke, or has no revoke endpoint. */
-export async function revokeToken(p: Provider, token: string, timeoutMs: number, accountId?: string): Promise<boolean> {
+export async function revokeToken(p: AppProvider | Provider, token: string, timeoutMs: number, accountId?: string): Promise<boolean> {
   if (!p.revokeUrl) return true;
   const url = accountId ? p.revokeUrl.replace("{accountId}", encodeURIComponent(accountId)) : p.revokeUrl;
   if (url.includes("{accountId}")) return false;
@@ -187,8 +191,10 @@ export async function revokeToken(p: Provider, token: string, timeoutMs: number,
       return (await fetch(target, { method: "DELETE", signal })).ok;
     }
     const headers: Record<string, string> = { ...p.tokenHeaders };
-    if (p.tokenAuth === "basic") headers.authorization = basicAuth(p);
-    return (await fetch(url, { method: "POST", ...encoded(p, headers, { ...(p.revokeClient ? client(p) : {}), token }), signal })).ok;
+    if (!revokeWithoutClient(p) && !("clientId" in p)) return false;
+    if (p.tokenAuth === "basic" && "clientId" in p) headers.authorization = basicAuth(p);
+    const params = p.revokeClient && "clientId" in p ? client(p) : {};
+    return (await fetch(url, { method: "POST", ...encoded(p, headers, { ...params, token }), signal })).ok;
   } catch {
     return false;
   }

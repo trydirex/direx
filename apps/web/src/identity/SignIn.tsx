@@ -41,7 +41,7 @@ export function SignIn({
   note?: string;
   callbackURL: string;
   initialMode?: Mode;
-  /** From an invite or bootstrap link: held by the server so any way of signing up carries it. */
+  /** From an invite, bootstrap or sign-up link: held by the server so any way of signing up carries it. */
   inviteToken?: string;
   /** Only the signed-out pages offer a new sign-up; a step-up prompt is for someone already signed in. */
   offerSignUp?: boolean;
@@ -61,8 +61,8 @@ export function SignIn({
   const fail = (e: Error) => setError(e.message);
   const signedIn = () => location.assign(callbackURL);
 
-  // The tokenless claim page relies on the cookie set by the hold response.
-  const claimTokenHeld = () => callbackURL === "/claim" ? tokenHeld.current : undefined;
+  // A return path without the token (the claim page, a sign-up link) relies on the cookie set by the hold response.
+  const claimTokenHeld = () => (inviteToken && !callbackURL.includes(inviteToken) ? tokenHeld.current : undefined);
   const social = async (provider: "google" | "microsoft") => {
     await claimTokenHeld();
     await signInWith(provider, callbackURL);

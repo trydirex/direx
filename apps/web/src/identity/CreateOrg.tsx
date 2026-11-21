@@ -9,7 +9,8 @@ import { Narrow } from "./SignIn";
 
 /**
  * `/new-org`: the form for whoever may create an Organization (on self-host, a Server admin), and
- * otherwise why not: the server has no Server admin yet, or only its Server admins create them (ADR 0024).
+ * otherwise why not: the server has no Server admin yet, or its Admission doesn't let this account
+ * create one (ADR 0024). That wording names no rule, as Cloud's limit isn't the Server admin one.
  */
 export function NewOrg({ onCreated }: { onCreated: (workspaceId: string, website: string) => void }) {
   const status = useQuery(serverStatusQuery);
@@ -21,8 +22,8 @@ export function NewOrg({ onCreated }: { onCreated: (workspaceId: string, website
         ) : (
           <Narrow>
             {s.claimed ? (
-              <Page title="Ask for an invite">
-                <p>Only whoever runs this server can create Organizations. Ask them to invite you to a Workspace.</p>
+              <Page title="You can't create an Organization here">
+                <p>Your account can't create an Organization on this server. Ask whoever runs it, or ask to be invited to a Workspace.</p>
               </Page>
             ) : (
               <Page title="This server has no Server admin yet">

@@ -65,10 +65,12 @@ test("on a server nobody has claimed, /new-org says how to claim it instead of t
   expect(screen.queryByLabelText("Business name")).toBeNull();
 });
 
-test("on a claimed server, someone who isn't a Server admin is told to ask for an invite instead of the form", async () => {
+test("on a claimed server, someone the Admission refuses is told why without naming a rule, instead of the form", async () => {
   status({ claimed: true, canCreateOrganization: false });
   render(withQueries(<NewOrg onCreated={vi.fn()} />));
-  expect(await screen.findByText("Only whoever runs this server can create Organizations. Ask them to invite you to a Workspace.")).toBeTruthy();
+  expect(await screen.findByRole("heading", { name: "You can't create an Organization here" })).toBeTruthy();
+  expect(screen.getByText("Your account can't create an Organization on this server. Ask whoever runs it, or ask to be invited to a Workspace.")).toBeTruthy();
+  expect(document.body.textContent).not.toMatch(/Server admin/);
   expect(screen.queryByLabelText("Business name")).toBeNull();
 });
 

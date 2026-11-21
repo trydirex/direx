@@ -3,7 +3,7 @@
 // and no lock is held over the network. Refusals are values and leave a row.
 import { createHash } from "node:crypto";
 import { z, type ZodType } from "zod";
-import { utcMonth, withBudget, type BudgetScope } from "../../ledger/index";
+import { operatorHold, utcMonth, withBudget, type BudgetScope } from "../../ledger/index";
 import type { Keys } from "../adapters/keys";
 import * as repo from "../adapters/repo";
 import { SIGNED_OUT_REASON } from "../adapters/runtime/envelope";
@@ -239,6 +239,9 @@ export function createGenerate(d: GenerateDeps) {
       };
       const duplicate = await repo.liveCallId(b.tx, idempotencyKey);
       if (duplicate) return { refusal: "duplicate", callId: duplicate } as const;
+      // A held tenant drafts and spends nothing more. Reading a reply for an opt-out still runs, so a
+      // "stop" sent while it is held is still recorded.
+      if (purpose !== "optout_detect" && (await operatorHold(b.tx, ws))) return refuse("operator_hold");
       if (!gate.live) return refuse("stale_claim");
       if (tools === "effect_tool_on_untrusted") return refuse("effect_tool_on_untrusted");
       if (!route) return refuse("no_route");

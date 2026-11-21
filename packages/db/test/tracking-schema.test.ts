@@ -234,7 +234,7 @@ test("daily counts only grow and stay in their Workspace; the rate counter can b
   await expect(c.query("insert into tracking_counters (workspace_id, link_id, minute, count) values ($1, $2, now(), 1)", [W, id])).rejects.toThrow(/row-level security/);
 });
 
-test("the drizzle schema names the same checks, keys, foreign keys and indexes as migrations 0158 and 0163", async () => {
+test("the drizzle schema names the same checks, keys, foreign keys and indexes as migrations 0158 and 0164", async () => {
   const names = (t: PgTable) => {
     const cfg = getTableConfig(t);
     const fks = cfg.foreignKeys.map((f) => {

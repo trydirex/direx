@@ -1,5 +1,5 @@
 {
-  "id": "47a38fe8-de07-4325-bd6e-25ca2571564a",
+  "id": "0137b855-2026-4e63-aaf3-91bf0b248f1d",
   "prevId": "0f88a10d-36e2-4eb5-8374-9888223c2574",
   "version": "7",
   "dialect": "postgresql",
@@ -5414,6 +5414,137 @@
         "agent_cancellations_who_check": {
           "name": "agent_cancellations_who_check",
           "value": "\"agent_cancellations\".\"source\" not in ('person', 'admin') or \"agent_cancellations\".\"who\" is not null"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.agent_drift_incidents": {
+      "name": "agent_drift_incidents",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "definition_version": {
+          "name": "definition_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route_hash": {
+          "name": "route_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "measure": {
+          "name": "measure",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_definition_version": {
+          "name": "previous_definition_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_route_hash": {
+          "name": "previous_route_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "rate": {
+          "name": "rate",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_rate": {
+          "name": "previous_rate",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "runs": {
+          "name": "runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "previous_runs": {
+          "name": "previous_runs",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "agent_drift_incidents_workspace_fk": {
+          "name": "agent_drift_incidents_workspace_fk",
+          "tableFrom": "agent_drift_incidents",
+          "tableTo": "workspaces",
+          "columnsFrom": [
+            "workspace_id"
+          ],
+          "columnsTo": [
+            "workspace_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "agent_drift_incidents_workspace_id_id_key": {
+          "name": "agent_drift_incidents_workspace_id_id_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "id"
+          ]
+        },
+        "agent_drift_incidents_version_measure_key": {
+          "name": "agent_drift_incidents_version_measure_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "workspace_id",
+            "agent",
+            "definition_version",
+            "route_hash",
+            "measure"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "agent_drift_incidents_measure_check": {
+          "name": "agent_drift_incidents_measure_check",
+          "value": "\"agent_drift_incidents\".\"measure\" in ('rejections', 'citations')"
         }
       },
       "isRLSEnabled": false
@@ -18859,91 +18990,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.click_counts": {
-      "name": "click_counts",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "link_id": {
-          "name": "link_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "day": {
-          "name": "day",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "bucket": {
-          "name": "bucket",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "classifier_version": {
-          "name": "classifier_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "count": {
-          "name": "count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "click_counts_link_fk": {
-          "name": "click_counts_link_fk",
-          "tableFrom": "click_counts",
-          "tableTo": "tracked_links",
-          "columnsFrom": [
-            "workspace_id",
-            "link_id"
-          ],
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "click_counts_pkey": {
-          "name": "click_counts_pkey",
-          "columns": [
-            "workspace_id",
-            "link_id",
-            "day",
-            "bucket",
-            "classifier_version"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "click_counts_bucket_check": {
-          "name": "click_counts_bucket_check",
-          "value": "\"click_counts\".\"bucket\" in ('automatic', 'rest')"
-        },
-        "click_counts_count_check": {
-          "name": "click_counts_count_check",
-          "value": "\"click_counts\".\"count\" > 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.tracked_link_uses": {
       "name": "tracked_link_uses",
       "schema": "",
@@ -19308,73 +19354,6 @@
         "tracked_links_destination_check": {
           "name": "tracked_links_destination_check",
           "value": "\"tracked_links\".\"destination\" like 'https://%' and length(\"tracked_links\".\"destination\") <= 2048"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.tracking_counters": {
-      "name": "tracking_counters",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "link_id": {
-          "name": "link_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "minute": {
-          "name": "minute",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "count": {
-          "name": "count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "tracking_counters_link_fk": {
-          "name": "tracking_counters_link_fk",
-          "tableFrom": "tracking_counters",
-          "tableTo": "tracked_links",
-          "columnsFrom": [
-            "workspace_id",
-            "link_id"
-          ],
-          "columnsTo": [
-            "workspace_id",
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "tracking_counters_pkey": {
-          "name": "tracking_counters_pkey",
-          "columns": [
-            "workspace_id",
-            "link_id",
-            "minute"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "tracking_counters_count_check": {
-          "name": "tracking_counters_count_check",
-          "value": "\"tracking_counters\".\"count\" > 0"
         }
       },
       "isRLSEnabled": false

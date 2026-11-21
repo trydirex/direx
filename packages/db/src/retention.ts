@@ -136,6 +136,7 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "public.action_events": audit,
   "public.actions": audit,
   "public.agent_cancellations": audit,
+  "public.agent_drift_incidents": audit,
   "public.agent_lesson_events": audit,
   "public.agent_lesson_versions": audit,
   "public.agent_lessons": audit,

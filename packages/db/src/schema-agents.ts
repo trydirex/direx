@@ -3,7 +3,7 @@
 // None of these tables hold page text or a credential: parts and events keep digests only. The one
 // text kept is a draft offered back to a person after it lost to their save (agent_proposals.body).
 import { sql } from "drizzle-orm";
-import { bigint, boolean, check, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, boolean, check, foreignKey, index, integer, jsonb, pgTable, primaryKey, real, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { workspaces } from "./schema";
 
@@ -197,5 +197,34 @@ export const agentSettingRevisions = pgTable(
   (t) => [
     primaryKey({ name: "agent_setting_revisions_pkey", columns: [t.workspaceId, t.agent, t.revision] }),
     foreignKey({ name: "agent_setting_revisions_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
+  ],
+);
+
+// A new agent version whose rejection or citation-failure rate rose past ADR 0008's line against the
+// version before it (rule 026). One row per version and measure, so its Owners are told once. Counts
+// and rates only, never a draft's words. Written once, never changed.
+export const agentDriftIncidents = pgTable(
+  "agent_drift_incidents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id").notNull(),
+    agent: text("agent").notNull(),
+    definitionVersion: integer("definition_version").notNull(),
+    routeHash: text("route_hash").notNull(),
+    measure: text("measure").notNull(),
+    previousDefinitionVersion: integer("previous_definition_version").notNull(),
+    // Proposals written before routes were hashed have none.
+    previousRouteHash: text("previous_route_hash"),
+    rate: real("rate").notNull(),
+    previousRate: real("previous_rate").notNull(),
+    runs: integer("runs").notNull(),
+    previousRuns: integer("previous_runs").notNull(),
+    createdAt: tz("created_at").notNull(),
+  },
+  (t) => [
+    unique("agent_drift_incidents_workspace_id_id_key").on(t.workspaceId, t.id),
+    unique("agent_drift_incidents_version_measure_key").on(t.workspaceId, t.agent, t.definitionVersion, t.routeHash, t.measure),
+    foreignKey({ name: "agent_drift_incidents_workspace_fk", columns: [t.workspaceId], foreignColumns: [workspaces.workspaceId] }),
+    check("agent_drift_incidents_measure_check", sql`${t.measure} in ('rejections', 'citations')`),
   ],
 );

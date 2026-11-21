@@ -684,6 +684,10 @@
     "0166_mailbox_pause_provider_abuse.sql": {
       "sha256": "89aa724013fd52b48ee55381890fbc6032788cb391513ba8085896219b4bd95a",
       "description": "Adds provider_abuse to the Mailbox pause reasons, so a provider refusing an email as abuse pauses the Mailbox until a person resumes it"
+    },
+    "0167_mailbox_ramp.sql": {
+      "sha256": "076dbb82bb7dff31c77722949093d4dd1d15c9b3b96c3d2ef4d0b56694a5bea9",
+      "description": "A new Mailbox's ramp: ramp_limit and ramp_clean_since on credentials, added empty so every Mailbox connected before stays established, with defaults of 20 and now() for each one connected after"
     }
   }
 }

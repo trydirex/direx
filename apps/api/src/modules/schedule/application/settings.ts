@@ -10,9 +10,9 @@ export type PaceRefusal = "not_found" | "forbidden" | "bad_pace";
 const validPace = (p: MailboxPace) =>
   Number.isInteger(p.dailyLimit) && p.dailyLimit >= 1 && p.dailyLimit <= 500 && Number.isInteger(p.sendFrom) && Number.isInteger(p.sendUntil) && p.sendFrom >= 0 && p.sendFrom < p.sendUntil && p.sendUntil <= 1440;
 
-/** A Mailbox's pace and the Workspace time zone it is read in, or null when there is no such Mailbox. */
+/** A Mailbox's pace as set, without a new Mailbox's ramp, and the Workspace time zone it is read in, or null when there is no such Mailbox. */
 export function mailboxPace(workspaceId: string, credentialId: string) {
-  return inWorkspace(workspaceId, (tx) => paceOf(tx, credentialId)).then((r) => r ?? null);
+  return inWorkspace(workspaceId, (tx) => paceOf(tx, credentialId, false)).then((r) => r ?? null);
 }
 
 /**

@@ -144,6 +144,8 @@ const WORDS: Record<string, string> = {
   no_email_column: "The first row needs a column called email.",
   bad_quote: "A quote mark in this list isn't closed. Check the list and try again.",
   too_many_rows: "That's more than 1,000 rows. Import them in smaller lists.",
+  too_large: "That CSV is too large. Split it into smaller batches, each with the header row.",
+  connection_failed: "Direx couldn't be reached. Check your connection and try again.",
 };
 export const say = (error: string) => messageForCode(error, WORDS);
 
@@ -153,7 +155,9 @@ export const customersQuery = (workspaceId: string) =>
   queryOptions({ queryKey: inWorkspace(workspaceId, "customers"), queryFn: () => call(api.GET("/api/w/{workspaceId}/customers", inW(workspaceId))) });
 /** A CSV of Customers: who was added, who already was one, and who was left out and why; or the refusal's code. */
 export async function importCustomers(workspaceId: string, csv: string): Promise<CustomerImport | { error: string }> {
-  const r = await api.POST("/api/w/{workspaceId}/customers/import", { ...inW(workspaceId), body: { csv } });
+  const r = await api.POST("/api/w/{workspaceId}/customers/import", { ...inW(workspaceId), body: { csv } })
+    .catch((error: unknown) => error instanceof TypeError ? "connection_failed" : "failed");
+  if (typeof r === "string") return { error: r };
   return r.data ?? { error: code(r) ?? "failed" };
 }
 /** Why a row of a Customer import was left out, in words. */

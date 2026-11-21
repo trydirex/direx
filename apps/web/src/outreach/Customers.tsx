@@ -34,7 +34,7 @@ export function Customers(p: { workspaceId: string; canEdit: boolean }) {
               const r = await importCustomers(p.workspaceId, csv);
               if ("error" in r) return r.error;
               setResult(r);
-              setCsv("");
+              setCsv((draft) => draft === csv ? "" : draft);
               // New Customers are new People too, so the whole Audience reads again.
               await client.invalidateQueries({ queryKey: inWorkspace(p.workspaceId) });
               return null;

@@ -89,14 +89,59 @@ test("an editor imports a CSV file", async () => {
 });
 
 test.each([
-  ["no_email_column", "The first row needs a column called email."],
-  ["bad_quote", "A quote mark in this list isn't closed. Check the list and try again."],
-])("a refused CSV (%s) says why in plain words", async (error, words) => {
-  serve([], () => reply(400, { error }));
+  ["no_email_column", 400, "The first row needs a column called email."],
+  ["bad_quote", 400, "A quote mark in this list isn't closed. Check the list and try again."],
+  ["too_large", 413, "That CSV is too large. Split it into smaller batches, each with the header row."],
+])("a refused CSV (%s) says why in plain words", async (error, status, words) => {
+  serve([], () => reply(status, { error }));
   render(withQueries(<Customers workspaceId={W} canEdit />));
   await userEvent.click(screen.getByLabelText("Or paste the CSV"));
   await userEvent.paste("name\nKim");
   await userEvent.click(screen.getByRole("button", { name: "Import Customers" }));
   expect((await screen.findByRole("alert")).textContent).toBe(words);
   expect(screen.queryByText(/^Added/)).toBeNull();
+});
+
+test.each(["pasted", "uploaded"])("a draft %s during an import is kept after it succeeds", async (source) => {
+  const request = Promise.withResolvers<unknown>();
+  const post = serve([], () => request.promise);
+  const user = userEvent.setup();
+  render(withQueries(<Customers workspaceId={W} canEdit />));
+  const draft = screen.getByLabelText<HTMLTextAreaElement>("Or paste the CSV");
+  const button = screen.getByRole("button", { name: "Import Customers" });
+  const original = "email\nfirst@example.com";
+  const next = "email\nnext@example.com";
+  await user.click(draft);
+  await user.paste(original);
+  await user.click(button);
+  expect(post).toHaveBeenCalledWith("/api/w/{workspaceId}/customers/import", { params: { path: { workspaceId: W } }, body: { csv: original } });
+  if (source === "pasted") {
+    await user.clear(draft);
+    await user.paste(next);
+  } else {
+    const picker = screen.getByLabelText(/A CSV file/, { selector: "input" });
+    await user.upload(picker, new File([next], "next.csv", { type: "text/csv" }));
+  }
+  await waitFor(() => expect(draft.value).toBe(next));
+  request.resolve(reply(200, { added: [], updated: [], skipped: [] }));
+  expect(await screen.findByText("Added 0 · Updated 0")).toBeTruthy();
+  expect(draft.value).toBe(next);
+});
+
+test.each([
+  [new TypeError("fetch failed"), "Direx couldn't be reached. Check your connection and try again."],
+  [new Error("unexpected failure"), "That didn't work. Try again."],
+])("a rejected request (%s) shows a notice and keeps the draft available to retry", async (failure, words) => {
+  serve([], () => Promise.reject(failure));
+  const user = userEvent.setup();
+  render(withQueries(<Customers workspaceId={W} canEdit />));
+  const draft = screen.getByLabelText<HTMLTextAreaElement>("Or paste the CSV");
+  const button = screen.getByRole<HTMLButtonElement>("button", { name: "Import Customers" });
+  const csv = "email\nkim@example.com";
+  await user.click(draft);
+  await user.paste(csv);
+  await user.click(button);
+  expect((await screen.findByRole("alert")).textContent).toBe(words);
+  expect(draft.value).toBe(csv);
+  expect(button.disabled).toBe(false);
 });

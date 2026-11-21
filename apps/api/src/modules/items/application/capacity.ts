@@ -21,12 +21,16 @@ export type CapacityResult = MailboxReserveResult | { kind: "full"; day: string;
 /** `lock` runs before the account's own lock, `check` once the slot is placed, both in its transaction. */
 export type SlotCheck = { lock(tx: ItemsTx): Promise<void>; check(tx: ItemsTx, slot: Date): Promise<"ok" | "unavailable" | "not_found"> };
 
+type AutomaticPlacement = { slot: Date; result: CapacityResult | { kind: "unavailable" } };
+
 export type CapacityPort = {
   placeIn(tx: ItemsTx, workspaceId: string, t: PlaceTarget, now: Date): Promise<Placed>;
   reserveIn(tx: ItemsTx, workspaceId: string, actionId: string, slot: Date, now: Date): Promise<CapacityResult>;
   reserve(workspaceId: string, actionId: string, slot: Date, opts?: { now?: Date }): Promise<CapacityResult>;
   /** Atomically place and reserve, optionally locking first and checking the slot in the same transaction before inserting. Undefined uses the usual flow. */
-  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<{ slot: Date; result: CapacityResult | { kind: "unavailable" } } | undefined>;
+  reserveAutomatic?(workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<AutomaticPlacement | undefined>;
+  reserveAutomaticIn?(tx: ItemsTx, workspaceId: string, actionId: string, wanted: Date, now: Date, checkSlot?: SlotCheck): Promise<AutomaticPlacement | undefined>;
+  forAction?(workspaceId: string, actionId: string): Promise<CapacityPort>;
   nextTime(workspaceId: string, actionId: string, from: Date, opts?: { now?: Date }): Promise<Date | null>;
 };
 
@@ -55,6 +59,7 @@ export function routeCapacity(route: (capability: string) => CapacityPort | unde
     reserveIn: async (tx, workspaceId, actionId, slot, now) => (await pick(tx, actionId)).reserveIn(tx, workspaceId, actionId, slot, now),
     reserve: async (workspaceId, actionId, slot, opts) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).reserve(workspaceId, actionId, slot, opts),
     reserveAutomatic: async (workspaceId, actionId, wanted, now, checkSlot) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).reserveAutomatic?.(workspaceId, actionId, wanted, now, checkSlot),
+    forAction: (workspaceId, actionId) => inWorkspace(workspaceId, (tx) => pick(tx, actionId)),
     nextTime: async (workspaceId, actionId, from, opts) => (await inWorkspace(workspaceId, (tx) => pick(tx, actionId))).nextTime(workspaceId, actionId, from, opts),
   };
 }

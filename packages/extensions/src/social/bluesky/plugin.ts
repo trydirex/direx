@@ -7,6 +7,7 @@ import { definePlugin, MediaMismatch, streamParts, type Credential, type Execute
 import { healthOf, send, SocialHttpError, socialHttp, VIDEO_WAIT, type SocialPluginOptions } from "../http";
 import { findLinks, graphemes, held, imagesOf, isRefused, later, MB, notAPost, notConnected, postSpec, preparePost, rateLimited, type ImageRules, type Processing, type Refused, runFollowUps, sent, tokenRejected, untilProcessed, videoOf, type VideoRules } from "../post";
 import { blueskyManifest } from "./manifest";
+import { APP_VIEW, blueskyPosts, postUrl } from "./posts";
 
 const APP_PASSWORD = /^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/i;
 const COLLECTION = "app.bsky.feed.post";
@@ -66,10 +67,10 @@ const streamOf = (parts: AsyncGenerator<Uint8Array<ArrayBuffer>>) =>
     },
   });
 type Ref = { uri: string; cid: string };
-const postUrl = (did: string, rkey: string) => `https://bsky.app/profile/${did}/post/${rkey}`;
 
-export function createBlueskyPlugin(o: SocialPluginOptions & { videoServiceUrl?: string } = {}) {
+export function createBlueskyPlugin(o: SocialPluginOptions & { videoServiceUrl?: string; appViewUrl?: string } = {}) {
   const h = socialHttp(o, "https://bsky.social");
+  const appView = socialHttp({ ...o, baseUrl: o.appViewUrl ?? APP_VIEW }, APP_VIEW);
   const videoService = o.videoServiceUrl ?? VIDEO_SERVICE;
 
   /**
@@ -267,6 +268,7 @@ export function createBlueskyPlugin(o: SocialPluginOptions & { videoServiceUrl?:
         return { accountId: s.did, accountLabel: `@${s.handle}`, accountType: "user" };
       },
       "social.health": async (_input, ctx) => healthOf(() => session(ctx.credential)),
+      "social.posts": async (input, ctx) => blueskyPosts(appView, input, ctx.credential),
     },
   });
 }

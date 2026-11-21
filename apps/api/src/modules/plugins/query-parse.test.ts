@@ -68,8 +68,8 @@ test("a typed credential's answer is parsed the same way", async () => {
 
 test("a social network's registry entry names social.posts only when its plugin declares it", () => {
   expect(plugins.socialFor("svc")?.posts).toBe("com.example.liar/social.posts");
-  const bluesky = firstPartyPlugins().find((p) => p.manifest.id === "com.trydirex.bluesky")!;
-  const without = loadPlugins({ sources: [{ mode: "in_process", plugin: bluesky }], credentials: async () => null, confinement: "none", log: () => {} });
-  expect(without.socialFor("bluesky")).toBeDefined();
-  expect(without.socialFor("bluesky")).not.toHaveProperty("posts");
+  const x = firstPartyPlugins().find((p) => p.manifest.id === "com.trydirex.x")!;
+  const without = loadPlugins({ sources: [{ mode: "in_process", plugin: x }], credentials: async () => null, confinement: "none", log: () => {} });
+  expect(without.socialFor("x")).toBeDefined();
+  expect(without.socialFor("x")).not.toHaveProperty("posts");
 });

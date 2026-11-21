@@ -3,7 +3,6 @@
 // Item, so no Action exists that a person can't see.
 import type { DedupeClass } from "@direx/plugin-sdk";
 import type { Actor, Ledger } from "../../ledger";
-import { reserveMailboxIn } from "../../schedule";
 import {
   addOwnWarning,
   inWorkspace,
@@ -31,6 +30,7 @@ import { encodeListCursor } from "../domain/list-cursor";
 import { reasonLabel } from "../domain/reasons";
 import { visibleState, type LedgerState, type OwnState, type VisibleState } from "../domain/state";
 import { sameWarning, type Warning } from "../domain/warnings";
+import type { CapacityPort, Placement } from "./capacity";
 import { toView, type ItemView } from "./view";
 
 /**
@@ -80,7 +80,7 @@ export type Appearance =
   | { kind: "post"; account: string | null; network: string; link: { url: string; title: string | null; description: string | null; site: string; image: boolean } | null };
 /** How an Item's content will appear where it goes; `content` is what the Item carries, so a post's text can be read. */
 export type AppearanceFor = (workspaceId: string, a: { itemId: string; workArea: string | null; credentialId: string | null; content: unknown }) => Promise<Appearance | null>;
-export type ItemsDeps = { ledger: Ledger; kinds: Record<string, ItemKind>; now: () => Date; onSubmitted?: ((workspaceId: string, itemId: string) => Promise<void>) | undefined; ruleApprovalBy?: ((workspaceId: string, actionId: string) => Promise<RuleApproval | null>) | undefined; recipient?: RecipientFor | undefined; appearance?: AppearanceFor | undefined };
+export type ItemsDeps = { ledger: Ledger; kinds: Record<string, ItemKind>; now: () => Date; capacity: CapacityPort; onSubmitted?: ((workspaceId: string, itemId: string) => Promise<void>) | undefined; ruleApprovalBy?: ((workspaceId: string, actionId: string) => Promise<RuleApproval | null>) | undefined; recipient?: RecipientFor | undefined; appearance?: AppearanceFor | undefined };
 
 const actorOf = (e: { actorUserId: string | null; actorAgentRunId: string | null; actorSystem: string | null }): TimelineEntry["actor"] =>
   e.actorUserId ? { kind: "person", id: e.actorUserId } : e.actorAgentRunId ? { kind: "agent", id: e.actorAgentRunId } : { kind: "system", id: e.actorSystem! };
@@ -111,7 +111,7 @@ type SettleGroup = { kind: string; groupKey: string; actor: Actor; next: { paylo
 /** A non-Action Item to make: its kind, starting state, payload, who made it and how it shows. */
 type NewItem = { kind: string; state?: "draft" | "needs_approval"; payload: unknown; actor: Actor; details: NewDetails; replace?: boolean };
 
-export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, recipient, appearance }: ItemsDeps) {
+export function itemStore({ ledger, kinds, now, capacity, onSubmitted, ruleApprovalBy, recipient, appearance }: ItemsDeps) {
   async function reviseOwnItemIn(tx: ItemsTx, itemId: string, a: { payload: unknown; details: NewDetails; actor: Actor }) {
     const own = await lockOwnItem(tx, itemId);
     if (!own || own.state === "applied" || own.state === "cancelled") return { ok: false, reason: "wrong_state" } as const;
@@ -160,24 +160,37 @@ export function itemStore({ ledger, kinds, now, onSubmitted, ruleApprovalBy, rec
     await onSubmitted?.(workspaceId, itemId).catch((e) => console.error("items: onSubmitted failed", itemId, e));
   };
 
-  type NewActionItem = { idempotencyKey: string; capability: string; dedupe: DedupeClass; spec: unknown; credentialId?: string | null; actor: Actor; details: NewDetails };
+  /** `placement` lets the port place the planned time on its account's pace; without it the time is kept as given. */
+  type NewActionItem = { idempotencyKey: string; capability: string; dedupe: DedupeClass; spec: unknown; credentialId?: string | null; actor: Actor; details: NewDetails; placement?: Placement };
+
+  /** The details with their planned time placed by the port, and its warning added. Unchanged without a placement. */
+  async function placed<D extends { plannedAt?: Date | null | undefined; warnings: Warning[] }>(tx: ItemsTx, workspaceId: string, d: D, t: { capability: string; credentialId: string | null; spec: unknown; seed: string; exceptActionId?: string }, mode: Placement | undefined): Promise<D> {
+    if (!mode || !d.plannedAt) return d;
+    const p = await capacity.placeIn(tx, workspaceId, { ...t, wanted: d.plannedAt, mode }, now());
+    return { ...d, plannedAt: p.at, warnings: p.warning ? [...d.warnings, p.warning] : d.warnings };
+  }
+
   /** The Action and its Item in the caller's transaction, so neither exists without the other. `created` is false for a repeat of the same key. */
   async function createActionItemIn(tx: ItemsTx, workspaceId: string, a: NewActionItem) {
+    const details = await placed(tx, workspaceId, a.details, { capability: a.capability, credentialId: a.credentialId ?? null, spec: a.spec, seed: a.idempotencyKey }, a.placement);
     const { action, created } = await ledger.createActionIn(tx, workspaceId, a);
-    const row = await insertActionItem(tx, workspaceId, action.id, action.draftVersion, a.details, now());
-    // An email planned for a time takes its place on its Mailbox's day with it. The planner chose the
+    const row = await insertActionItem(tx, workspaceId, action.id, action.draftVersion, details, now());
+    // An Action planned for a time takes its place on its account's day with it. The planner chose the
     // time from unlocked counts; ponytail: one that lost a race to the last place stays without one,
     // and its approval refuses it until it is moved.
-    if (created && a.details.plannedAt) await reserveMailboxIn(tx, workspaceId, action.id, a.details.plannedAt, now());
+    if (created && details.plannedAt) await capacity.reserveIn(tx, workspaceId, action.id, details.plannedAt, now());
     return { item: shown((await readItem(tx, row.id))!), created };
   }
 
-  async function reviseActionItemIn(tx: ItemsTx, workspaceId: string, itemId: string, a: { spec: unknown; actor: Actor; details: Partial<NewDetails> & { warnings: Warning[] } }) {
+  async function reviseActionItemIn(tx: ItemsTx, workspaceId: string, itemId: string, a: { spec: unknown; actor: Actor; details: Partial<NewDetails> & { warnings: Warning[] }; placement?: Placement }) {
     const row = await readItem(tx, itemId);
-    if (!row?.item.actionId) return { ok: false, reason: "not_found" } as const;
-    const r = await ledger.reviseActionIn(tx, workspaceId, row.item.actionId, a);
+    if (!row?.item.actionId || !row.action) return { ok: false, reason: "not_found" } as const;
+    const actionId = row.item.actionId;
+    const details = await placed(tx, workspaceId, a.details, { capability: row.action.capability, credentialId: row.action.credentialId, spec: a.spec, seed: row.action.idempotencyKey, exceptActionId: actionId }, a.placement);
+    const r = await ledger.reviseActionIn(tx, workspaceId, actionId, a);
     if (!r.ok) return r;
-    await updateActionDetails(tx, row.item.actionId, r.action.draftVersion, a.details, now());
+    await updateActionDetails(tx, actionId, r.action.draftVersion, details, now());
+    if (a.placement && details.plannedAt) await capacity.reserveIn(tx, workspaceId, actionId, details.plannedAt, now());
     return { ok: true, item: shown((await readItem(tx, itemId))!) } as const;
   }
 

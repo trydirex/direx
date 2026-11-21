@@ -16,6 +16,8 @@ export type ItemRow = typeof items.$inferSelect;
 export type ItemEventRow = typeof itemEvents.$inferSelect;
 export type JoinedAction = {
   capability: string;
+  credentialId: string | null;
+  idempotencyKey: string;
   state: LedgerState;
   holdReason: string | null;
   blockReason: string | null;
@@ -34,6 +36,8 @@ const JOINED = {
   item: items,
   action: {
     capability: actions.capability,
+    credentialId: actions.credentialId,
+    idempotencyKey: actions.idempotencyKey,
     state: actions.state,
     holdReason: actions.holdReason,
     blockReason: actions.blockReason,

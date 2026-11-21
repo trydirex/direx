@@ -4,6 +4,7 @@ import { APPROVAL_TTL_MS, type Ledger } from "../../ledger";
 import { countWaiting, decisionsOf, inWorkspace, needsYouSummary, stepEditPhrases, stepReasons, type ItemsTx } from "../adapters/repo";
 import { reviewRates } from "../domain/rates";
 import { changes } from "./changes";
+import { mailboxCapacity, type CapacityPort } from "./capacity";
 import { followLater, LATE_KIND, lateSends } from "./late";
 import { decisions, type DescribeChange, type EditOf, type OnApplied } from "./decide";
 import { itemStore, type AppearanceFor, type ItemKind, type RecipientFor, type RuleApproval } from "./items";
@@ -31,11 +32,12 @@ const keysLostKind = (ledger: Ledger, actionPermission: ((capability: string) =>
   },
 });
 
-export function createItems(deps: { ledger: Ledger; kinds?: Record<string, ItemKind>; now?: () => Date; onMoveStep?: (step: MoveStep) => void | Promise<void>; describeChange?: DescribeChange; onSubmitted?: (workspaceId: string, itemId: string) => Promise<void>; onApproved?: (workspaceId: string, itemId: string) => Promise<void>; onApplied?: OnApplied; ruleApprovalBy?: (workspaceId: string, actionId: string) => Promise<RuleApproval | null>; recipient?: RecipientFor; appearance?: AppearanceFor; actionPermission?: (capability: string) => string | undefined; mayGrant?: (tx: ItemsTx, userId: string) => Promise<boolean>; editOf?: EditOf }) {
+export function createItems(deps: { ledger: Ledger; kinds?: Record<string, ItemKind>; now?: () => Date; onMoveStep?: (step: MoveStep) => void | Promise<void>; describeChange?: DescribeChange; onSubmitted?: (workspaceId: string, itemId: string) => Promise<void>; onApproved?: (workspaceId: string, itemId: string) => Promise<void>; onApplied?: OnApplied; ruleApprovalBy?: (workspaceId: string, actionId: string) => Promise<RuleApproval | null>; recipient?: RecipientFor; appearance?: AppearanceFor; actionPermission?: (capability: string) => string | undefined; mayGrant?: (tx: ItemsTx, userId: string) => Promise<boolean>; editOf?: EditOf; capacity?: CapacityPort }) {
   const now = deps.now ?? (() => new Date());
-  const late = lateSends({ ledger: deps.ledger, now, settleGroupIn: (...a) => store.settleGroupIn(...a), actionPermission: deps.actionPermission });
+  const capacity = deps.capacity ?? mailboxCapacity;
+  const late = lateSends({ ledger: deps.ledger, now, settleGroupIn: (...a) => store.settleGroupIn(...a), actionPermission: deps.actionPermission, capacity });
   const kinds = { ...keysLostKind(deps.ledger, deps.actionPermission), ...late.kind, ...deps.kinds };
-  const store = itemStore({ ledger: deps.ledger, kinds, now, onSubmitted: deps.onSubmitted, ruleApprovalBy: deps.ruleApprovalBy, recipient: deps.recipient, appearance: deps.appearance });
+  const store = itemStore({ ledger: deps.ledger, kinds, now, capacity, onSubmitted: deps.onSubmitted, ruleApprovalBy: deps.ruleApprovalBy, recipient: deps.recipient, appearance: deps.appearance });
   // The late notice refreshes after its own approval commits, then whatever the caller wired runs.
   const onApplied: OnApplied = async (workspaceId, item) => {
     if (item.kind === LATE_KIND) await inWorkspace(workspaceId, (tx) => late.afterApplied(tx, workspaceId, item.id));
@@ -43,8 +45,8 @@ export function createItems(deps: { ledger: Ledger; kinds?: Record<string, ItemK
   };
   return {
     ...store,
-    ...decisions({ ledger: deps.ledger, kinds, now, describeChange: deps.describeChange, onApproved: deps.onApproved, onApplied, actionPermission: deps.actionPermission, mayGrant: deps.mayGrant, editOf: deps.editOf, resumeLate: (workspaceId, actionId, actor) => inWorkspace(workspaceId, (tx) => late.resumeLateIn(tx, workspaceId, actionId, actor)) }),
-    ...moves({ ledger: deps.ledger, now, onStep: deps.onMoveStep }),
+    ...decisions({ ledger: deps.ledger, kinds, now, describeChange: deps.describeChange, onApproved: deps.onApproved, onApplied, actionPermission: deps.actionPermission, mayGrant: deps.mayGrant, editOf: deps.editOf, capacity, resumeLate: (workspaceId, actionId, actor) => inWorkspace(workspaceId, (tx) => late.resumeLateIn(tx, workspaceId, actionId, actor)) }),
+    ...moves({ ledger: deps.ledger, now, onStep: deps.onMoveStep, capacity }),
     /** How many of these Items, made without an Action, still wait for a person; for the door's caps. */
     waitingAmongIn: countWaiting,
     waitingAmong: (workspaceId: string, itemIds: readonly string[]) => inWorkspace(workspaceId, (tx) => countWaiting(tx, itemIds)),
@@ -59,7 +61,7 @@ export function createItems(deps: { ledger: Ledger; kinds?: Record<string, ItemK
     /** Every reason given on one Campaign step's drafts, for spotting one that keeps coming up. */
     stepReasons: (workspaceId: string, campaignId: string, stepKey: string) => inWorkspace(workspaceId, (tx) => stepReasons(tx, campaignId, stepKey)),
     /** For the ledger's later hook: an email moved on from a Mailbox day already sent takes its new places. */
-    followLater: (workspaceId: string, actionId: string, at: Date) => followLater(workspaceId, actionId, at, now()),
+    followLater: (workspaceId: string, actionId: string, at: Date) => followLater(capacity, workspaceId, actionId, at, now()),
     /** For the ledger's late hook: the Workspace's late notice as things stand. */
     refreshLateIn: (tx: ItemsTx, workspaceId: string) => late.refreshIn(tx, workspaceId),
     /** For the ledger's keys-lost hook: opens the Workspace's notice, or leaves the open one as it is. */

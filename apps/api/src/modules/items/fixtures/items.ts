@@ -13,6 +13,7 @@ import type { LedgerDeps } from "../../ledger/index";
 import { testLedger } from "../../ledger/test-effects";
 import { createItems, itemRoutes, type AppearanceFor, type EditOf, type ItemKind, type MoveStep, type OnApplied, type RecipientFor } from "../index";
 import type { ItemsTx } from "../adapters/repo";
+import type { CapacityPort } from "../application/capacity";
 
 export { EMAIL, fakeEffect, person };
 export const POST = "test.post";
@@ -26,13 +27,13 @@ export async function actionIdOf(workspaceId: string, itemId: string) {
   return rows[0].action_id as string;
 }
 
-export async function itemsWorld(opts: { kinds?: Record<string, ItemKind>; onMoveStep?: (s: MoveStep) => void; onApplied?: OnApplied; postSteps?: Parameters<typeof fakeEffect>[1]; recipient?: RecipientFor; resolvers?: LedgerDeps["resolvers"]; editOf?: EditOf; mayGrant?: (tx: ItemsTx, userId: string) => Promise<boolean> } = {}) {
+export async function itemsWorld(opts: { kinds?: Record<string, ItemKind>; onMoveStep?: (s: MoveStep) => void; onApplied?: OnApplied; postSteps?: Parameters<typeof fakeEffect>[1]; recipient?: RecipientFor; resolvers?: LedgerDeps["resolvers"]; editOf?: EditOf; mayGrant?: (tx: ItemsTx, userId: string) => Promise<boolean>; capacity?: CapacityPort } = {}) {
   const email = fakeEffect("blind", { reachesPerson: true });
   const post = fakeEffect("blind", opts.postSteps);
   const t = await scheduleLedger({ [EMAIL]: email.capability, [POST]: post.capability }, opts.resolvers);
   const W = crypto.randomUUID();
   await seedMember(W, person.userId);
-  const items = createItems({ ledger: t.ledger, kinds: opts.kinds, now: () => t.clock.at, onMoveStep: opts.onMoveStep, onApplied: opts.onApplied, recipient: opts.recipient, ...(opts.editOf && { editOf: opts.editOf }), ...(opts.mayGrant && { mayGrant: opts.mayGrant }) });
+  const items = createItems({ ledger: t.ledger, kinds: opts.kinds, now: () => t.clock.at, onMoveStep: opts.onMoveStep, onApplied: opts.onApplied, recipient: opts.recipient, ...(opts.editOf && { editOf: opts.editOf }), ...(opts.mayGrant && { mayGrant: opts.mayGrant }), ...(opts.capacity && { capacity: opts.capacity }) });
   const who = { approverId: approverFromMember(person), may: (p: string) => can("owner", p as "item.approve") };
   const hours = (h: number) => new Date(t.clock.at.getTime() + h * 3_600_000);
 

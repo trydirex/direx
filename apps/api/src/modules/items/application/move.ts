@@ -4,15 +4,16 @@
 // before the last step holds the Action instead of sending at the old time. Repeating the
 // move finishes it.
 import type { Actor, Ledger } from "../../ledger";
-import { nextMailboxTime, reserveMailbox, reserveTouch } from "../../schedule";
+import { reserveTouch } from "../../schedule";
 import { inWorkspace, readItem, setPlannedAt } from "../adapters/repo";
 import { canMove, type OwnState } from "../domain/state";
+import type { CapacityPort } from "./capacity";
 import type { Decided } from "./decide";
 import { toView } from "./view";
 
 export type MoveStep = "reserved" | "planned";
 
-export function moves({ ledger, now, onStep }: { ledger: Ledger; now: () => Date; onStep?: (step: MoveStep) => void | Promise<void> }) {
+export function moves({ ledger, now, onStep, capacity }: { ledger: Ledger; now: () => Date; onStep?: ((step: MoveStep) => void | Promise<void>) | undefined; capacity: CapacityPort }) {
   const api = {
     async moveItem(workspaceId: string, id: string, plannedAt: Date, actor: Actor): Promise<Decided> {
       const at = now();
@@ -28,7 +29,7 @@ export function moves({ ledger, now, onStep }: { ledger: Ledger; now: () => Date
         const reserved = await reserveTouch(workspaceId, item.actionId, plannedAt, { now: at });
         if (reserved.kind === "full") return { ok: false, reason: "slot_full", cap: reserved.cap };
         if (reserved.kind === "not_found") return { ok: false, reason: "not_found" };
-        const day = await reserveMailbox(workspaceId, item.actionId, plannedAt, { now: at });
+        const day = await capacity.reserve(workspaceId, item.actionId, plannedAt, { now: at });
         if (day.kind === "full") return { ok: false, reason: "mailbox_day_full", day: day.day, limit: day.limit };
       }
       await onStep?.("reserved");
@@ -54,7 +55,7 @@ export function moves({ ledger, now, onStep }: { ledger: Ledger; now: () => Date
       const lookup = await inWorkspace(workspaceId, (tx) => readItem(tx, id));
       let plannedAt = wanted;
       if (lookup?.item.actionId) {
-        const room = await nextMailboxTime(workspaceId, lookup.item.actionId, wanted, { now: at });
+        const room = await capacity.nextTime(workspaceId, lookup.item.actionId, wanted, { now: at });
         if (!room) return { ok: false, reason: "mailbox_day_full" } as const;
         plannedAt = room;
       }
@@ -72,7 +73,7 @@ export function moves({ ledger, now, onStep }: { ledger: Ledger; now: () => Date
         if (reserved.kind === "not_found") return { ok: false, reason: "not_found" } as const;
         overCap = reserved.kind === "full";
         // ponytail: a writer that took the last place since the search leaves the move over the limit; the dispatch check moves it on.
-        await reserveMailbox(workspaceId, item.actionId, plannedAt, { now: at });
+        await capacity.reserve(workspaceId, item.actionId, plannedAt, { now: at });
       }
       await inWorkspace(workspaceId, (tx) => setPlannedAt(tx, id, plannedAt, at));
       if (approved) {

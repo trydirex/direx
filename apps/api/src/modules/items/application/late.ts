@@ -3,8 +3,9 @@
 // one, at the next send slot free for its Person, so the Touch check matches and the caps still hold.
 // One Workspace notice counts what is late and resumes the late emails together; posts go one by one.
 import type { Actor, Ledger } from "../../ledger";
-import { nextMailboxTime, reserveMailbox, reserveTouch } from "../../schedule";
+import { reserveTouch } from "../../schedule";
 import { inWorkspace, itemIdByAction, setPlannedAt, type ItemsTx } from "../adapters/repo";
+import type { CapacityPort } from "./capacity";
 import type { ItemKind } from "./items";
 
 export const LATE_KIND = "late_sends";
@@ -16,14 +17,14 @@ const SEARCH_HOURS = 14 * 24;
  * The first slot from `from` that both the Action's Person and its Mailbox's day can take, reserved;
  * `from` itself when neither counts it; null when none is free.
  */
-export async function nextFreeSlot(workspaceId: string, actionId: string, from: Date): Promise<Date | null> {
+export async function nextFreeSlot(capacity: CapacityPort, workspaceId: string, actionId: string, from: Date): Promise<Date | null> {
   const end = from.getTime() + SEARCH_HOURS * HOUR;
   for (let next = from; next.getTime() <= end; ) {
-    const slot = await nextMailboxTime(workspaceId, actionId, next, { now: from });
+    const slot = await capacity.nextTime(workspaceId, actionId, next, { now: from });
     if (!slot || slot.getTime() > end) return null;
     const r = await reserveTouch(workspaceId, actionId, slot, { now: from });
     if (r.kind === "not_found") return null;
-    if (r.kind !== "full" && (await reserveMailbox(workspaceId, actionId, slot, { now: from })).kind !== "full") return slot;
+    if (r.kind !== "full" && (await capacity.reserve(workspaceId, actionId, slot, { now: from })).kind !== "full") return slot;
     next = new Date(slot.getTime() + HOUR);
   }
   return null;
@@ -34,9 +35,9 @@ export async function nextFreeSlot(workspaceId: string, actionId: string, from: 
  * limit: the new time's places, and the Item showing it. A Person slot that's taken leaves the claim
  * to hold it on its old reservation, for a person.
  */
-export async function followLater(workspaceId: string, actionId: string, at: Date, now: Date): Promise<void> {
+export async function followLater(capacity: CapacityPort, workspaceId: string, actionId: string, at: Date, now: Date): Promise<void> {
   await reserveTouch(workspaceId, actionId, at, { now });
-  await reserveMailbox(workspaceId, actionId, at, { now });
+  await capacity.reserve(workspaceId, actionId, at, { now });
   await inWorkspace(workspaceId, async (tx) => {
     const itemId = await itemIdByAction(tx, actionId);
     if (itemId) await setPlannedAt(tx, itemId, at, now);
@@ -48,7 +49,7 @@ const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 type SettleGroupIn = (tx: ItemsTx, workspaceId: string, a: { kind: string; groupKey: string; actor: Actor; next: { payload: unknown; details: { title: string; workArea: string; warnings: [] } } | null }) => Promise<unknown>;
 
-export function lateSends(d: { ledger: Ledger; now: () => Date; settleGroupIn: SettleGroupIn; actionPermission?: ((capability: string) => string | undefined) | undefined }) {
+export function lateSends(d: { ledger: Ledger; now: () => Date; settleGroupIn: SettleGroupIn; actionPermission?: ((capability: string) => string | undefined) | undefined; capacity: CapacityPort }) {
   // Transactions applying the notice refresh it after they commit, not mid-way, so the Item being
   // approved isn't replaced under its own approval.
   const applying = new WeakSet<object>();
@@ -77,7 +78,7 @@ export function lateSends(d: { ledger: Ledger; now: () => Date; settleGroupIn: S
 
   /** Sends one held Action that is past its time at its Person's next free slot, in the caller's transaction. */
   async function resumeLateIn(tx: ItemsTx, workspaceId: string, actionId: string, actor: Actor, heldFor?: string) {
-    const slot = await nextFreeSlot(workspaceId, actionId, d.now());
+    const slot = await nextFreeSlot(d.capacity, workspaceId, actionId, d.now());
     if (!slot) return { ok: false, reason: "no_free_slot" } as const;
     const itemId = await itemIdByAction(tx, actionId);
     if (itemId) await setPlannedAt(tx, itemId, slot, d.now());

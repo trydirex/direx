@@ -2,7 +2,7 @@
 // Every ledger SQL statement. Only this file writes actions.state or actions.version
 // (the claim token), and every write appends one action_events row.
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { withWorkspace, type WorkspaceTx } from "@direx/db";
+import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
 import { touchField } from "@direx/plugin-sdk/host";
 import { actionEvents, actions, approvals, workspaces } from "@direx/db/schema";
 import { standingRules } from "@direx/db/schema-rules";
@@ -73,6 +73,25 @@ export async function readActionStates(tx: LedgerTx, ids: readonly string[]): Pr
 export async function readAction(tx: LedgerTx, id: string): Promise<ActionRow | undefined> {
   const [row] = await tx.select().from(actions).where(eq(actions.id, id));
   return row as ActionRow | undefined;
+}
+
+/**
+ * The scope of the live operator hold on this Workspace, its Organization or the deployment, or null.
+ * Read through a definer: the holds sit in schema system, where no member can lift them.
+ */
+export async function operatorHold(tx: LedgerTx, workspaceId: string): Promise<string | null> {
+  const { rows } = await tx.execute<{ scope: string | null }>(sql`select system.operator_hold_of(${workspaceId}::uuid) as scope`);
+  return rows[0]?.scope ?? null;
+}
+
+/** Lifted operator holds not yet released, each with a live Workspace it covered that nothing else holds, or null for none. */
+export async function operatorHoldsToRelease(): Promise<{ holdId: string; workspaceId: string | null }[]> {
+  const { rows } = await withSystem((tx) => tx.execute<{ hold_id: string; workspace_id: string | null }>(sql`select hold_id, workspace_id from system.operator_holds_to_release()`));
+  return rows.map((r) => ({ holdId: r.hold_id, workspaceId: r.workspace_id }));
+}
+
+export async function markOperatorHoldsReleased(holdIds: readonly string[]): Promise<void> {
+  await withSystem((tx) => tx.execute(sql`select system.mark_operator_holds_released(${sql.param([...holdIds])}::uuid[])`));
 }
 
 /** Whether this transaction's Workspace was deleted. RLS shows only its own row. */

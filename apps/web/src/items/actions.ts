@@ -55,6 +55,7 @@ export const ITEM_MESSAGES: Record<string, string> = {
   not_clean: "This one has warnings, so it needs its own review.",
   slot_full: "That time would mean too many messages to this Person close together. Pick another.",
   mailbox_day_full: "That day already has as many emails as this email account sends a day. Pick another day.",
+  account_day_full: "That day already has as many posts as this account makes a day. Pick another day.",
   slot_in_past: "That time has passed. Pick a new one.",
   wrong_state: "This can't be done any more. It may have moved on already.",
   outcome_unknown: "We can't tell if this went out. Mark it sent or resend it first.",

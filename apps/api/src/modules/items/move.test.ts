@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Moving an Item, through a real ledger, Dispatcher and schedule.
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { appClient } from "../../../../../test/db";
+import { createVault, rootKeyFromEnv } from "../credentials";
+import { reserveMailbox } from "../schedule";
 import type { MoveStep } from "./index";
 import { actionIdOf as idIn, itemsWorld, person } from "./fixtures/items";
 
@@ -137,6 +140,56 @@ test("re-dating later for a launch keeps the approval and sends at the new time;
   const earlier = await approved(hours(30));
   expect(await items.redateItem(W, earlier.id, hours(6), person)).toEqual({ ok: true, kept: false, backToApproval: true, overCap: false });
   expect((await items.view(W, earlier.id))!).toMatchObject({ state: "needs_approval", at: hours(6) });
+});
+
+test("concurrent Mailbox redates reserve separate days and keep the approved times in sync", async () => {
+  const vault = createVault({ rootKey: rootKeyFromEnv({ DIREX_MASTER_KEY: "11".repeat(32) })!, now: () => clock.at });
+  const made = await vault.create({ workspaceId: W, actorUserId: person.userId, scope: "workspace", kind: "api_key", key: "move-mailbox", name: "Mailbox", meta: {}, value: { key: "x" } });
+  if (!made.ok) throw new Error(made.reason);
+  const mailbox = made.credential.id;
+  const db = await appClient();
+  try {
+    await db.query("select set_config('app.workspace_id', $1, false)", [W]);
+    await db.query("update credentials set daily_limit = 1 where id = $1", [mailbox]);
+    const pair = [];
+    for (const slot of [hours(3), hours(27)]) {
+      const item = await submit(await newTouch(await newPerson(), slot));
+      expect((await items.approve(W, item.id, 1, who)).ok).toBe(true);
+      const action = await actionIdOf(item.id);
+      await db.query("update actions set capability = 'test/email.send', credential_id = $2 where id = $1", [action, mailbox]);
+      expect(await reserveMailbox(W, action, slot, { now: clock.at })).toMatchObject({ kind: "reserved" });
+      pair.push({ item: item.id, action });
+    }
+
+    const wanted = hours(51);
+    // Hold the Mailbox until both moves reach its lock. An unlocked search sees the same empty day.
+    await db.query("begin");
+    await db.query("select pg_advisory_xact_lock(hashtextextended($1, 0))", [`mailbox:${mailbox}`]);
+    const moves = Promise.allSettled(pair.map(({ item }) => items.redateItem(W, item, wanted, person)));
+    try {
+      await vi.waitFor(async () => {
+        const { rows } = await db.query(
+          "select count(*)::int as n from pg_locks where locktype = 'advisory' and not granted and pg_backend_pid() = any(pg_blocking_pids(pid))",
+        );
+        expect(rows[0].n).toBe(2);
+      });
+    } finally {
+      await db.query("rollback");
+      await moves;
+    }
+    expect(await moves).toEqual(pair.map(() => ({ status: "fulfilled", value: { ok: true, kept: true, backToApproval: false, overCap: false } })));
+
+    const used = [];
+    for (const { item, action } of pair) {
+      const { rows: [latest] } = await db.query("select slot from mailbox_reservations where action_id = $1 order by created_at desc limit 1", [action]);
+      expect(await items.view(W, item)).toMatchObject({ at: latest.slot, state: "scheduled" });
+      expect(await ledger.getAction(W, action)).toMatchObject({ dueAt: latest.slot, state: "scheduled" });
+      used.push(latest.slot as Date);
+    }
+    expect(used.sort((a, b) => a.getTime() - b.getTime())).toEqual([wanted, hours(72)]);
+  } finally {
+    await db.end();
+  }
 });
 
 test("a re-dated Touch over its cap still moves, says so, and is held with cap when its time comes", async () => {

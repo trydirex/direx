@@ -5,13 +5,16 @@
 // approval; a content check needs a template step this Workspace said yes to for that receiver.
 // Checks are capped per Mailbox per day under the Mailbox's lock and count toward its provider
 // ceiling. A check skipped is recorded with why, and one not sent within 30 minutes of its time is
-// cancelled and recorded too, so a report can tell either from a check that went missing.
+// cancelled and recorded too, so a report can tell either from a check that went missing. A content
+// check carries its step's tracked links as the real send would, as check-only links that redirect
+// and never count (ADR 0035 rule 002).
 import { templateStep } from "../../campaigns/index";
 import { credentialSettings } from "../../credentials/index";
 import type { Check, Ledger, SnapshotEntry } from "../../ledger/index";
 import type { Deployment } from "../../models/index";
 import { senderIdentity } from "../../outreach/index";
 import { lockMailboxDay, PROVIDER_CEILING } from "../../schedule/index";
+import { fixLinks, recordUsesOf } from "../../tracking/index";
 import { approvalBinds, checksMade, inWorkspace, insertProbe, isOwnMailbox, isReportOf, lateChecks, markNotSent, markUnknown, probeByAction, probeByArchive, probeRow, reportsMade, unknownPlacement, type ProbeRow } from "../adapters/repo";
 import { LIBRARY_APPROVED } from "../domain/library";
 import { CONTENT_TEST_KIND, type ContentTests } from "./content-tests";
@@ -21,6 +24,9 @@ import { trustList } from "./list";
 import { googleMx, type ResolveMx } from "./mx";
 import { contentSubject, pairDay, probeIdentity, receiversFor, seed, type ProbeKind } from "./pairing";
 import { contentProbe, plainProbe } from "./render";
+
+// Where render's footer starts; the text above it is the step's own.
+const FOOTER = "\n\n--\n";
 
 /** Checks a Mailbox sends a day [DEFAULT], and fewer while it has been listed under 4 weeks, unless the founder controls it. */
 export const DAILY_CAP = 10;
@@ -77,7 +83,10 @@ export function createSending(deps: {
       const isNew = !me.founder_controlled && daysFrom(me.listed_at, s.day) < NEW_MEMBER_DAYS;
       const step = await deps.contentTests.newestStep(workspaceId);
       const template = step && (await templateStep(workspaceId, step.campaignId, step.stepKey, at));
-      const content = template && contentProbe(template, template.urls, sender);
+      let content = template && contentProbe(template, template.urls, sender);
+      // Only the words above the footer carry tracked links, as in a real send.
+      const links = content?.ok && step ? await fixLinks(workspaceId, { campaignId: step.campaignId, stepKey: step.stepKey, personId: null, checkOnly: true, text: content.probe.text.slice(0, content.probe.text.lastIndexOf(FOOTER)), now: at }) : null;
+      if (links && content?.ok) content = { ok: true, probe: { ...content.probe, text: links.text + content.probe.text.slice(content.probe.text.lastIndexOf(FOOTER)) } };
       const mx = new Map<string, Promise<boolean>>();
       const googleMail = (a: string) => {
         const domain = a.slice(a.lastIndexOf("@") + 1);
@@ -121,6 +130,7 @@ export function createSending(deps: {
             const action = skip
               ? null
               : (await deps.ledger().createActionIn(tx, workspaceId, { idempotencyKey: `placement_send:${credentialId}:${s.day}:${peer.address}:${kind}`, capability: effect.id, dedupe: effect.dedupe, spec, credentialId, actor: { system: "placement" } })).action;
+            if (action && kind === "content" && links) await recordUsesOf(tx, workspaceId, { actionId: action.id }, links, at);
             return insertProbe(tx, { workspaceId, ...key, listVersion: list.trusted.version, seq: SEQ[kind], expectedAt: id.expectedAt, actionId: action?.id ?? null, skipReason: skip, createdAt: at });
           });
           if (!row.actionId) {

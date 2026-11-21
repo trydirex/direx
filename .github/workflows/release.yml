@@ -15,6 +15,10 @@ on:
         type: choice
         options: [patch, minor]
         default: patch
+      expected_sha:
+        description: Full commit SHA approved for release
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -38,6 +42,14 @@ jobs:
           [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Start a release from main"; exit 1; }
           role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" -q .permission)
           [ "$role" = admin ] || { echo "::error::Only an admin can cut a release ($GITHUB_ACTOR is $role)"; exit 1; }
+      - name: Confirm the approved commit
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+        run: |
+          if [ "$GITHUB_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::This run is on $GITHUB_SHA, which is not the approved commit. Select the commit again and obtain approval before retrying."
+            exit 1
+          fi
       - name: ci and install passed on this commit
         run: |
           for wf in ci install; do
@@ -66,7 +78,7 @@ jobs:
         env:
           PREV: ${{ steps.version.outputs.prev }}
         run: |
-          keys() { git show "$1:deploy/compose/.env.template" | sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' | sort; }
+          keys() { git show "$1:deploy/compose/.env.template" | sed -n 's/^[[:blank:]]*\(export[[:blank:]]\+\)\?\([A-Z][A-Z0-9_]*\)[[:blank:]]*[=:].*/\2/p' | sort; }
           added=$(comm -13 <(keys "$PREV") <(keys HEAD))
           if [ -n "$added" ]; then
             echo "::error::deploy/compose/.env.template has new settings since $PREV, which existing installs don't have: ${added//$'\n'/ }. Run again with minor, then add what to set to the release notes."
@@ -99,7 +111,8 @@ jobs:
     uses: ./.github/workflows/release-sdk.yml
     with:
       release_tag: ${{ needs.tag.outputs.version }}
-    secrets: inherit
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # After the image, so a release never names an image install.sh can't pull. If the SDK publish
   # fails, retry it with release-sdk's own button; the release still goes out.

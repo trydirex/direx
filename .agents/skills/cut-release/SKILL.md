@@ -61,17 +61,25 @@ their edits or approval. Read every "Before you upgrade" step against the diff y
 
 ## 4. Tag and release (on the maintainer's go)
 
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:494f075e7dba26af7770a1cab4ea452a43aaf6ac7c3c83ea2e97c1b945446fb8 -->
+
 If the maintainer is an admin and `SHA` is the tip of `main`, use the button:
 
 ```bash
-gh workflow run release.yml --repo trydirex/direx -f bump=patch    # or minor
-gh run watch --repo trydirex/direx "$(gh run list --repo trydirex/direx --workflow release.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+gh workflow run release.yml --repo trydirex/direx --ref main -f bump=patch -f expected_sha="$SHA"    # or minor
+gh run watch --repo trydirex/direx <run-id>
 gh release edit <version> --repo trydirex/direx --notes-file <path>/release-notes-<version>.md
 ```
 
-It checks `ci` and `install` on `SHA` again, and refuses `patch` when `deploy/compose/.env.template`
-gained a setting. It creates the release with notes generated from the merged PRs, and the last line
-swaps in the notes from step 3. The image and SDK jobs run inside this run, so step 5 reads it.
+The workflow stops before tagging if its commit differs from the approved `SHA`. If `main` advanced,
+repeat steps 1–3 and get approval for the new commit before dispatching again. The workflow checks
+`ci` and `install` on that SHA and refuses `patch` if `deploy/compose/.env.template` gained a setting.
+Watch the run from this dispatch. Only edit the notes once its GitHub Release job succeeds for the approved
+SHA, using the version it released. The image and SDK jobs run inside this run, so step 5 reads it.
+
+<!-- /coderabbit-ai-generated:v1 -->
 
 Otherwise, by hand:
 

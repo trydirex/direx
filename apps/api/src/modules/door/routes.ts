@@ -189,7 +189,7 @@ const listTokensRoute = createRoute({ method: "get", path: "/api/w/{workspaceId}
 const createTokenRoute = createRoute({
   method: "post",
   path: "/api/w/{workspaceId}/external-tokens",
-  middleware: [requirePermission("workspace.settings"), requireStepUp()],
+  middleware: [requirePermission("workspace.settings"), requireStepUp("short")],
   request: { params: ws, body: { required: true, content: { "application/json": { schema: CreateBody } } } },
   responses: { 200: json(z.object({ id: z.uuid(), token: z.string(), expiresAt: z.iso.datetime() }), "The new token, shown this once"), ...tokenErrors },
 });

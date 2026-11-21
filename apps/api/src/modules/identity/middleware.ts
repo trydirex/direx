@@ -106,11 +106,9 @@ export function requirePermission(p: Permission) {
  * Step-up: whether this sign-in is recent enough for `window` (STEP_UP_WINDOWS). Every check names
  * its window (ADR 0037 rule 004).
  */
-// ponytail: the "short" defaults here and on requireStepUp keep today's 10 minutes for checks outside
-// identity, items and lessons until they name a window; then drop both so no check can leave it out.
-export const steppedUp = (m: { signedInAt: Date }, window: StepUpWindow = "short", now = new Date()) => now.getTime() - m.signedInAt.getTime() <= STEP_UP_WINDOWS[window];
+export const steppedUp = (m: { signedInAt: Date }, window: StepUpWindow, now = new Date()) => now.getTime() - m.signedInAt.getTime() <= STEP_UP_WINDOWS[window];
 
-export function requireStepUp(window: StepUpWindow = "short", now: () => Date = () => new Date()) {
+export function requireStepUp(window: StepUpWindow, now: () => Date = () => new Date()) {
   return createMiddleware<MemberEnv>(async (c, next) => {
     if (!steppedUp(c.get("member"), window, now())) return c.json({ error: "step_up_required" }, 403);
     await next();

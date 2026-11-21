@@ -180,7 +180,7 @@ const startRoute = route({
 const issueLinkRoute = route({
   method: "post",
   path: "/api/w/{workspaceId}/connections/{connection}/links",
-  middleware: [requirePermission("credential.connect"), requireStepUp()],
+  middleware: [requirePermission("credential.connect"), requireStepUp("short")],
   request: { params: ws.extend({ connection: z.string().regex(/^[a-z0-9_-]{1,40}$/) }) },
   responses: {
     201: json(z.object({ url: z.url(), expiresAt: z.iso.datetime() }), "Open this link where the other account is signed in; it works once, for 15 minutes"),
@@ -272,7 +272,7 @@ type Refused = "forbidden" | "step_up_required" | null;
 function mayTouch(m: Member, c: { scope: string; ownerUserId: string | null }, othersToo: boolean): Refused {
   if (c.scope === "workspace") {
     if (!can(m.role, "credential.manage")) return "forbidden";
-    return steppedUp(m) ? null : "step_up_required";
+    return steppedUp(m, "short") ? null : "step_up_required";
   }
   if (c.ownerUserId === m.userId) return can(m.role, "credential.connect") ? null : "forbidden";
   return othersToo && can(m.role, "credential.manage") ? null : "forbidden";
@@ -586,7 +586,7 @@ export function credentialRoutes({ auth, vault, baseURL, mailboxes, keys, landin
       if (!found) return c.json({ error: "missing" }, 404);
       const refused = mayTouch(m, found, true);
       if (refused) return c.json({ error: refused }, STATUS[refused]);
-      const r = await vault().remove({ workspaceId: m.workspaceId, id, actorUserId: m.userId, stepUp: steppedUp(m) });
+      const r = await vault().remove({ workspaceId: m.workspaceId, id, actorUserId: m.userId, stepUp: steppedUp(m, "short") });
       return r.ok ? c.json({ ok: true as const }, 200) : c.json({ error: r.reason }, STATUS[r.reason]);
     })
     .openapi(eventsRoute, async (c) => {

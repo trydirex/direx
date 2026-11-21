@@ -5,6 +5,7 @@
 // and the person presses the action again: nothing re-runs it for them.
 import { useEffect, useState } from "react";
 import { Dialog } from "@astryxdesign/core/Dialog";
+import { Button } from "@/components/Button";
 import { SignIn } from "./SignIn";
 
 let open: (() => void) | undefined;
@@ -26,7 +27,16 @@ export function ConfirmIdentity() {
   }, []);
   return (
     <Dialog isOpen={isOpen} onOpenChange={setOpen} purpose="form" width={448} aria-label="Confirm it's you">
-      {isOpen && <SignIn title="Confirm it's you" note="This needs a recent sign-in. Sign in again, then try once more." callbackURL={location.pathname + location.search} />}
+      {isOpen && (
+        <>
+          <SignIn title="Confirm it's you" note="This needs a recent sign-in. Sign in again, then try once more." callbackURL={location.pathname + location.search} />
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </>
+      )}
     </Dialog>
   );
 }

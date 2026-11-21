@@ -3,7 +3,7 @@
 // the page, any other code passes through, and nothing is re-run.
 import { act } from "react";
 import { afterEach, expect, test, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { api } from "../client";
 import { withQueries } from "../testing";
@@ -31,6 +31,8 @@ test("a code passes through unchanged, and only step_up_required opens the sign-
   act(() => void confirmOnStepUp("step_up_required"));
   expect(await screen.findByRole("dialog", { name: "Confirm it's you" })).toBeTruthy();
   expect(screen.getByText("This needs a recent sign-in. Sign in again, then try once more.")).toBeTruthy();
+  await userEvent.keyboard("{Escape}");
+  expect(dialog()).toBeNull();
 });
 
 test("a lesson refused for step-up opens the sign-in over the page and is sent once", async () => {
@@ -39,6 +41,9 @@ test("a lesson refused for step-up opens the sign-in over the page and is sent o
   render(withQueries(<><Lessons workspaceId={W} role="owner" initial={[lesson]} /><ConfirmIdentity /></>));
   await userEvent.click(screen.getByRole("button", { name: `Remove ${lesson.text}` }));
   await userEvent.click(await screen.findByRole("button", { name: "Remove" }));
-  expect(await screen.findByRole("dialog", { name: "Confirm it's you" })).toBeTruthy();
+  const prompt = await screen.findByRole("dialog", { name: "Confirm it's you" });
+  expect(post).toHaveBeenCalledTimes(1);
+  await userEvent.click(within(prompt).getByRole("button", { name: "Close" }));
+  expect(dialog()).toBeNull();
   expect(post).toHaveBeenCalledTimes(1);
 });

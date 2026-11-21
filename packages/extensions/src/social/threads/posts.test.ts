@@ -62,6 +62,12 @@ test("Threads: a lookup leaves out a post that no longer exists", async () => {
   expect(t.paths()).toEqual(["/v1.0/me", "/v1.0/m1", "/v1.0/gone"]);
 });
 
+test("Threads: a lookup rejects code 100 without a deletion subcode", async () => {
+  t.failNext.push(Response.json({ id: "5" }), Response.json({ error: { code: 100 } }, { status: 400 }));
+  await expect(read(threads, { ids: ["m1"] }, token)).rejects.toMatchObject({ reason: "provider_error", status: 400, networkCode: 100 });
+  expect(t.paths()).toEqual(["/v1.0/me", "/v1.0/m1"]);
+});
+
 test("Threads: 190 asks for a reconnect, 4 waits, and anything else is the network's error", async () => {
   t.failNext.push(Response.json({ error: { code: 190 } }, { status: 400 }), Response.json({ error: { code: 4 } }, { status: 400 }), Response.json({ error: { code: 1 } }, { status: 500 }), Response.json({}, { status: 404 }));
   await expect(read(threads, { limit: 5 }, token)).rejects.toMatchObject({ reason: "credential_rejected", status: 400 });

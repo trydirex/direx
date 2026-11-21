@@ -3,11 +3,12 @@
 // an approval binds always come from the Item, never from the request.
 import { storedSpec } from "@direx/plugin-sdk/host";
 import { isLate, type Actor, type ApproverId, type Ledger, type Refusal, type SnapshotEntry } from "../../ledger";
-import { reserveMailbox, reserveTouch } from "../../schedule";
+import { reserveTouch } from "../../schedule";
 import { inWorkspace, insertDecision, lockOwnItem, moveOwnState, noteEvent, readItem, rebindActionItem, setPlannedAt, type ItemsTx, type JoinedItem } from "../adapters/repo";
 import type { ReasonGiven } from "../domain/rates";
 import { detailsStale } from "../domain/state";
 import { warn, type Warning } from "../domain/warnings";
+import type { CapacityPort } from "./capacity";
 import type { ItemKind } from "./items";
 import { nextFreeSlot } from "./late";
 import { toView, type ItemView } from "./view";
@@ -44,6 +45,7 @@ export function decisions({
   mayGrant,
   resumeLate,
   editOf,
+  capacity,
 }: {
   ledger: Ledger;
   kinds: Record<string, ItemKind>;
@@ -58,6 +60,7 @@ export function decisions({
   /** Sends a late Action at its Person's next free slot. */
   resumeLate?: ((workspaceId: string, actionId: string, actor: Actor) => Promise<{ ok: true } | { ok: false; reason: string }>) | undefined;
   editOf?: EditOf | undefined;
+  capacity: CapacityPort;
 }) {
   const read = (workspaceId: string, id: string) => inWorkspace(workspaceId, (tx) => readItem(tx, id));
 
@@ -117,7 +120,7 @@ export function decisions({
     const reserved = await reserveTouch(workspaceId, item.actionId!, slot, { now: at });
     if (reserved.kind === "full") return refuse("slot_full", reserved.cap);
     if (reserved.kind === "not_found") return refuse("not_found");
-    const day = await reserveMailbox(workspaceId, item.actionId!, slot, { now: at });
+    const day = await capacity.reserve(workspaceId, item.actionId!, slot, { now: at });
     if (day.kind === "full") return { ok: false, reason: "mailbox_day_full", day: day.day, limit: day.limit };
     const r = await ledger.approve(workspaceId, item.actionId!, {
       approverId: who.approverId,
@@ -281,7 +284,7 @@ export function decisions({
       if (!row.item.actionId) return refuse("wrong_state");
       // A late resend goes out at the next free slot, which the person's choice reserves.
       const late = choice === "resend" && row.action?.dueAt && isLate(row.action.dueAt, now());
-      const slot = late ? await nextFreeSlot(workspaceId, row.item.actionId, now()) : undefined;
+      const slot = late ? await nextFreeSlot(capacity, workspaceId, row.item.actionId, now()) : undefined;
       if (late && !slot) return refuse("no_free_slot");
       if (slot) await inWorkspace(workspaceId, (tx) => setPlannedAt(tx, id, slot, now()));
       const r = await ledger.resolveUnknown(workspaceId, row.item.actionId, choice, userId, slot ? { dueAt: slot } : {});

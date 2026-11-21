@@ -5,11 +5,11 @@ import type { Items } from "../../items";
 import { sentTo } from "../../ledger";
 import { BASES, ENTITY_TYPES, OPTED_OUT, whyNot, type Basis, type Confidence, type EntityType, type Outreach } from "../../outreach";
 import { emailsOfGroup, normaliseKey, personIdWithEmail } from "../../people";
-import { activeActions, insertOutcome, joinCampaign, lastSentAt, liveElsewhere, liveOutcomes, markConflict, peoplePage, personRow, readCampaign, readOutcome, requireApproved, inWorkspace, setPersonStatus, type OutcomeKind } from "../adapters/repo";
+import { activeActions, addRole, insertOutcome, joinCampaign, lastSentAt, liveElsewhere, liveOutcomes, markConflict, peoplePage, peopleWithRole, personRow, readCampaign, readOutcome, requireApproved, inWorkspace, senderCountryOf, setPersonStatus, type OutcomeKind } from "../adapters/repo";
 import { mailboxDay, timeZoneOf } from "../../schedule";
 import { CONFLICT_KIND } from "./coordination";
-import { parseCsv } from "../domain/csv";
-import { MAX_EVIDENCE, readRow, type PersonRow, type RowRefusal } from "../domain/rows";
+import { parseCsv, type CsvRow } from "../domain/csv";
+import { dateOf, MAX_EVIDENCE, readRow, type PersonRow, type RowRefusal } from "../domain/rows";
 
 /** The most people one call takes, by CSV or by rows. A caller with more splits them into calls of this size. */
 export const MAX_ROWS = 1000;
@@ -41,6 +41,11 @@ export type PersonResult =
   | { status: "conflict"; personId: string; missing: string[]; conflictItemId: string }
   | { status: "suppressed" | "already_contacted" | "removed"; personId: string }
   | { status: "refused"; reason: RowRefusal | "bad_email" };
+
+/** Why a customer row wasn't added. A row refused for its values names the value. */
+export type CustomerSkip = "invalid_email" | "no_opt_in" | "suppressed" | "bad_opt_in_date" | "no_country" | "wrong_column_count" | RowRefusal;
+type CustomerRow = { status: "added" | "updated"; personId: string; email: string } | { status: "skipped"; reason: CustomerSkip; email?: string };
+const OPTED_IN = new Set(["yes", "true", "1"]);
 
 // The evidence field holds a summary; the caller keeps the full record, so a long one is cut, not refused.
 const summary = (evidence: string) => {
@@ -126,7 +131,65 @@ export function campaignPeople({ outreach, items, now, keptEligibility }: { outr
     return { status: known ? "joined" : "added", personId: added.personId, missing: added.missing };
   }
 
+  /**
+   * One row of a customer list. Only a recorded opt-in adds the Person, with basis `consent` and the
+   * opt-in as its evidence, and the `customer` role. A consent already recorded and still in force is
+   * kept as it is; any other basis is replaced by the opt-in, keeping the record's country and entity type.
+   */
+  async function customerRow(workspaceId: string, raw: CsvRow, senderCountry: string | null, userId: string): Promise<CustomerRow> {
+    if ("bad" in raw) return { status: "skipped", reason: raw.bad };
+    const v = raw.values;
+    const key = normaliseKey("email", v.email ?? "");
+    if (!key.ok) return { status: "skipped", reason: "invalid_email", ...(v.email ? { email: v.email } : {}) };
+    const email = key.value;
+    if (!OPTED_IN.has((v.opted_in ?? "").toLowerCase())) return { status: "skipped", reason: "no_opt_in", email };
+    const on = v.opted_in_on ?? "";
+    if (on && !dateOf(on)) return { status: "skipped", reason: "bad_opt_in_date", email };
+    const read = readRow({ email, first_name: v.name ?? "", company: v.company ?? "", country: v.country ?? "" }, VOCAB);
+    if (!read.ok) return { status: "skipped", reason: read.reason, email };
+    const person = await outreach().ensurePerson(workspaceId, email);
+    if (!person.ok) return { status: "skipped", reason: "invalid_email", email };
+    if ((await whyNot(workspaceId, [person.id], "consented_marketing", now())).get(person.id) === OPTED_OUT) return { status: "skipped", reason: "suppressed", email };
+
+    const record = await outreach().person(workspaceId, person.id);
+    const inForce = record?.basis === "consent" && (!record.expiresAt || new Date(record.expiresAt) > now());
+    if (!inForce) {
+      const given = read.row.given.country;
+      // A row with no country keeps the one on record, or takes the Workspace's own as a guess that says so.
+      const country = given || record?.country || senderCountry;
+      if (!country) return { status: "skipped", reason: "no_country", email };
+      const confidence: Confidence = given ? "stated" : record?.country ? (record.confidence === "inferred" ? "inferred" : "stated") : "inferred";
+      const entityType = ENTITY_TYPES.find((t) => t === record?.entityType);
+      const evidence = `Customer import: opted in ${on ? `on ${on}` : "(no date given)"}`;
+      const saved = await outreach().addPerson(workspaceId, { email, country, basis: "consent", evidence, entityType, confidence, userId });
+      if (!saved.ok) return { status: "skipped", reason: "invalid_email", email };
+    }
+    const added = await inWorkspace(workspaceId, (tx) => addRole(tx, { workspaceId, personId: person.id, role: "customer", name: read.row.firstName, company: read.row.company, addedBy: userId, at: now() }));
+    return { status: added ? "added" : "updated", personId: person.id, email };
+  }
+
   return {
+    /** A customer list: who was added, who was already a Customer, and who was left out and why. Re-importing adds no one twice. */
+    async importCustomers(workspaceId: string, a: { csv: string; userId: string }) {
+      const csv = parseCsv(a.csv);
+      if (!csv.ok) return csv;
+      if (csv.rows.length > MAX_ROWS) return { ok: false, reason: "too_many_rows", limit: MAX_ROWS } as const;
+      const senderCountry = await inWorkspace(workspaceId, senderCountryOf);
+      const out = { added: [] as { personId: string; email: string }[], updated: [] as { personId: string; email: string }[], skipped: [] as { row: number; email?: string; reason: CustomerSkip }[] };
+      for (const raw of csv.rows) {
+        const r = await customerRow(workspaceId, raw, senderCountry, a.userId);
+        if (r.status === "skipped") out.skipped.push({ row: raw.row, reason: r.reason, ...(r.email ? { email: r.email } : {}) });
+        else out[r.status].push({ personId: r.personId, email: r.email });
+      }
+      return { ok: true, ...out } as const;
+    },
+
+    /** The Workspace's Customers, as their import named them, with the basis on record. */
+    async customers(workspaceId: string) {
+      const rows = await inWorkspace(workspaceId, (tx) => peopleWithRole(tx, "customer"));
+      return rows.map((r) => ({ personId: r.personId, email: r.email, name: r.name, company: r.company, addedAt: r.at.toISOString(), basis: r.basis, evidence: r.evidence, basisRecordedAt: r.recordedAt?.toISOString() ?? null }));
+    },
+
     async addPeople(workspaceId: string, campaignId: string, a: { csv: string; userId: string }) {
       const approved = await inWorkspace(workspaceId, (tx) => requireApproved(tx, campaignId));
       if (!approved.ok) return approved;

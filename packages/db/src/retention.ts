@@ -215,6 +215,8 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   // A consent record: removed by the purge with the ledger (ADR 0030 Q3); the export is the customer's copy.
   "public.person_eligibility": audit,
   "public.person_keys": auditDeletable,
+  // A Person's role in the Workspace, with the name and company its import gave; kept while the Workspace is.
+  "public.person_roles": auditDeletable,
   "public.person_links": audit,
   "public.placement_content_tests": audit,
   "public.placement_grants": audit,

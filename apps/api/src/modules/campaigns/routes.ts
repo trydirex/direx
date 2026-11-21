@@ -171,6 +171,54 @@ const removeRoute = createRoute({
   request: { params: one.extend({ personId: z.uuid() }) },
   responses: { 200: json(Ok, "Removed"), ...errors },
 });
+const Customer = z.object({ personId: z.uuid(), email: z.string() });
+const customerImportRoute = createRoute({
+  method: "post",
+  path: "/api/w/{workspaceId}/customers/import",
+  middleware: [requirePermission("item.edit")],
+  request: { params: ws, ...body(z.strictObject({ csv: z.string().max(MAX_CSV_CHARS) })) },
+  responses: {
+    200: json(
+      z
+        .object({
+          added: z.array(Customer),
+          updated: z.array(Customer).openapi({ description: "Already a Customer; a blank name or company keeps the one on record" }),
+          skipped: z.array(z.object({ row: z.number(), email: z.string().optional(), reason: z.string() })).openapi({ description: "Not added: no_opt_in, invalid_email, suppressed, no_country (none given, none on record, no sender country), or a bad value" }),
+        })
+        .openapi("CustomerImport"),
+      "What each row did",
+    ),
+    ...errors,
+  },
+});
+const customersRoute = createRoute({
+  method: "get",
+  path: "/api/w/{workspaceId}/customers",
+  middleware: [requirePermission("workspace.read")],
+  request: { params: ws },
+  responses: {
+    200: json(
+      z.object({
+        customers: z.array(
+          z
+            .object({
+              personId: z.uuid(),
+              email: z.string().nullable(),
+              name: z.string().nullable(),
+              company: z.string().nullable(),
+              addedAt: z.iso.datetime(),
+              basis: z.string().nullable(),
+              evidence: z.string().nullable(),
+              basisRecordedAt: z.iso.datetime().nullable(),
+            })
+            .openapi("Customer"),
+        ),
+      }),
+      "Persons with the customer role",
+    ),
+    ...errors,
+  },
+});
 const stepRoute = createRoute({
   method: "put",
   path: "/api/w/{workspaceId}/campaigns/{id}/steps/{key}",
@@ -969,6 +1017,11 @@ export function campaignRoutes(deps: { campaigns: () => Campaigns }) {
     if (r.ok) return c.json({ results: r.results }, 200);
     return c.json({ error: r.reason }, r.reason === "not_found" ? 404 : 400);
   });
+  app.openapi(customerImportRoute, async (c) => {
+    const r = await deps.campaigns().importCustomers(c.req.valid("param").workspaceId, { csv: c.req.valid("json").csv, userId: c.get("member").userId });
+    return r.ok ? c.json({ added: r.added, updated: r.updated, skipped: r.skipped }, 200) : c.json({ error: r.reason }, 400);
+  });
+  app.openapi(customersRoute, async (c) => c.json({ customers: await deps.campaigns().customers(c.req.valid("param").workspaceId) }, 200));
   app.openapi(removeRoute, async (c) => {
     const { workspaceId, id, personId } = c.req.valid("param");
     const r = await deps.campaigns().removePerson(workspaceId, id, personId, c.get("member").userId);

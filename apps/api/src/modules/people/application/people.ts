@@ -14,6 +14,7 @@ import {
   membersOf,
   mergeGroups,
   othersWithKey,
+  personIdWithEmail,
   proposeLink,
   readGroupIds,
   setGroup,
@@ -91,6 +92,21 @@ export async function createPerson(workspaceId: string): Promise<string> {
   const id = crypto.randomUUID();
   await inWorkspace(workspaceId, (tx) => insertPerson(tx, workspaceId, id, new Date()));
   return id;
+}
+
+/** Rechecks a normalized email under its key lock before creating a Person and their first key. */
+export function findOrCreateByEmail(workspaceId: string, email: string): Promise<{ id: string; existed: boolean }> {
+  return withGroupRetry(workspaceId, async (tx) => {
+    await lockKeyValue(tx, workspaceId, "email", email);
+    const found = await personIdWithEmail(tx, email);
+    if (found) return { id: found, existed: true };
+
+    const id = crypto.randomUUID();
+    const now = new Date();
+    await insertPerson(tx, workspaceId, id, now);
+    await insertKey(tx, workspaceId, id, "email", email, now);
+    return { id, existed: false };
+  });
 }
 
 export type AddKeyResult = { ok: true; value: string; linkedTo: string[] } | { ok: false; reason: string };

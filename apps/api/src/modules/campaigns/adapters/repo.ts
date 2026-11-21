@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { withSystem, withWorkspace, type WorkspaceTx } from "@direx/db";
-import { actionEvents, actions, credentials, items, personKeys } from "@direx/db/schema";
+import { actionEvents, actions, credentials, items, personKeys, personRoles } from "@direx/db/schema";
 import { agentRuns } from "@direx/db/schema-agents";
 import { campaignActions, campaignDms, campaignOutcomes, campaignPeople, campaignPlanChanges, campaigns, campaignSettlements, campaignStepMailboxes, campaignStepOutputs, campaignSteps, campaignWriteUps, clipStepRuns } from "@direx/db/schema-campaigns";
-import { replySignals } from "@direx/db/schema-outreach";
+import { outreachSettings, personEligibility, replySignals } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
 import { socialPosts } from "@direx/db/schema-social";
 import type { VisibleState } from "../../items";
@@ -878,4 +878,43 @@ export async function setWriteUp(tx: CampaignsTx, campaignId: string, set: Parti
   const current = fromRun ? or(eq(campaignWriteUps.runId, fromRun), isNull(campaignWriteUps.runId)) : undefined;
   const rows = await tx.update(campaignWriteUps).set(set).where(and(eq(campaignWriteUps.campaignId, campaignId), current)).returning({ id: campaignWriteUps.id });
   return rows.length > 0;
+}
+
+/** The Workspace's own country, which a customer row with none takes as a guess. */
+export async function senderCountryOf(tx: CampaignsTx) {
+  return (await tx.select({ country: outreachSettings.senderCountry }).from(outreachSettings))[0]?.country ?? null;
+}
+
+/** Gives a Person a role, or sets the name and company a later list gave; a blank one keeps what's there. True when the role is new. */
+export async function addRole(tx: CampaignsTx, a: typeof personRoles.$inferInsert) {
+  const [row] = await tx
+    .insert(personRoles)
+    .values(a)
+    .onConflictDoUpdate({
+      target: [personRoles.workspaceId, personRoles.personId, personRoles.role],
+      set: { name: sql`coalesce(excluded.name, ${personRoles.name})`, company: sql`coalesce(excluded.company, ${personRoles.company})` },
+    })
+    // xmax is 0 only on a row this statement inserted rather than updated.
+    .returning({ added: sql<boolean>`xmax = 0` });
+  return row!.added;
+}
+
+/** The Persons with a role, oldest first, each with an address and the basis recorded for them. */
+// ponytail: one unpaged read; page it if a Workspace's Customers pass a few thousand.
+export async function peopleWithRole(tx: CampaignsTx, role: "customer") {
+  return tx
+    .select({
+      personId: personRoles.personId,
+      name: personRoles.name,
+      company: personRoles.company,
+      at: personRoles.at,
+      email: sql<string | null>`(select min(k.value) from person_keys k where k.workspace_id = ${personRoles.workspaceId} and k.person_id = ${personRoles.personId} and k.kind = 'email')`,
+      basis: personEligibility.basis,
+      evidence: personEligibility.evidence,
+      recordedAt: personEligibility.recordedAt,
+    })
+    .from(personRoles)
+    .leftJoin(personEligibility, and(eq(personEligibility.workspaceId, personRoles.workspaceId), eq(personEligibility.personId, personRoles.personId)))
+    .where(eq(personRoles.role, role))
+    .orderBy(personRoles.at, personRoles.personId);
 }

@@ -8,6 +8,7 @@ export {
   acceptLink,
   addKey,
   createPerson,
+  findOrCreateByEmail,
   groupOf,
   lockGroup,
   rejectLink,

@@ -7,7 +7,7 @@ import { storedSpec, touchOf } from "@direx/plugin-sdk/host";
 import { credentialLabel, credentialSettings } from "../../credentials";
 import type { Items, ItemView, Warning } from "../../items";
 import type { Actor, Ledger, SnapshotEntry } from "../../ledger";
-import { addKey, createPerson, emailsOfGroup, listPeople, normaliseKey, personIdWithEmail, type PersonRow } from "../../people";
+import { emailsOfGroup, findOrCreateByEmail, listPeople, normaliseKey, personIdWithEmail, type PersonRow } from "../../people";
 import { contactSummaries, countReplies, suppressionReasons, emailForToken, eligibilityOf, inWorkspace, insertToken, readSettings, saveEligibility, readSignal, saveSettings, subscribedAmong, suppress, suppressionDetails, undoReplySuppressions, type OutreachTx } from "../adapters/repo";
 import { eligibilityWarnings, notEligible, type Basis, type Confidence, type EntityType } from "../domain/eligibility";
 import { isPublicHttps, optOutFooter } from "../domain/footer";
@@ -177,9 +177,7 @@ export function createOutreach(deps: OutreachDeps) {
     const found = await inWorkspace(workspaceId, (tx) => personIdWithEmail(tx, key.value));
     if (found) return { ok: true, id: found, existed: true } as const;
     await deps.readBack?.(workspaceId, key.value);
-    const id = await createPerson(workspaceId);
-    const added = await addKey(workspaceId, id, "email", key.value);
-    return added.ok ? ({ ok: true, id, existed: false } as const) : ({ ok: false, reason: "bad_email" } as const);
+    return { ok: true, ...(await findOrCreateByEmail(workspaceId, key.value)) } as const;
   }
 
   return {

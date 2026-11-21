@@ -692,6 +692,10 @@
     "0168_operator_holds.sql": {
       "sha256": "34e97757d905a89940d18c837c594c12c317e6a632d2946fff0b562f5e2bcb4c",
       "description": "Operator holds in schema system: a Workspace, Organization or deployment hold no member can lift, read by the Dispatcher through system.operator_hold_of, released by the worker after a lift, and set or lifted by the owner only"
+    },
+    "0169_person_roles.sql": {
+      "sha256": "0fe4a174b3d8ccfe7f34868e046808af31d27742d16d3948f72f315bd02a59b9",
+      "description": "Create person_roles, a Person's role in the Workspace (customer for now) with the name and company its import gave; forced RLS, UPDATE only on name and company, DELETE kept so a role can be removed"
     }
   }
 }

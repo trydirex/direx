@@ -276,6 +276,31 @@ export const personKeys = pgTable(
   ],
 );
 
+// What a Person is to the Workspace, such as one of its own customers, with the name and company the
+// list that added the role gave. One row per Person and role; a later import changes only the name and company.
+export const personRoles = pgTable(
+  "person_roles",
+  {
+    workspaceId: uuid("workspace_id").notNull(),
+    personId: uuid("person_id").notNull(),
+    role: text("role").notNull(),
+    name: text("name"),
+    company: text("company"),
+    addedBy: uuid("added_by")
+      .notNull()
+      .references(() => user.id),
+    at: tz("at").notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "person_roles_pkey", columns: [t.workspaceId, t.personId, t.role] }),
+    foreignKey({ name: "person_roles_person_fk", columns: [t.workspaceId, t.personId], foreignColumns: [people.workspaceId, people.id] }),
+    index("person_roles_workspace_id_role_idx").on(t.workspaceId, t.role),
+    check("person_roles_role_check", sql`${t.role} in ('customer')`),
+    check("person_roles_name_check", sql`length(${t.name}) <= 200`),
+    check("person_roles_company_check", sql`length(${t.company}) <= 200`),
+  ],
+);
+
 // One row per distinct key value in a workspace. addKey locks it before looking for other
 // records with the key, so two records given the same key at once always find each other.
 export const identityKeys = pgTable(

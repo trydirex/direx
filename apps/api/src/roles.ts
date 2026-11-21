@@ -16,13 +16,14 @@ export function roleFromEnv(env: Env = process.env): Role {
 
 /**
  * A split process shares nothing but Postgres and configured storage with the other side (ADR 0027
- * rule 005), so `api` and `worker` run on cloud only and with the root key in the environment: a key
- * file, or one generated under the data dir, exists on one machine. Runs before anything can make one.
+ * rule 005), so `api` and `worker` run on cloud only and with the root key in the environment or
+ * supplied by an extension (`keySupplied`): a key file, or one generated under the data dir, exists on
+ * one machine. Runs before anything can make one.
  */
-export function assertRoleAllowed(role: Role, deployment: string, env: Env): void {
+export function assertRoleAllowed(role: Role, deployment: string, env: Env, keySupplied = false): void {
   if (role === "all") return;
   if (deployment !== "cloud") throw new Error(`DIREX_ROLE=${role} is for Direx cloud only. A self-hosted Direx runs as one process: unset DIREX_ROLE`);
-  if (!env.DIREX_MASTER_KEY) throw new Error(`DIREX_ROLE=${role} needs the root key in DIREX_MASTER_KEY, not a file, so every process reads the same key`);
+  if (!keySupplied && !env.DIREX_MASTER_KEY) throw new Error(`DIREX_ROLE=${role} needs the root key in DIREX_MASTER_KEY, not a file, so every process reads the same key`);
 }
 
 /** Media on local disk would be seen by one side only, so a split process needs object storage (rule 005). */

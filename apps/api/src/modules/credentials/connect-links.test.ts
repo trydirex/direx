@@ -5,6 +5,7 @@ import { afterAll, expect, test } from "vitest";
 import { masterRootKey } from "./adapters/crypto";
 import type { AppProvider } from "./adapters/provider";
 import { createVault } from "./application/secrets";
+import { singleAppSource } from "./application/apps";
 import { isLinkToken, linkStatus, linkWorkspace } from "./domain/connect-link";
 import { vaultDb } from "./test-helpers";
 
@@ -39,7 +40,7 @@ function setup() {
     rootKey: masterRootKey(Buffer.alloc(32, 7)),
     now: () => new Date(clock.t),
     appProviders: [net],
-    systemApp: async () => ({ clientId: "direx-app", clientSecret: "direx-secret" }),
+    appSources: [singleAppSource("deployment", async () => ({ clientId: "direx-app", clientSecret: "direx-secret" }))],
     identify: async () => ({ accountId: "acct-2", accountLabel: "Clip page", scopes: ["a"] }),
     callbackUrl: "http://direx.test/api/connections/callback",
     timeoutMs: 300,

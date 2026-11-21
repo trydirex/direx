@@ -9,7 +9,7 @@ export type AppOwner = "workspace" | "platform" | "deployment" | "sign_in";
 
 export type OAuthApp = ClientPair & { owner: AppOwner };
 
-export type AppContext = { workspaceId: string; connection: string };
+export type AppContext = { workspaceId: string; orgId: string; connection: string };
 
 /**
  * One owner's apps. The vault calls `apps` outside the caller's Workspace transaction, since a

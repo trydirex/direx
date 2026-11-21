@@ -20,6 +20,7 @@ import {
   touchUsed,
   updateLive,
   withWorkspace,
+  workspaceOrg,
   type WorkspaceTx,
 } from "../adapters/repo";
 import { dueForRenewal, effectiveExpiry } from "../domain/refresh";
@@ -129,8 +130,14 @@ export function createVault(deps: VaultDeps) {
     withWorkspace(workspaceId, (tx) => workspaceApp(tx, workspaceId, connection));
   const sourcedApp = async (ownApp: WorkspaceApp | null, outside: () => Promise<OAuthApp | null>): Promise<SourcedApp | null> =>
     ownApp ? { ...ownApp, owner: "workspace" } : outside();
+  /** The first source's app, read outside any Workspace transaction. */
+  async function fromSources(workspaceId: string, connection: string): Promise<OAuthApp | null> {
+    if (!appSources.length) return null;
+    const orgId = await withWorkspace(workspaceId, (tx) => workspaceOrg(tx, workspaceId));
+    return orgId ? firstApp(appSources, { workspaceId, orgId, connection }) : null;
+  }
   const currentApp = async (workspaceId: string, connection: string) =>
-    sourcedApp(await readOwnApp(workspaceId, connection), () => firstApp(appSources, { workspaceId, connection }));
+    sourcedApp(await readOwnApp(workspaceId, connection), () => fromSources(workspaceId, connection));
 
   type ProviderFor = (connection: string | null) => Promise<ConnectProvider | undefined>;
   async function resolveProvider(connection: string | null, app: (connection: string) => Promise<SourcedApp | null>): Promise<ConnectProvider | undefined> {
@@ -168,7 +175,7 @@ export function createVault(deps: VaultDeps) {
             }))));
       } catch (e) {
         if (!(e instanceof NeedSourcedApp)) throw e;
-        fallback.set(e.connection, await firstApp(appSources, { workspaceId, connection: e.connection }));
+        fallback.set(e.connection, await fromSources(workspaceId, e.connection));
       }
     }
   }

@@ -3,7 +3,7 @@
 // such a package, and with nothing installed each one refuses or does nothing.
 
 /** Raised on any change to a type here, so a package built against another shape can refuse to start. */
-export const EXTENSIONS_VERSION = 2;
+export const EXTENSIONS_VERSION = 3;
 
 /**
  * The deployment's root key, which wraps every Workspace's data key. Supplied, it replaces
@@ -17,6 +17,18 @@ export type Discovery = {
   estimate(terms: string[], limit: number): Promise<{ usd: number }>;
   search(workspaceId: string, terms: string[], limit: number): Promise<{ domain: string; name: string; source: string }[]>;
 };
+
+/**
+ * The OAuth apps a deployment's operator supplies for a connection, newest first. A Workspace's own
+ * app still comes first; these come before the server's `social_app.<connection>` app. A new connect
+ * uses the first. Called outside any Workspace transaction, so it may take its time.
+ */
+export type OAuthApps = {
+  apps(ctx: { workspaceId: string; orgId: string; connection: string }): Promise<{ clientId: string; clientSecret: string }[]>;
+};
+
+/** What a deployment without an OAuth apps package gets: none, so the server's own apps are used. */
+export const noOAuthApps: OAuthApps = { apps: async () => [] };
 
 export class NotAvailable extends Error {
   readonly reason = "not_available";

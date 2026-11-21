@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 import { expect, test } from "vitest";
-import { EXTENSIONS_VERSION, noDiscovery, NotAvailable } from "./index";
+import { EXTENSIONS_VERSION, noDiscovery, noOAuthApps, NotAvailable } from "./index";
 
 test("with no discovery installed, estimating and searching both refuse with not_available", async () => {
   await expect(noDiscovery.estimate(["dentists in Leeds"], 50)).rejects.toMatchObject({ reason: "not_available" });
   await expect(noDiscovery.search("w", ["dentists in Leeds"], 50)).rejects.toBeInstanceOf(NotAvailable);
-  expect(EXTENSIONS_VERSION).toBe(2);
+  expect(EXTENSIONS_VERSION).toBe(3);
+});
+
+test("with no OAuth apps installed, every connection gets none, so the server's own apps are used", async () => {
+  expect(await noOAuthApps.apps({ workspaceId: "w", orgId: "o", connection: "google" })).toEqual([]);
 });

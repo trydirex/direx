@@ -289,6 +289,12 @@ export async function insertAudit(tx: WorkspaceTx, e: typeof workspaceAudit.$inf
   await tx.insert(workspaceAudit).values(e);
 }
 
+/** The Organization a Workspace belongs to, or null for a Workspace that isn't there. */
+export async function workspaceOrg(tx: WorkspaceTx, workspaceId: string): Promise<string | null> {
+  const [row] = await tx.select({ orgId: workspaces.orgId }).from(workspaces).where(eq(workspaces.id, workspaceId));
+  return row?.orgId ?? null;
+}
+
 /** Creates the system Workspace if it is not there yet. Safe when two processes start at once. */
 export async function ensureSystemWorkspaceRows(tx: WorkspaceTx, workspaceId: string, orgId: string, at: Date) {
   await tx.insert(organizations).values({ id: orgId, name: "Direx system", createdAt: at }).onConflictDoNothing();

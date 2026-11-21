@@ -63,6 +63,22 @@ A `social_app.<network>` value is used when a Workspace hasn't added its own app
 The network name uses lowercase letters, digits, `_` and `-`, up to 40 characters. The client id
 can't contain a colon.
 
+### Which app a connection uses
+
+A connection that runs on an OAuth app takes the first one it finds, in this order:
+
+1. The Workspace's own app, which an Owner or Admin adds on the connection's page.
+2. The operator's app, only where a package that supplies `OAuthApps` is installed (see below).
+3. The server's `social_app.<network>` app.
+4. For Gmail and Search Console only, the app people sign in with.
+
+A self-hosted server with no such package installed skips step 2, so nothing changes for it.
+
+A package that runs Direx through `startServer({ oauthApps })` can supply apps per connection. It
+gets the Workspace, its Organization and the connection, and returns client pairs newest first. Core
+never names that package, and calls it outside any database transaction. The type is `OAuthApps` in
+`apps/api/src/modules/extensions/index.ts`; changing it raises `EXTENSIONS_VERSION`.
+
 ### Gmail's mailbox app
 
 `social_app.google` is the server's app for Gmail Mailboxes, kept apart from the app people sign in

@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# The release button. An admin starts it from main and picks patch or minor. It checks that ci and
+# install passed on that commit, tags the next v0.x.y, runs release-image and release-sdk, and then
+# creates the GitHub Release with notes generated from the merged pull requests. A tag pushed with
+# GITHUB_TOKEN starts no other workflow, so this calls the two directly. The admin check stops
+# mistakes, not a writer set on releasing: they can still push a v* tag by hand, and only a tag
+# ruleset stops that.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: patch, or minor when a self-hoster must do more than change DIREX_VERSION
+        type: choice
+        options: [patch, minor]
+        default: patch
+
+permissions:
+  contents: read
+
+concurrency: release
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read # the ci and install runs
+      contents: write # push the tag
+    outputs:
+      prev: ${{ steps.version.outputs.prev }}
+      version: ${{ steps.version.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Only an admin, only from main
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Start a release from main"; exit 1; }
+          role=$(gh api "repos/$GITHUB_REPOSITORY/collaborators/$GITHUB_ACTOR/permission" -q .permission)
+          [ "$role" = admin ] || { echo "::error::Only an admin can cut a release ($GITHUB_ACTOR is $role)"; exit 1; }
+      - name: ci and install passed on this commit
+        run: |
+          for wf in ci install; do
+            c=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$wf.yml" --commit "$GITHUB_SHA" \
+              --event push --json conclusion -q '.[0].conclusion')
+            [ "$c" = success ] || { echo "::error::$wf has not passed on $GITHUB_SHA (${c:-not run yet or still running})"; exit 1; }
+          done
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags and history for the version and the settings check
+      - id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          prev=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          [ -n "$(git rev-list "$prev..HEAD")" ] || { echo "::error::Nothing has merged since $prev"; exit 1; }
+          IFS=. read -r major minor patch <<< "${prev#v}"
+          if [ "$BUMP" = minor ]; then next="v$major.$((minor + 1)).0"; else next="v$major.$minor.$((patch + 1))"; fi
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "$prev -> $next at $GITHUB_SHA"
+      # Generated notes have no "Before you upgrade" section, so a new setting forces a minor release
+      # and a note written by hand. A new commented-out line is an optional setting and passes.
+      - name: A new setting needs a minor release
+        if: inputs.bump == 'patch'
+        env:
+          PREV: ${{ steps.version.outputs.prev }}
+        run: |
+          keys() { git show "$1:deploy/compose/.env.template" | sed -n 's/^\([A-Z][A-Z0-9_]*\)=.*/\1/p' | sort; }
+          added=$(comm -13 <(keys "$PREV") <(keys HEAD))
+          if [ -n "$added" ]; then
+            echo "::error::deploy/compose/.env.template has new settings since $PREV, which existing installs don't have: ${added//$'\n'/ }. Run again with minor, then add what to set to the release notes."
+            exit 1
+          fi
+      - name: Tag
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR_ID+$GITHUB_ACTOR@users.noreply.github.com"
+          git tag -a "$VERSION" -m "$VERSION"
+          git push origin "$VERSION"
+
+  # Both build the commit this run started on, which is the tagged one.
+  image:
+    needs: tag
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/release-image.yml
+    with:
+      tag: ${{ needs.tag.outputs.version }}
+
+  sdk:
+    needs: tag
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-sdk.yml
+    with:
+      release_tag: ${{ needs.tag.outputs.version }}
+    secrets: inherit
+
+  # After the image, so a release never names an image install.sh can't pull. If the SDK publish
+  # fails, retry it with release-sdk's own button; the release still goes out.
+  release:
+    needs: [tag, image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PREV: ${{ needs.tag.outputs.prev }}
+      VERSION: ${{ needs.tag.outputs.version }}
+    steps:
+      - run: |
+          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$VERSION" \
+            --generate-notes --notes-start-tag "$PREV"
+          echo "::notice::Released $VERSION: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$VERSION"

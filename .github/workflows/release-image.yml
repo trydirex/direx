@@ -1,11 +1,17 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Publishes the server image that deploy/compose/install.sh pulls. Runs only when a person pushes a
-# version tag such as v0.1.0; nothing else publishes it.
+# Publishes the server image that deploy/compose/install.sh pulls. Runs when a person pushes a
+# version tag such as v0.1.0, or from release.yml, which names the tag it just pushed on the commit
+# being built. Nothing else publishes it.
 name: release-image
 
 on:
   push:
     tags: ["v*"]
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -30,5 +36,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/trydirex/direx:${{ github.ref_name }}
+            ghcr.io/trydirex/direx:${{ inputs.tag || github.ref_name }}
             ghcr.io/trydirex/direx:latest

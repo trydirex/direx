@@ -16,6 +16,7 @@ import { createOutreach, createOutsideTouches, humanReply, outreachFloors } from
 import { createPlans, planKinds, type PlanBody } from "../plans/index";
 import { loadPlugins } from "../plugins/index";
 import { touchCheck } from "../schedule/index";
+import { createRedirect, createTrackingDomains, trackingRedirectApp } from "../tracking/index";
 import { inWorkspace } from "./adapters/repo";
 import { campaignCheck, campaignKinds, campaignOnPlanApproved, campaignOnPlanCreated, campaignOutsideReplies, campaignReplies, createCampaigns, stepOutputVersion, templateVersion } from "./index";
 import { passMailboxCheck } from "../outreach/fixtures/support";
@@ -605,6 +606,37 @@ test("a reply cancels that Person's rest and leaves everyone else alone; a stran
   expect(await items.view(W, secondOf(b!))).not.toMatchObject({ state: "cancelled" });
   expect(await items.view(W, firstOf(a!))).toMatchObject({ state: "sent" });
   expect((await campaigns.campaign(W, id))!).toMatchObject({ replied: 1, sent: 2 });
+});
+
+test("a tracking Campaign's DMs carry one tracked link for everyone, with no token, and it answers before the DM is marked sent", async () => {
+  const id = await ready();
+  const hostname = `links${crypto.randomUUID().slice(0, 8)}.example.com`;
+  let txt = "";
+  const domains = createTrackingDomains({ dns: { records: async () => ({ cname: ["t.direx.example"], txt: [txt] }), handshake: async () => true }, target: () => "t.direx.example" });
+  const d = await domains.add(W, owner, hostname);
+  if (typeof d === "string") throw new Error(d);
+  txt = d.txtValue;
+  await domains.check(W, d.id);
+  await q("update campaigns set tracking_domain_id = $2, tracking_on = true, tracking_set_by = $3, tracking_set_at = now(), tracking_wording_version = 1, per_person_on = true, per_person_set_by = $3, per_person_set_at = now(), per_person_wording_version = 1 where id = $1", [id, d.id, owner]);
+  ok(await campaigns.setupStep(W, id, "second", { type: "dm", touchClass: "cold", mailboxCredentialId: null, audience: "everyone", dmChannel: "linkedin" }));
+  ok(await campaigns.saveDmText(W, id, "second", { revision: 0, text: "Hi {{firstName}}, see https://acme.example/offer." }));
+  const people = await addPeople(id, [person({ first: "Kim" }), person({ first: "Lee" })]);
+  for (const [i, p] of people.entries()) ok(await touches.addProfile(W, p!, "linkedin", `linkedin.com/in/tracked-${i}-${id.slice(0, 6)}`));
+  ok(await campaigns.makeDms(W, id, "second"));
+
+  const dms = await campaigns.dms(W, id, "second");
+  const link = new RegExp(`^Hi (Kim|Lee), see (https://${hostname.replaceAll(".", "\\.")}/t/[A-Za-z0-9_-]{22})\\.$`);
+  const urls = dms.map((m) => link.exec(m.text)?.[2]);
+  expect(urls).toHaveLength(2);
+  expect(urls[0]).toBeDefined();
+  expect(urls[1]).toBe(urls[0]);
+  expect(await q("select u.dm_id, u.token_hash from tracked_link_uses u join campaign_dms m on m.id = u.dm_id where m.campaign_id = $1 order by u.dm_id", [id])).toEqual(
+    dms.map((m) => ({ dm_id: m.id, token_hash: null })).sort((a, b) => (a.dm_id < b.dm_id ? -1 : 1)),
+  );
+  // Live once the DM exists, with nobody having marked it sent (ADR 0035 rule 004).
+  const redirect = trackingRedirectApp({ redirect: () => createRedirect() });
+  const r = await redirect.request(new URL(urls[0]!).pathname, { headers: { host: hostname, "user-agent": "Mozilla/5.0 Safari/605.1.15" } });
+  expect([r.status, r.headers.get("location")]).toEqual([302, "https://acme.example/offer"]);
 });
 
 test("a DM step drafts one message per Person with a profile, with no approval, and marking it sent logs one touch", async () => {

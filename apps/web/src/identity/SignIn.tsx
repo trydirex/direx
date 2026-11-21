@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Field, Notice, Page } from "../components/layout";
 import { NativeButton, NativeInput } from "@/components/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -7,6 +7,10 @@ import { ME } from "@/api/query";
 import { addPassword } from "./actions";
 import { message } from "./messages";
 import { holdInviteToken, resetPassword, sendPasswordReset, sendSignInLink, signInOptionsQuery, signInWith, signInWithPassword, signUpWithPassword, signupRefusal } from "./auth";
+
+// Match the server's admission cookie maxAge. Count from request start so transit cannot
+// make the cached hold look newer than the cookie.
+const HOLD_LIFETIME_MS = 30 * 60 * 1000;
 
 type Mode = "sign_in" | "sign_up" | "forgot";
 
@@ -41,7 +45,7 @@ export function SignIn({
   note?: string;
   callbackURL: string;
   initialMode?: Mode;
-  /** From an invite or bootstrap link: held by the server so any way of signing up carries it. */
+  /** From an invite, bootstrap or sign-up link: held by the server so any way of signing up carries it. */
   inviteToken?: string;
   /** Only the signed-out pages offer a new sign-up; a step-up prompt is for someone already signed in. */
   offerSignUp?: boolean;
@@ -51,23 +55,49 @@ export function SignIn({
   const [password, setPassword] = useState("");
   const [sent, setSent] = useState<string>();
   const [error, setError] = useState<string | undefined>(() => signupRefusal(location.search));
-  const tokenHeld = useRef<Promise<void> | undefined>(undefined);
+  const tokenHeld = useRef<{ token: string; promise: Promise<void>; expiresAt?: number } | undefined>(undefined);
+  const hold = useCallback((token: string) => {
+    const previous = tokenHeld.current;
+    if (previous?.token === token && (previous.expiresAt === undefined || Date.now() < previous.expiresAt)) return previous.promise;
+
+    const start = async () => {
+      const started = Date.now();
+      await holdInviteToken(token);
+      if (tokenHeld.current?.promise === promise) tokenHeld.current.expiresAt = started + HOLD_LIFETIME_MS;
+    };
+    // Every response writes the same cookie. Wait for the previous request to settle
+    // before sending a new one, even if the previous request failed.
+    const promise = (previous ? previous.promise.then(start, start) : start()).catch((error: unknown) => {
+      if (tokenHeld.current?.promise === promise) tokenHeld.current = undefined;
+      throw error;
+    });
+    tokenHeld.current = { token, promise };
+    return promise;
+  }, []);
   useEffect(() => {
-    tokenHeld.current = inviteToken ? holdInviteToken(inviteToken) : undefined;
-  }, [inviteToken]);
+    // Start early; only actions that need the cookie report a failed hold.
+    if (inviteToken) void hold(inviteToken).catch(() => undefined);
+  }, [hold, inviteToken]);
   // Both buttons show until the server says which it is set up for, so a server that has them never loses them.
   const providers = useQuery(signInOptionsQuery).data ?? { google: true, microsoft: true };
   const [pending, setPending] = useState<"submit" | "link">();
   const fail = (e: Error) => setError(e.message);
   const signedIn = () => location.assign(callbackURL);
 
-  // The tokenless claim page relies on the cookie set by the hold response.
-  const claimTokenHeld = () => callbackURL === "/claim" ? tokenHeld.current : undefined;
+  // A return path without the token (the claim page, a sign-up link) relies on the cookie set by the hold response.
+  const claimTokenHeld = async () => {
+    if (!inviteToken || callbackURL.includes(inviteToken)) return;
+    const promise = hold(inviteToken);
+    await promise;
+    if (tokenHeld.current?.promise !== promise) throw new Error("The sign-up link changed. Try again.");
+  };
   const social = async (provider: "google" | "microsoft") => {
+    setError(undefined);
     await claimTokenHeld();
     await signInWith(provider, callbackURL);
   };
   const magicLink = async () => {
+    setError(undefined);
     await claimTokenHeld();
     await sendSignInLink(email, callbackURL);
   };

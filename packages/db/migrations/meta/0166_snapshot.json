@@ -1,6 +1,6 @@
 {
-  "id": "ea1aac0a-3c99-4500-99fd-c1191f7d857e",
-  "prevId": "4d741e98-7fe4-4cf7-a7c6-35376819e4d5",
+  "id": "3373979d-2b85-4022-b6f7-4c53dca5bf16",
+  "prevId": "daf73302-205e-4f88-a712-9c60d6ee8311",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1618,7 +1618,7 @@
         },
         "credentials_pause_check": {
           "name": "credentials_pause_check",
-          "value": "(\"credentials\".\"paused_at\" is null) = (\"credentials\".\"pause_reason\" is null) and \"credentials\".\"pause_reason\" in ('bounces', 'provider_abuse', 'person')"
+          "value": "(\"credentials\".\"paused_at\" is null) = (\"credentials\".\"pause_reason\" is null) and \"credentials\".\"pause_reason\" in ('bounces', 'person')"
         },
         "credentials_send_hours_check": {
           "name": "credentials_send_hours_check",
@@ -5863,7 +5863,7 @@
       "checkConstraints": {
         "agent_run_events_kind_check": {
           "name": "agent_run_events_kind_check",
-          "value": "\"agent_run_events\".\"kind\" in ('model_call', 'tool_call', 'proposal', 'rejection')"
+          "value": "\"agent_run_events\".\"kind\" in ('model_call', 'tool_call', 'proposal', 'rejection', 'citation')"
         }
       },
       "isRLSEnabled": false

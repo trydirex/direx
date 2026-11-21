@@ -95,6 +95,18 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
     return placed.at;
   }
 
+  const reserveAutomaticIn: NonNullable<CapacityPort["reserveAutomaticIn"]> = async (tx, workspaceId, actionId, wanted, now, checkSlot) => {
+    const action = await postActionOf(tx, actionId);
+    if (!action) return { slot: wanted, result: { kind: "not_found" } };
+    // Any Person-group lock comes before the account's (ADR 0038).
+    await checkSlot?.lock(tx);
+    const slot = await nextPostTimeIn(tx, workspaceId, actionId, action, wanted, now);
+    const check = await checkSlot?.check(tx, slot);
+    if (check && check !== "ok") return { slot, result: { kind: check } };
+    // The account lock acquired in placement stays held through the reservation.
+    return { slot, result: await reservePostIn(tx, workspaceId, actionId, action, slot, now) };
+  };
+
   return {
     placeIn,
     reserveIn,
@@ -106,16 +118,7 @@ export function socialCapacity(d: { networks: () => readonly { connection: strin
         return action ? nextPostTimeIn(tx, workspaceId, actionId, action, from, opts?.now ?? new Date()) : from;
       }),
     reserveAutomatic: (workspaceId, actionId, wanted, now, checkSlot) =>
-      withGroupRetry(workspaceId, async (tx) => {
-        const action = await postActionOf(tx, actionId);
-        if (!action) return { slot: wanted, result: { kind: "not_found" } };
-        // Any Person-group lock comes before the account's (ADR 0038).
-        await checkSlot?.lock(tx);
-        const slot = await nextPostTimeIn(tx, workspaceId, actionId, action, wanted, now);
-        const check = await checkSlot?.check(tx, slot);
-        if (check && check !== "ok") return { slot, result: { kind: check } };
-        // The account lock acquired in placement stays held through the reservation.
-        return { slot, result: await reservePostIn(tx, workspaceId, actionId, action, slot, now) };
-      }),
+      withGroupRetry(workspaceId, (tx) => reserveAutomaticIn(tx, workspaceId, actionId, wanted, now, checkSlot)),
+    reserveAutomaticIn,
   };
 }

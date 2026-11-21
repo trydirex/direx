@@ -147,6 +147,33 @@ test.each([
   await vi.waitFor(() => expect(sent()).toEqual({ path: endpoint, body: { ...body, callbackURL: "/claim", errorCallbackURL: "/claim" } }));
 });
 
+test("a sign-up code the server won't hold stops sign-up and says so", async () => {
+  answer(200, {}, { google: false, microsoft: false });
+  fetchSpy.mockImplementation((path: RequestInfo | URL) => Promise.resolve(path === "/api/admission/token" ? Response.json({ error: "invalid" }, { status: 400 }) : Response.json({ token: "session" })));
+  render(withQueries(<SignIn callbackURL="/" initialMode="sign_up" inviteToken="not-a-code" />));
+  await fill("sam@example.com", "twelve chars ok");
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  expect(await screen.findByText(/This link isn't valid/)).toBeTruthy();
+  expect(fetchSpy).not.toHaveBeenCalledWith("/api/auth/sign-up/email", expect.anything());
+});
+
+test("a hold that didn't reach the server is sent again on each try until it's held", async () => {
+  answer(200, {}, { google: false, microsoft: false });
+  let holds = 0;
+  fetchSpy.mockImplementation((path: RequestInfo | URL) =>
+    path === "/api/admission/token" ? (holds++ < 2 ? Promise.reject(new TypeError("offline")) : Promise.resolve(Response.json({ ok: true }))) : Promise.resolve(Response.json({ token: "session" })),
+  );
+  render(withQueries(<SignIn callbackURL="/" initialMode="sign_up" inviteToken={"a".repeat(64)} />));
+  await fill("sam@example.com", "twelve chars ok");
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  expect(await screen.findByText("We couldn't save the code from your link. Try again.")).toBeTruthy();
+  expect(fetchSpy).not.toHaveBeenCalledWith("/api/auth/sign-up/email", expect.anything());
+  await userEvent.click(screen.getByRole("button", { name: "Sign up" }));
+  await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/"));
+  // The one sent as the page opened, then one per try.
+  expect(holds).toBe(3);
+});
+
 test("a password reset from the setup link doesn't wait for the invite token", async () => {
   const hold = Promise.withResolvers<Response>();
   answer(200);

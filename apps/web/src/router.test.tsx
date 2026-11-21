@@ -194,11 +194,14 @@ test.each(["HTTP error", "network error"])("a sign-up link retries a hold after 
 
 test("a sign-up link's email link also returns to / and not to the code", async () => {
   serveNewServer(null);
-  const sent = vi.spyOn(globalThis, "fetch").mockImplementation(async () => Response.json({}));
+  const hold = Promise.withResolvers<Response>();
+  const sent = vi.spyOn(globalThis, "fetch").mockImplementation(async (path) => (path === "/api/admission/token" ? hold.promise : Response.json({})));
   open(SIGNUP);
   await userEvent.type(await screen.findByLabelText("Email"), "sam@example.com");
   await userEvent.click(screen.getByRole("button", { name: "Email me a sign-in link" }));
-  expect(sent.mock.calls.map(([path]) => path)).toEqual(["/api/admission/token", "/api/auth/sign-in/magic-link"]);
+  expect(sent.mock.calls.map(([path]) => path)).toEqual(["/api/admission/token"]);
+  hold.resolve(Response.json({ ok: true }));
+  await waitFor(() => expect(sent.mock.calls.map(([path]) => path)).toEqual(["/api/admission/token", "/api/auth/sign-in/magic-link"]));
   expect(sent.mock.calls[1]![1]!.body).toBe(JSON.stringify({ email: "sam@example.com", callbackURL: "/", errorCallbackURL: "/" }));
 });
 

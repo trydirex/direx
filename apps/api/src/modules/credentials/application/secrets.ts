@@ -6,7 +6,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { RootKey } from "../adapters/crypto";
 import { refreshTokens, revokeWithoutClient, renewToken, revokeToken, type AppProvider, type ClientPair, type Provider } from "../adapters/provider";
-import { firstApp, type AppOwner, type AppSource, type OAuthApp } from "./apps";
+import { firstApp, pinOf, type AppOwner, type AppPin, type AppSource, type OAuthApp } from "./apps";
 import {
   findCredential,
   insertCredential,
@@ -136,10 +136,20 @@ export function createVault(deps: VaultDeps) {
     const orgId = await withWorkspace(workspaceId, (tx) => workspaceOrg(tx, workspaceId));
     return orgId ? firstApp(appSources, { workspaceId, orgId, connection }) : null;
   }
+  /** Every app the sources of one owner hold, read outside any Workspace transaction. */
+  async function ownerApps(workspaceId: string, owner: AppOwner, connection: string): Promise<OAuthApp[]> {
+    const sources = appSources.filter((s) => s.owner === owner);
+    if (!sources.length) return [];
+    const orgId = await withWorkspace(workspaceId, (tx) => workspaceOrg(tx, workspaceId));
+    if (!orgId) return [];
+    const apps = await Promise.all(sources.map((s) => s.apps({ workspaceId, orgId, connection })));
+    return apps.flat().map((a) => ({ clientId: a.clientId, clientSecret: a.clientSecret, owner }));
+  }
   const currentApp = async (workspaceId: string, connection: string) =>
     sourcedApp(await readOwnApp(workspaceId, connection), () => fromSources(workspaceId, connection));
 
-  type ProviderFor = (connection: string | null) => Promise<ConnectProvider | undefined>;
+  /** With a pin, only the app that issued the grant, or undefined once its owner no longer lists it. */
+  type ProviderFor = (connection: string | null, pin?: AppPin | null) => Promise<ConnectProvider | undefined>;
   async function resolveProvider(connection: string | null, app: (connection: string) => Promise<SourcedApp | null>): Promise<ConnectProvider | undefined> {
     const fixed = fixedProviderFor(connection);
     if (fixed || !connection) return fixed;
@@ -147,15 +157,15 @@ export function createVault(deps: VaultDeps) {
     if (!template) return undefined;
     const found = await app(connection);
     if (!found) return undefined;
-    const { clientId, clientSecret, ownAppVersion } = found;
-    return { ...template, clientId, clientSecret, ...(ownAppVersion === undefined ? {} : { ownAppVersion }) };
+    const { clientId, clientSecret, ownAppVersion, owner } = found;
+    return { ...template, clientId, clientSecret, appOwner: owner, ...(ownAppVersion === undefined ? {} : { ownAppVersion }) };
   }
 
   const providerFor = (workspaceId: string, connection: string | null) =>
     resolveProvider(connection, (name) => currentApp(workspaceId, name));
 
   class NeedSourcedApp extends Error {
-    constructor(readonly connection: string) { super("Read the app sources outside the Workspace transaction"); }
+    constructor(readonly key: string, readonly read: () => Promise<unknown>) { super("Read the app sources outside the Workspace transaction"); }
   }
 
   // A source may itself need a vault checkout, as the deployment app does in the system
@@ -163,19 +173,26 @@ export function createVault(deps: VaultDeps) {
   // (including readiness, lock and own-app precedence). The lookup must be requested before
   // any provider call or write.
   async function withProviderWorkspace<T>(workspaceId: string, run: (tx: WorkspaceTx, provider: ProviderFor) => Promise<T>): Promise<T> {
-    const fallback = new Map<string, OAuthApp | null>();
+    const outside = new Map<string, unknown>();
+    const readOutside = <T>(key: string, read: () => Promise<T>): T => {
+      if (!outside.has(key)) throw new NeedSourcedApp(key, read);
+      return outside.get(key) as T;
+    };
     for (;;) {
       try {
         return await withWorkspace(workspaceId, (tx) =>
-          run(tx, (connection) => resolveProvider(connection, async (name) =>
-            sourcedApp(await workspaceApp(tx, workspaceId, name), async () => {
-              if (!appSources.length) return null;
-              if (!fallback.has(name)) throw new NeedSourcedApp(name);
-              return fallback.get(name) ?? null;
-            }))));
+          run(tx, (connection, pin) => resolveProvider(connection, async (name) => {
+            const own = await workspaceApp(tx, workspaceId, name);
+            if (pin?.owner === "workspace") return own?.clientId === pin.clientId ? { ...own, owner: "workspace" } : null;
+            if (pin) {
+              const apps = appSources.length ? readOutside(`${pin.owner}:${name}`, () => ownerApps(workspaceId, pin.owner, name)) : [];
+              return apps.find((a) => a.clientId === pin.clientId) ?? null;
+            }
+            return sourcedApp(own, async () => (appSources.length ? readOutside(`first:${name}`, () => fromSources(workspaceId, name)) : null));
+          })));
       } catch (e) {
         if (!(e instanceof NeedSourcedApp)) throw e;
-        fallback.set(e.connection, await fromSources(workspaceId, e.connection));
+        outside.set(e.key, await e.read());
       }
     }
   }
@@ -196,7 +213,7 @@ export function createVault(deps: VaultDeps) {
     return withProviderWorkspace(workspaceId, async (tx, provider) => {
       await lockWorkspaceApp(tx, workspaceId, selected.connection);
       const current = await provider(selected.connection);
-      if (!current || current.ownAppVersion !== selected.ownAppVersion
+      if (!current || current.ownAppVersion !== selected.ownAppVersion || current.appOwner !== selected.appOwner
         || current.clientId !== selected.clientId || current.clientSecret !== selected.clientSecret) return null;
       return save(tx);
     });
@@ -295,7 +312,7 @@ export function createVault(deps: VaultDeps) {
       if (row.kind === "oauth2") {
         const value = (await keys.open(tx, row)) as SecretValue<"oauth2"> | null;
         const template = templateFor(row.connection);
-        const p = template && revokeWithoutClient(template) ? template : await provider(row.connection);
+        const p = template && revokeWithoutClient(template) ? template : await provider(row.connection, pinOf(row));
         const accountId = (row.meta as { accountId?: string }).accountId;
         revoked = value && p ? await revokeToken(p, value.refreshToken ?? value.accessToken, timeoutMs, accountId) : false;
       }
@@ -371,8 +388,10 @@ export function createVault(deps: VaultDeps) {
     if (template && (kind === "reconnect" || (kind === "refresh_token" && !current.refreshToken))) {
       return expired ? needsReauth("token_expired") : { outcome: "ok", value: current };
     }
-    const p = await provider(row.connection);
-    if (!p) return { outcome: "error", code: "no_provider" };
+    // A pinned grant refreshes only through the app that issued it; an older one through today's app.
+    const pin = pinOf(row);
+    const p = await provider(row.connection, pin);
+    if (!p) return pin ? needsReauth("app_gone") : { outcome: "error", code: "no_provider" };
     const r = kind === "self_renew" ? await renewToken(p, current.accessToken, timeoutMs) : await refreshTokens(p, current.refreshToken!, timeoutMs);
     const at = now();
     if (!r.ok) {

@@ -91,10 +91,19 @@ has the Google Cloud steps; the same steps make this app. Then store it:
 printf %s "$CLIENT_ID:$CLIENT_SECRET" | bun apps/api/src/secrets.ts set social_app.google
 ```
 
-Set it before any Gmail Mailbox connects. A refresh token works only with the app that issued it, so
-once `social_app.google` is set, each Gmail Mailbox that connected through the sign-in app stops
-refreshing and needs reconnecting once, unless its Workspace has its own app. Until it is
-reconnected, its scheduled email waits.
+A refresh token works only with the app that issued it, so Direx records which app issued each
+Mailbox's grant and keeps refreshing it with that app. Setting `social_app.google` later changes the
+app new Mailboxes connect through, and leaves connected ones alone.
+
+A Mailbox connected before Direx recorded this (before migration `0165_credential_app`) still
+refreshes with whichever app a new connect would use. For those, setting `social_app.google` makes
+each one that connected through the sign-in app need reconnecting once, unless its Workspace has its
+own app. Until it is reconnected, its scheduled email waits. Reconnecting it once records its app.
+
+Removing or changing an app that issued grants makes those grants need reconnecting, with the access
+event `app_gone`. To change the server's app without that, store the new one and reconnect the
+Mailboxes. An operator's `OAuthApps` package can list the old app after the new one until its
+grants are gone.
 
 ### Notion's sign-in
 

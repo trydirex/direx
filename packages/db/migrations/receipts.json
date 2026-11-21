@@ -676,6 +676,10 @@
     "0164_click_counts.sql": {
       "sha256": "2071873d580c09b1b400684883e25dec6353913e376962dc14c52cc3869a37e0",
       "description": "Add grow-only daily click counts per tracked link and classification key, and the per-minute counter behind the redirect's rate limit (ADR 0035)"
+    },
+    "0165_credential_app.sql": {
+      "sha256": "0f8ca8f3530f30ce7172d62d9bb24a854178ed82c22b06539f6a646aaf2d0a61",
+      "description": "Adds nullable app_owner and app_client_id to credentials, naming the OAuth app that issued each oauth2 grant so its refresh and revoke use that app; no backfill"
     }
   }
 }

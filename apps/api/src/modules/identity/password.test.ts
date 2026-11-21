@@ -152,6 +152,72 @@ test("outside dev, repeated sign-in attempts from one address are rate limited",
   expect(statuses).toContain(429);
 });
 
+test("the sign-in rate limit counts in the database, so every API process sees the same attempts", async () => {
+  const ip = "203.0.113.251"; // Outside the range used by the other rate limit tests.
+  const key = `${ip}|/sign-in/email`;
+  const owner = await ownerClient();
+  try {
+    await owner.query("delete from auth.rate_limit where key = $1", [key]);
+    expect((await signIn(prod, newEmail(), "wrong password here", ip)).status).toBe(401);
+    const { rows } = await owner.query<{ count: number; last_request: string }>("select count, last_request from auth.rate_limit where key = $1", [key]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.count).toBe(1);
+    expect(Date.now() - Number(rows[0]!.last_request)).toBeLessThan(10_000);
+
+    // Another process used up this address's attempts: a second identity, as after a restart, refuses the next.
+    await owner.query("update auth.rate_limit set count = 3, last_request = $2 where key = $1", [key, Date.now()]);
+    const other = testIdentity({ devMode: false });
+    const refused = await signIn(other, newEmail(), "wrong password here", ip);
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("x-retry-after"))).toBeGreaterThan(0);
+
+    // Once the window has passed, the count starts again.
+    await owner.query("update auth.rate_limit set last_request = $2 where key = $1", [key, Date.now() - 11_000]);
+    expect((await signIn(other, newEmail(), "wrong password here", ip)).status).toBe(401);
+    expect((await owner.query("select count from auth.rate_limit where key = $1", [key])).rows[0].count).toBe(1);
+  } finally {
+    await owner.query("delete from auth.rate_limit where key = $1", [key]);
+    await owner.end();
+  }
+});
+
+test("overlapping sign-ins through two API processes neither lose a count nor get past the limit", async () => {
+  const other = testIdentity({ devMode: false });
+  // Sign-in allows 3 attempts per address per 10 seconds. These addresses are outside the other tests' range too.
+  const burst = (ip: string, n: number) =>
+    Promise.all(Array.from({ length: n }, async (_, i) => (await signIn(i % 2 ? other : prod, newEmail(), "wrong password here", ip)).status));
+  const fresh = "203.0.113.252|/sign-in/email";
+  const nearFull = "203.0.113.253|/sign-in/email";
+  const owner = await ownerClient();
+  const countOf = async (key: string) => (await owner.query("select count from auth.rate_limit where key = $1", [key])).rows.map((r) => r.count);
+  try {
+    await owner.query("delete from auth.rate_limit where key = any($1)", [[fresh, nearFull]]);
+
+    // A new address: every request races to create the same row, and each one still counts once.
+    expect(await burst("203.0.113.252", 3)).toEqual([401, 401, 401]);
+    expect(await countOf(fresh)).toEqual([3]);
+
+    // An address with one attempt left: exactly one more gets through, the rest are refused, none fail.
+    await owner.query("insert into auth.rate_limit (key, count, last_request) values ($1, 2, $2)", [nearFull, Date.now()]);
+    expect((await burst("203.0.113.253", 5)).sort()).toEqual([401, 429, 429, 429, 429]);
+    expect(await countOf(nearFull)).toEqual([3]);
+  } finally {
+    await owner.query("delete from auth.rate_limit where key = any($1)", [[fresh, nearFull]]);
+    await owner.end();
+  }
+});
+
+test("in dev nothing is rate limited, so the table stays empty for that address", async () => {
+  const ip = `192.0.2.${Math.floor(Math.random() * 250) + 1}`;
+  for (let i = 0; i < 4; i++) expect((await signIn(dev, newEmail(), "wrong password here", ip)).status).toBe(401);
+  const owner = await ownerClient();
+  try {
+    expect((await owner.query("select 1 from auth.rate_limit where key like $1", [`${ip}|%`])).rowCount).toBe(0);
+  } finally {
+    await owner.end();
+  }
+});
+
 test("behind a trusted proxy, the limit follows the address the proxy saw, whatever the client put in front of it", async () => {
   const proxied = testIdentity({ devMode: false, trustedProxies: ["10.0.0.0/8"] });
   const email = newEmail();

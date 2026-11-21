@@ -5,6 +5,7 @@
 // same account by the same person keeps the credential's id and makes it active again.
 import { openState, sealState, STATE_TTL_MS } from "../adapters/cookie";
 import type { RootKey } from "../adapters/crypto";
+import type { AppOwner } from "./apps";
 import {
   clientIdParam,
   errorCode,
@@ -59,7 +60,8 @@ export type CallbackRefusal =
 export type Identity = { accountId: string; accountLabel: string; scopes?: string[]; grantExpiresAt?: string };
 export type Identify = (workspaceId: string, connection: string, accessToken: string) => Promise<Identity>;
 
-export type ConnectProvider = Provider & { ownAppVersion?: string };
+/** `appOwner` is set for a provider whose app came from an app source, and is kept on the grant. */
+export type ConnectProvider = Provider & { ownAppVersion?: string; appOwner?: AppOwner };
 
 export function connector(d: {
   rootKey: RootKey;
@@ -218,6 +220,8 @@ export function connector(d: {
     const name = email ?? identity!.accountLabel;
 
     const key = `${p.connection}:${email ?? accountId}`;
+    // The app that issued this grant, so its refresh and revoke use that app. A reconnect re-pins it.
+    const appPin = { appOwner: p.appOwner ?? null, appClientId: p.appOwner ? p.clientId : null };
     const saved = await d.persistGrant(workspaceId, p, async (tx) => {
       const existing = await findLiveUserKey(tx, workspaceId, userId, key);
       const id = existing?.id ?? crypto.randomUUID();
@@ -229,6 +233,7 @@ export function connector(d: {
             meta: { ...extraMeta("oauth2", existing.meta), ...parsed.meta },
             status: "active",
             expiresAt,
+            ...appPin,
             updatedAt: at,
           }))!
         : await insertCredential(tx, {
@@ -243,6 +248,7 @@ export function connector(d: {
             meta: parsed.meta,
             ...sealed,
             expiresAt,
+            ...appPin,
             createdBy: userId,
             createdAt: at,
             updatedAt: at,

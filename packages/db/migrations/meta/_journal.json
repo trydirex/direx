@@ -1156,6 +1156,13 @@
       "when": 1795234566727,
       "tag": "0164_click_counts",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1795236922986,
+      "tag": "0165_credential_app",
+      "breakpoints": true
     }
   ]
 }

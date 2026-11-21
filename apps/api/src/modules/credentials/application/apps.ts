@@ -9,6 +9,13 @@ export type AppOwner = "workspace" | "platform" | "deployment" | "sign_in";
 
 export type OAuthApp = ClientPair & { owner: AppOwner };
 
+/** The app that issued a grant, as kept on its credential. */
+export type AppPin = { owner: AppOwner; clientId: string };
+
+/** A credential's pin, or null for a grant made before pins were kept (or any other credential). */
+export const pinOf = (row: { appOwner: string | null; appClientId: string | null }): AppPin | null =>
+  row.appOwner && row.appClientId ? { owner: row.appOwner as AppOwner, clientId: row.appClientId } : null;
+
 export type AppContext = { workspaceId: string; orgId: string; connection: string };
 
 /**

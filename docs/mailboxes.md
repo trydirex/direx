@@ -78,6 +78,9 @@ A refresh token works only with the app that issued it. So saving, changing or r
 makes each Gmail Mailbox in the Workspace need reconnecting, once. Until a Mailbox is reconnected,
 its scheduled email waits. Removing the app moves Gmail back to the server's app, if there is one.
 
+A Mailbox keeps the app it connected through. A change to the server's apps changes only where new
+Mailboxes connect; see [Deployment secrets](deployment-secrets.md#gmails-mailbox-app).
+
 ## Replies and opt-outs
 
 This applies to every Mailbox, Google ones included. Direx checks the inbox for replies to the

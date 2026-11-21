@@ -48,16 +48,17 @@ export { closeDb };
 export const SWEEP_BATCH = 1000;
 
 /**
- * The daily retention sweep (ADR 0030 rule 002): each operational table's system definer, in list
+ * The daily retention sweep (ADR 0030 rule 002): each registered database sweep, in list
  * order, one batch per transaction until a batch comes back short. Returns the rows removed per table.
  */
 export async function sweepRetention(batch = SWEEP_BATCH): Promise<Record<string, number>> {
   const removed: Record<string, number> = {};
   for (const [table, r] of Object.entries(RETENTION)) {
-    if (r.class !== "operational" || !/^system\.sweep_\w+$/.test(r.sweep)) continue;
+    const sweep = "sweep" in r ? r.sweep : undefined;
+    if (!sweep || !/^(system|auth)\.sweep_\w+$/.test(sweep)) continue;
     let total = 0;
     for (;;) {
-      const { rows } = await withSystem((tx) => tx.execute(sql`select ${sql.raw(r.sweep)}(${batch}::integer) as n`));
+      const { rows } = await withSystem((tx) => tx.execute(sql`select ${sql.raw(sweep)}(${batch}::integer) as n`));
       const n = Number(rows[0]?.n ?? 0);
       total += n;
       if (n < batch) break;

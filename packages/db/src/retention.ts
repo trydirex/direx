@@ -11,7 +11,7 @@
 //                holds `window` word for word, which the catalogue check reads), or the app path.
 //   suppression  turned into deployment-level keyed hashes at purge (ADR 0030 Q6).
 // Other tables:
-//   account        sign-in tables; never purged with one Workspace.
+//   account        sign-in tables; never purged with one Workspace. An auth sweep can expire counters.
 //   organization   removed after its last Workspace is purged.
 //   deployment     the system schema and the root key; survive every purge.
 //   infrastructure the job queue and the migration record.
@@ -24,7 +24,8 @@ export type OtherClass = "account" | "organization" | "deployment" | "infrastruc
 export type RetentionClass = TenantClass | OtherClass;
 
 export type Retention =
-  | { class: Exclude<RetentionClass, "operational">; appDeletes?: true }
+  | { class: Exclude<RetentionClass, "operational" | "account">; appDeletes?: true }
+  | { class: "account"; appDeletes?: true; sweep?: string }
   | { class: "operational"; window: string; readers: readonly string[]; sweep: string; appDeletes?: true };
 
 export const TENANT_CLASSES: readonly RetentionClass[] = ["audit", "operational", "suppression"];
@@ -37,7 +38,7 @@ const queue = { class: "infrastructure", appDeletes: true } as const;
 
 export const RETENTION: Readonly<Record<string, Retention>> = {
   "auth.account": account,
-  "auth.rate_limit": account,
+  "auth.rate_limit": { ...account, sweep: "auth.sweep_rate_limit" },
   "auth.session": account,
   "auth.user": account,
   "auth.verification": account,

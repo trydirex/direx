@@ -103,14 +103,19 @@ test("a batch stops at its limit and is recorded", async () => {
 });
 
 test("each table loses its old terminal rows and keeps what is in flight or still read", async () => {
+  const now = Date.now();
+  await owner.query("insert into auth.rate_limit (key, count, last_request) values ('old-1', 1, $1), ('old-2', 2, $1), ('recent', 1, $2)",
+    [now - 7_200_000, now]);
   // A batch of 1 runs each sweep until a batch comes back short.
   expect(await sweepRetention(1)).toEqual({
+    "auth.rate_limit": 2,
     "public.trigger_events": 1,
     "public.model_calls": 1,
     "public.budget_reservations": 2,
     "public.credential_access_events": 1,
     "public.competitor_snapshots": 2,
   });
+  expect(await left("select key from auth.rate_limit")).toEqual(["recent"]);
   expect(await left(`select event_id from trigger_events`)).toEqual(["recent"]);
   expect((await left(`select idempotency_key from model_calls order by 1`)).sort()).toEqual(["old and in flight", "recent"]);
   const kept = await left(`select id from budget_reservations`);
@@ -120,5 +125,5 @@ test("each table loses its old terminal rows and keeps what is in flight or stil
   // The Change between two pruned reads went with them.
   expect(await left(`select count(*)::int from competitor_changes`)).toEqual([0]);
   // A second run finds nothing.
-  expect(Object.values(await sweepRetention())).toEqual([0, 0, 0, 0, 0]);
+  expect(Object.values(await sweepRetention())).toEqual([0, 0, 0, 0, 0, 0]);
 });

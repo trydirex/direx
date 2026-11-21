@@ -678,8 +678,8 @@
       "description": "Add grow-only daily click counts per tracked link and classification key, and the per-minute counter behind the redirect's rate limit (ADR 0035)"
     },
     "0165_auth_rate_limit.sql": {
-      "sha256": "47476ac23fac348071e3136c7374a32697d00fe3d21a3ac694cd601df75ecefb",
-      "description": "Add auth.rate_limit for Better Auth's rate limit counters, so every API process shares them and a restart keeps them, and grant the app role access"
+      "sha256": "e612352dde1345536a9bebc6a6f178d9a668997692f758f7c9176ca4e013feac",
+      "description": "Add auth.rate_limit for Better Auth's rate limit counters, so every API process shares them and a restart keeps them, grant the app role access, and sweep idle counters daily"
     }
   }
 }

@@ -192,6 +192,17 @@ test("in dev nothing is rate limited, so the table stays empty for that address"
   }
 });
 
+test("an unknown authentication route returns 404 without creating a rate limit counter", async () => {
+  const ip = "203.0.113.252";
+  expect((await post(prod, "/unknown", {}, ip)).status).toBe(404);
+  const owner = await ownerClient();
+  try {
+    expect((await owner.query("select 1 from auth.rate_limit where key like $1", [`${ip}|%`])).rowCount).toBe(0);
+  } finally {
+    await owner.end();
+  }
+});
+
 test("behind a trusted proxy, the limit follows the address the proxy saw, whatever the client put in front of it", async () => {
   const proxied = testIdentity({ devMode: false, trustedProxies: ["10.0.0.0/8"] });
   const email = newEmail();

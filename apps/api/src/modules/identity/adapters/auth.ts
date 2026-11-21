@@ -137,7 +137,9 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     return (await admission().admit({ email, emailVerified: true, token: tokenFrom(ctx) })).ok;
   }
 
-  return betterAuth({
+  const authBasePath = new URL(cfg.baseURL).pathname.replace(/\/+$/, "") || "/api/auth";
+  const rateLimitPaths = new Set<string>();
+  const auth = betterAuth({
     baseURL: cfg.baseURL,
     secret: cfg.secret,
     telemetry: { enabled: false },
@@ -147,7 +149,23 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
     advanced: { database: { generateId: "uuid" }, ipAddress: { trustedProxies: cfg.trustedProxies ?? [] } },
     // Counts live in auth.rate_limit, not process memory: API processes behind one load balancer
     // share them, and a restart or deploy doesn't reset an attacker's attempts.
-    rateLimit: { enabled: !cfg.devMode, storage: "database" },
+    rateLimit: {
+      enabled: !cfg.devMode,
+      storage: "database",
+      // Better Auth runs the limiter before matching a route. Only persist counters for its endpoints.
+      customRules: {
+        "/**": (request, rule) => {
+          const pathname = new URL(request.url).pathname;
+          if (!pathname.startsWith(`${authBasePath}/`)) return false;
+          const path = pathname.slice(authBasePath.length).replace(/\/+$/, "");
+          if (rateLimitPaths.has(path)) return rule;
+          if (rateLimitPaths.has("/reset-password/:token") && /^\/reset-password\/[^/]+$/.test(path)) return rule;
+          if (rateLimitPaths.has("/callback/:id") &&
+              ((cfg.google && path === "/callback/google") || (cfg.microsoft && path === "/callback/microsoft"))) return rule;
+          return false;
+        },
+      },
+    },
     // Each day of use pushes the end out (ADR 0037 rule 001). No cookie cache: it would let a
     // revoked session, or one past SESSION_CAP_MS, keep working until the cache expired. Better Auth's
     // own fresh-session routes ask for the short step-up window.
@@ -194,6 +212,8 @@ export function createAuth(cfg: AuthConfig, admission: () => Admission) {
       }),
     ],
   });
+  for (const endpoint of Object.values(auth.api)) if (endpoint.path) rateLimitPaths.add(endpoint.path);
+  return auth;
 }
 
 export type Auth = ReturnType<typeof createAuth>;

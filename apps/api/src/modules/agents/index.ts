@@ -3,6 +3,7 @@
 // person sees as Items. Sinks are passed in, so this module writes no other module's tables.
 export { factContext, factSink } from "./adapters/fact-sink";
 export { createAgents, starterNotice, type Agents } from "./application/create";
+export { createDrift, type Drift } from "./application/drift";
 export { checkEvals, checkRouteResults, RESULTS_DIR, type EvalResult, type EvalSuite } from "./evals/check";
 export { BRIEF_BAR, CHANGE_BAR, COMPARISON_BAR, MIN_RUNS, missesBar, POST_BAR, REPLY_LABEL_BAR, WHY_BAR } from "./evals/bars";
 export { resultFileOf, safetyGate, shippedEvals, voiceCheckOpen, type RequiredEval } from "./evals/gate";

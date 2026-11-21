@@ -113,6 +113,14 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
     sweep: "system.sweep_competitor_snapshots",
     appDeletes: true,
   },
+  // Pruned by the app as it counts (apps/api/src/modules/tracking/application/redirect.ts), which holds DELETE.
+  "public.tracking_counters": {
+    class: "operational",
+    window: "minute < now() - interval '10 minutes'",
+    readers: ["apps/api/src/modules/tracking/application/redirect.ts: the per-minute limit on each link"],
+    sweep: "apps/api/src/modules/tracking/adapters/repo.ts, as it counts",
+    appDeletes: true,
+  },
   // Pruned by the app as it counts (apps/api/src/modules/door/application/requests.ts), which holds DELETE.
   "public.door_counters": {
     class: "operational",
@@ -249,6 +257,8 @@ export const RETENTION: Readonly<Record<string, Retention>> = {
   "public.tracking_domains": auditDeletable,
   "public.tracked_links": audit,
   "public.tracked_link_uses": audit,
+  // Kept as long as the Campaign's readings, which are kept with the Workspace (rule 017).
+  "public.click_counts": audit,
   "public.voice_entries": audit,
   "public.voice_versions": audit,
   "public.workspace_audit": audit,

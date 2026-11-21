@@ -16,6 +16,7 @@ import type { Deployment } from "../models/index";
 import { outreachFloors } from "../outreach/index";
 import { loadPlugins } from "../plugins/index";
 import { mailboxDayCheck, mailboxDays, touchCheck } from "../schedule/index";
+import { createRedirect, createTrackingDomains, trackingRedirectApp } from "../tracking/index";
 import { currentGrant, inWorkspace, insertGrant, insertProbe, stopGrant } from "./adapters/repo";
 import type { Member } from "./domain/list";
 import {
@@ -336,4 +337,50 @@ test("a check whose send outcome is unknown waits for no person: the sweep cance
   expect(fake.calls.send).toBe(sends);
   // Only an unknown outcome is cancelled this way.
   expect((await ledger.cancelUnknown(W, check!.action_id!, { system: "placement" })).ok).toBe(false);
+});
+
+test("a content check carries its Campaign's tracked links as check-only links that redirect and never count", async () => {
+  const hostname = `links${crypto.randomUUID().slice(0, 8)}.example.com`;
+  let txt = "";
+  const domains = createTrackingDomains({ dns: { records: async () => ({ cname: ["t.direx.example"], txt: [txt] }), handshake: async () => true }, target: () => "t.direx.example" });
+  const d = await domains.add(W, ownerId, hostname);
+  if (typeof d === "string") throw new Error(d);
+  txt = d.txtValue;
+  await domains.check(W, d.id);
+  await q("update campaigns set tracking_domain_id = $2, tracking_on = true, tracking_set_by = $3, tracking_set_at = now(), tracking_wording_version = 1 where id = $1", [C, d.id, ownerId]);
+
+  const originalId = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("base64url");
+  await q("insert into tracked_links (id, workspace_id, campaign_id, step_key, domain_id, destination, created_at) values ($1, $2, $3, 'a', $4, $5, now())", [originalId, W, C, d.id, "https://acme.example/offer"]);
+  const originalUrl = `https://${hostname}/t/${originalId}`;
+  const recipientToken = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+  // Step B of the Campaign, with a link, is now the newest step said yes to, and the Campaign tracks links.
+  at("2026-11-12T05:00:00Z");
+  await db.query("begin");
+  await db.query("set local session_replication_role = replica");
+  await db.query("insert into campaign_steps (workspace_id, campaign_id, step_key, type, drafting_mode, template, updated_at) values ($1, $2, 'b', 'email', 'template', $3::jsonb, now())", [
+    W,
+    C,
+    JSON.stringify({ subject: "An offer for {{company}}", text: `Hi {{firstName}}, see https://acme.example/offer, [shared](${originalUrl}) or [personal](${originalUrl}/${recipientToken}). From {{senderName}}.`, citations: [], warnings: [], needsDecision: [] }),
+  ]);
+  await db.query("commit");
+  expect((await contentTests.record(W, { userId: ownerId, role: "owner" }, { campaignId: C, stepKey: "b", receivers: [RECEIVER], wordingVersion: "2026-11-10" })).ok).toBe(true);
+
+  at("2026-11-12T06:00:00Z");
+  const m = await mailbox();
+  await sendingWith([member(m.address), member(RECEIVER)]).daily(W, m.id);
+  const check = (await checksOf(m.id)).find((r) => r.kind === "content");
+  expect(check).toMatchObject({ peer: RECEIVER, state: "scheduled" });
+  const [spec] = await q("select spec ->> 'text' as text from actions where id = $1", [check!.action_id]);
+  const uses = await q("select l.id, l.check_only, u.token_hash from tracked_link_uses u join tracked_links l on l.id = u.link_id where u.action_id = $1", [check!.action_id]);
+  expect(uses).toEqual([{ id: expect.any(String), check_only: true, token_hash: null }]);
+
+  expect(uses[0].id).not.toBe(originalId);
+  const checkUrl = `https://${hostname}/t/${uses[0].id}`;
+  // Pasted tracked links and the plain destination use the same tokenless link. The footer is untouched.
+  expect(spec.text.startsWith(`Hi Alex, see ${checkUrl}, [shared](${checkUrl}) or [personal](${checkUrl}). From Dana.\n\n--\nDana\n1 Main St, Springfield\n`)).toBe(true);
+
+  const redirect = trackingRedirectApp({ redirect: () => createRedirect({ now: () => clock.at }) });
+  const r = await redirect.request(`/t/${uses[0].id}`, { headers: { host: hostname, "user-agent": "Mozilla/5.0 Safari/605.1.15" } });
+  expect([r.status, r.headers.get("location")]).toEqual([302, "https://acme.example/offer"]);
+  expect(await q("select count(*)::int as n from click_counts where link_id = $1", [uses[0].id])).toEqual([{ n: 0 }]);
 });

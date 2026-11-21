@@ -7,6 +7,7 @@ import { afterAll, expect, test } from "vitest";
 import { NOTION_OAUTH_PROVIDER } from "@direx/extensions";
 import { masterRootKey } from "./adapters/crypto";
 import { resolverOf, createVault } from "./application/secrets";
+import { singleAppSource } from "./application/apps";
 import { vaultDb } from "./test-helpers";
 
 const { q, newWorkspace, close } = vaultDb();
@@ -56,7 +57,7 @@ function setup() {
     rootKey: masterRootKey(Buffer.alloc(32, 7)),
     now: () => new Date(clock.t),
     appProviders: [provider],
-    systemApp: async () => ({ clientId: "notion-client", clientSecret: "notion-secret" }),
+    appSources: [singleAppSource("deployment", async () => ({ clientId: "notion-client", clientSecret: "notion-secret" }))],
     callbackUrl: "http://direx.test/api/connections/callback",
     timeoutMs: 300,
   });

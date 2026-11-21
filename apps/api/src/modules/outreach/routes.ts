@@ -8,8 +8,10 @@ import type { Outreach } from "./application/outreach";
 import { mailboxChecks } from "./application/header-check";
 import { HOOK_MAX_BYTES, type HoldHooks } from "./application/hold-hooks";
 import type { Holds } from "./application/holds";
+import { createMailboxDomains, type MailboxDomains } from "./application/domain-report";
 import type { MailboxPauses } from "./application/mailboxes";
 import { CHANNELS, type OutsideTouches } from "./application/outside-touches";
+import { authenticated } from "./domain/domain-report";
 import { BASES, CONFIDENCES, ENTITY_TYPES, WARNINGS } from "./domain/eligibility";
 
 const ErrorBody = z.object({ error: z.string() }).openapi("OutreachError");
@@ -284,6 +286,24 @@ const hookRotateRoute = createRoute({
   responses: { 200: json(HookMade, "A new secret, shown this once; the old one stops working"), ...errors },
 });
 const MailboxPause = z.object({ credentialId: z.uuid(), pausedAt: z.iso.datetime(), reason: z.enum(["bounces", "person"]) }).openapi("MailboxPause");
+const DomainReport = z
+  .object({
+    domain: z.string(),
+    consumer: z.boolean(),
+    mx: z.enum(["pass", "missing", "unknown"]),
+    spf: z.enum(["pass", "missing", "no_provider_include", "unknown"]),
+    dkim: z.enum(["pass", "not_found", "unknown"]),
+    dmarc: z.enum(["none", "quarantine", "reject", "missing", "unknown"]),
+    authenticated: z.boolean(),
+  })
+  .openapi("MailboxDomainReport");
+const domainRoute = createRoute({
+  method: "get",
+  path: "/api/w/{workspaceId}/outreach/mailboxes/{credentialId}/domain",
+  middleware: [requirePermission("workspace.read")],
+  request: { params: ws.extend({ credentialId: z.uuid() }) },
+  responses: { 200: json(DomainReport, "What DNS says about the domain the Mailbox sends from, read now"), ...errors },
+});
 const pausesRoute = createRoute({
   method: "get",
   path: "/api/w/{workspaceId}/outreach/mailbox-pauses",
@@ -305,8 +325,18 @@ const validHook = z.object({ workspaceId: z.uuid(), hookId: z.uuid() });
 const validLink = z.object({ workspaceId: z.uuid(), token: z.string().regex(/^[0-9a-f]{64}$/) });
 const PAGE = `<!doctype html><meta charset="utf-8"><title>Unsubscribe</title><form method="post"><p>Stop these emails?</p><button>Unsubscribe</button></form>`;
 
-export function outreachRoutes(deps: { outreach: () => Outreach; outsideTouches?: () => OutsideTouches; holds?: () => Holds; holdHooks?: () => HoldHooks; pauses?: () => MailboxPauses }) {
+const nodeDomains = createMailboxDomains();
+
+export function outreachRoutes(deps: { outreach: () => Outreach; outsideTouches?: () => OutsideTouches; holds?: () => Holds; holdHooks?: () => HoldHooks; pauses?: () => MailboxPauses; domains?: () => MailboxDomains }) {
   const app = new OpenAPIHono<MemberEnv>();
+
+  // DNS through Node unless a test gives its own.
+  const domains = deps.domains ?? (() => nodeDomains);
+  app.openapi(domainRoute, async (c) => {
+    const { workspaceId, credentialId } = c.req.valid("param");
+    const r = await domains().report(workspaceId, credentialId);
+    return r ? c.json({ ...r, authenticated: authenticated(r) }, 200) : c.json({ error: "not_found" }, 404);
+  });
 
   const pauses = deps.pauses;
   if (pauses) {

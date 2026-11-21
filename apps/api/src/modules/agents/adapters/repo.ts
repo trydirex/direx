@@ -230,7 +230,8 @@ const keyOf = (r: VersionKey) => `${r.agent}\u0000${r.version}\u0000${r.route}`;
 /**
  * Every agent version and route in this Workspace with its counts. Proposals from before routes were
  * hashed are left out. Codes are classified here, by the domain's lists, so the SQL holds none.
- * review_decisions belongs to items and is only read: an approved Item's edit distance, through item_id.
+ * review_decisions belongs to items and is only read: an approved Item's edit distance, through item_id,
+ * counted for the proposal that wrote the draft it measured.
  */
 export async function versionCounts(tx: WorkspaceTx): Promise<VersionCounts[]> {
   const { rows: codes } = await tx.execute<VersionKey & { code: string | null; n: number }>(sql`
@@ -258,8 +259,20 @@ export async function versionCounts(tx: WorkspaceTx): Promise<VersionCounts[]> {
       count(d.edit_distance)::int as edited
     from agent_proposals p
     join agent_runs r on r.workspace_id = p.workspace_id and r.id = p.run_id
-    left join review_decisions d on d.workspace_id = p.workspace_id and d.item_id = p.item_id
-      and d.decision in ('approve', 'edit_approve') and d.edit_distance is not null
+    left join (
+      -- Each approval counts for the proposal whose words it measured: the newest at the time that wrote the
+      -- draft, the Item's first proposal or a run asked to rewrite it (input.target.redraft). A later writer
+      -- run that found the draft already there returns the same Item untouched, so it measured nothing.
+      select distinct on (d.id) m.workspace_id, m.run_id, m.output_key, d.edit_distance
+      from review_decisions d
+      join agent_proposals m on m.workspace_id = d.workspace_id and m.item_id = d.item_id and m.at <= d.decided_at
+      join agent_runs mr on mr.workspace_id = m.workspace_id and mr.id = m.run_id
+      where d.decision in ('approve', 'edit_approve') and d.edit_distance is not null
+        and (mr.input->'target'->>'redraft' = m.item_id::text or not exists (
+          select 1 from agent_proposals o where o.workspace_id = m.workspace_id and o.item_id = m.item_id
+            and (o.at, o.run_id, o.output_key) < (m.at, m.run_id, m.output_key)))
+      order by d.id, m.at desc, m.run_id desc
+    ) d on d.workspace_id = p.workspace_id and d.run_id = p.run_id and d.output_key = p.output_key
     where p.route_hash is not null
     group by 1, 2, 3`);
   return rows.map((r) => ({

@@ -107,6 +107,15 @@ time, and the Mailboxes take turns when their times match. A person keeps the Ma
 email in the Campaign came from, so a follow-up doesn't arrive from a stranger. A draft never
 changes Mailbox once written: taking a Mailbox off a step leaves its drafts on it.
 
+## The sending domain
+
+Each Mailbox's card shows what DNS says about the domain it sends from: whether it has MX records
+for replies and bounces, an SPF record that names its email provider, a DKIM key, and a DMARC
+record. Gmail and Yahoo require SPF, DKIM and DMARC of anyone sending them a lot of mail, and mail
+from a domain without them lands in spam more often. The card says what to fix for each one
+missing. An address at a shared provider such as gmail.com needs none of this from you. Direx reads
+DNS only when the card is shown, so the check costs nothing and sends nothing.
+
 ## If a send is cut off
 
 If the connection drops while a message is going out, Direx can't tell whether it was delivered.

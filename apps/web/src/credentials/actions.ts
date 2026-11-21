@@ -158,6 +158,14 @@ export async function savePace(workspaceId: string, credentialId: string, pace: 
 // Which Mailboxes are paused, and pausing or resuming one.
 export const pausesQuery = (workspaceId: string) =>
   queryOptions({ queryKey: inWorkspace(workspaceId, "mailbox-pauses"), queryFn: async () => (await call(api.GET("/api/w/{workspaceId}/outreach/mailbox-pauses", { params: at(workspaceId) }))).pauses });
+export type DomainReport = components["schemas"]["MailboxDomainReport"];
+/** What DNS says about a Mailbox's sending domain. DNS changes slowly, and each read is a lookup. */
+export const domainQuery = (workspaceId: string, credentialId: string) =>
+  queryOptions({
+    queryKey: inWorkspace(workspaceId, "mailbox-domain", credentialId),
+    queryFn: () => call(api.GET("/api/w/{workspaceId}/outreach/mailboxes/{credentialId}/domain", { params: { path: { workspaceId, credentialId } } })),
+    staleTime: 10 * 60_000,
+  });
 /** Pauses or resumes a Mailbox: the API's error code, or null when it saved. */
 export async function setPaused(workspaceId: string, credentialId: string, paused: boolean): Promise<string | null> {
   const { error } = await api.PUT("/api/w/{workspaceId}/outreach/mailboxes/{credentialId}/pause", { params: { path: { workspaceId, credentialId } }, body: { paused } });

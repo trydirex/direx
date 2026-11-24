@@ -419,7 +419,11 @@ export function createVault(deps: VaultDeps) {
       }
       await touchUsed(tx, workspaceId, id, now());
       await event(r.outcome);
-      return { kind: row.kind as Kind, value: usable(row.kind as Kind, r.value), meta: row.meta as Meta };
+      // Form connections already store the verified DID in their credential key, including older email logins.
+      // Carry it to the Bluesky query as a public identifier without changing the stored sign-in name.
+      const did = consumer === "query" && row.kind === "basic" && row.connection === "bluesky" && row.key.startsWith("bluesky:did:") ? row.key.slice("bluesky:".length) : undefined;
+      const meta = row.meta as Meta;
+      return { kind: row.kind as Kind, value: usable(row.kind as Kind, r.value), meta: did ? { ...(meta as Meta<"basic">), accountId: did } : meta };
     });
   }
 

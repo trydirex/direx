@@ -8,6 +8,11 @@ export function fakeBluesky() {
   const calls: FakeBlueskyCall[] = [];
   /** What each job status check reports, in turn, then completed. */
   const processing: string[] = [];
+  /** The account's feed on the public AppView, newest first. getPosts finds its posts by uri. */
+  const feed: { post: { uri: string }; reason?: unknown }[] = [];
+  const reposts = new Map<string, object>();
+  /** Answers the next calls take instead, in turn: a 429, say. */
+  const failNext: Response[] = [];
   const blob = { $type: "blob", ref: { $link: "bafyvideo" }, mimeType: "video/mp4", size: 1 };
   const server = Bun.serve({
     port: 0,
@@ -17,6 +22,18 @@ export function fakeBluesky() {
       const raw = new Uint8Array(await req.arrayBuffer());
       const video = u.pathname.endsWith("uploadVideo") || u.pathname.endsWith("uploadBlob");
       calls.push({ method: req.method, path: u.pathname + u.search, body: video ? "" : new TextDecoder().decode(raw), bytes: raw.length, auth: req.headers.get("authorization") });
+      if (failNext.length) return failNext.shift()!;
+      if (u.pathname.endsWith("getAuthorFeed")) {
+        const from = Number(u.searchParams.get("cursor") ?? 0);
+        const to = from + Number(u.searchParams.get("limit"));
+        return Response.json({ feed: feed.slice(from, to), ...(to < feed.length && { cursor: String(to) }) });
+      }
+      if (u.pathname.endsWith("getPosts")) return Response.json({ posts: feed.filter((f) => !f.reason && u.searchParams.getAll("uris").includes(f.post.uri)).map((f) => f.post) });
+      if (u.pathname.endsWith("getRecord") && u.searchParams.get("collection") === "app.bsky.feed.repost") {
+        const uri = `at://${u.searchParams.get("repo")}/app.bsky.feed.repost/${u.searchParams.get("rkey")}`;
+        const value = reposts.get(uri);
+        return value ? Response.json({ uri, value }) : Response.json({ error: "RecordNotFound" }, { status: 400 });
+      }
       if (u.pathname.endsWith("createSession")) return Response.json({ did: "did:plc:ana", handle: "ana.bsky.social", accessJwt: "jwt", didDoc: { service: [{ id: "#atproto_pds", serviceEndpoint: "https://pds.example" }] } });
       if (u.pathname.endsWith("getServiceAuth")) return Response.json({ token: "service-token" });
       if (u.pathname.endsWith("uploadBlob")) return Response.json({ blob: { $type: "blob", ref: { $link: `bafy${raw.length}` }, mimeType: req.headers.get("content-type"), size: raw.length } });
@@ -33,11 +50,17 @@ export function fakeBluesky() {
     url: `http://127.0.0.1:${server.port}`,
     blob,
     calls,
+    feed,
+    reposts,
+    failNext,
     processing,
     paths: () => calls.map((c) => c.path.split("?")[0]!),
     reset: () => {
       calls.length = 0;
       processing.length = 0;
+      feed.length = 0;
+      reposts.clear();
+      failNext.length = 0;
     },
     stop: () => server.stop(true),
   };

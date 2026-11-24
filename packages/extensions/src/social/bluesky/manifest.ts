@@ -2,4 +2,4 @@
 import { MAX_EFFECT_TIMEOUT_MS } from "@direx/plugin-sdk";
 import { socialManifest } from "../http";
 
-export const blueskyManifest = socialManifest({ id: "com.trydirex.bluesky", connection: "bluesky", auth: "basic", hosts: ["bsky.social", "video.bsky.app"], publish: { dedupe: "queryable", media: "read", timeoutMs: MAX_EFFECT_TIMEOUT_MS } });
+export const blueskyManifest = socialManifest({ id: "com.trydirex.bluesky", connection: "bluesky", auth: "basic", hosts: ["bsky.social", "video.bsky.app", "public.api.bsky.app"], posts: true, publish: { dedupe: "queryable", media: "read", timeoutMs: MAX_EFFECT_TIMEOUT_MS } });

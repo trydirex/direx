@@ -42,6 +42,19 @@ test("V1, V5: every kind is stored sealed, resolves to its value, and no respons
   }
 });
 
+test("a stored Bluesky email login exposes its verified DID to queries without changing its sign-in", async () => {
+  const { ws, owner } = await newWorkspace();
+  const did = "did:plc:ana";
+  const { meta, value } = SAMPLES.basic;
+  const login = { username: meta.username, password: value.password };
+  const saved = await vault.create({ workspaceId: ws, actorUserId: owner, scope: "user", kind: "basic", connection: "bluesky", key: `bluesky:${did}`, name: "@ana.bsky.social", meta, value });
+  expect(saved).toMatchObject({ ok: true });
+  if (!saved.ok) throw new Error(saved.reason);
+  expect(await vault.credentials(ws, saved.credential.id, { consumer: "query" })).toEqual({ ...login, settings: { accountId: did } });
+  expect(await vault.credentials(ws, saved.credential.id, { consumer: "execute" })).toEqual(login);
+  expect(await vault.credentials(ws, saved.credential.id, { consumer: "query", connections: ["other"] })).toBeNull();
+});
+
 test("V6: a bad value or secret-looking meta is refused and stores nothing; oauth2 needs the connect flow", async () => {
   const { ws, owner } = await newWorkspace();
   const base = { workspaceId: ws, actorUserId: owner, scope: "workspace" as const, key: "k", name: "N" };

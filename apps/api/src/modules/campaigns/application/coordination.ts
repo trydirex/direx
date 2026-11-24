@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // What keeps a running campaign honest: a pause holds its email, a reply stops the rest to that Person,
 // someone in two campaigns waits for a person's choice, and a step that has finished reads as done.
+import { storedSpec } from "@direx/plugin-sdk/host";
 import type { Items, ItemKind } from "../../items";
 import type { Check } from "../../ledger";
 import type { InboundEvent } from "../../outreach";
 import type { Plans } from "../../plans";
+import { currentEmailTrackingHash, trackingLinksInText } from "../../tracking";
 import { PLAN_CHANGED, planChangeKinds } from "./plan-change";
 import { strategyAssumptionKinds } from "./write-up";
-import { setStallWaitFrom, activePosts, activeActions, campaignOfAction, inWorkspace, markReplied, markRepliedEverywhere, readCampaign, setPaused, settleConflict, postCounts, stepCounts, type CampaignsTx } from "../adapters/repo";
+import { setStallWaitFrom, activePosts, activeActions, campaignOfAction, inWorkspace, markReplied, markRepliedEverywhere, readCampaign, actionTrackingUses, setPaused, settleConflict, postCounts, stepCounts, type CampaignsTx } from "../adapters/repo";
 
 export const CONFLICT_KIND = "campaign_conflict";
 /** What a Campaign's drafting waits on that a person can fix. Approving it only says "seen"; it goes away once nothing waits. */
@@ -29,7 +31,22 @@ export const campaignCheck = (): Check => async (tx, action) => {
   if (!link) return { kind: "ok" };
   if (link.status === "replied" || link.status === "removed") return { kind: "block", reason: "person_left_campaign", detail: link.status };
   if (link.pausedAt) return { kind: "hold", reason: PAUSED };
-  return link.planChanged ? { kind: "hold", reason: PLAN_CHANGED } : { kind: "ok" };
+  if (link.planChanged) return { kind: "hold", reason: PLAN_CHANGED };
+  if ("personId" in link) {
+    const links = trackingLinksInText(storedSpec("email.send", action.spec).text ?? "");
+    if (links.length) {
+      // The ledger has verified the approved bytes. A link absent from the current revision must not hold a new message.
+      const uses = (await actionTrackingUses(tx, action.id)).filter((use) => links.some((linkInText) =>
+        use.linkId === linkInText.linkId && use.tokenHash === linkInText.tokenHash && use.hostname === linkInText.hostname));
+      if (uses.length) {
+        const live = await currentEmailTrackingHash(tx, link.campaignId, link.personId);
+        if (uses.some((use) => use.inputsHash !== live)) {
+          return { kind: "hold", reason: "tracking_changed", detail: "Link tracking changed. Refresh the draft and approve it again." };
+        }
+      }
+    }
+  }
+  return { kind: "ok" };
 };
 
 export type ConflictPayload = { campaignId: string; personId: string; otherCampaignId: string };

@@ -6,6 +6,7 @@ import { campaignActions, campaignDms, campaignOutcomes, campaignPeople, campaig
 import { replySignals } from "@direx/db/schema-outreach";
 import { marketingPlans } from "@direx/db/schema-plans";
 import { socialPosts } from "@direx/db/schema-social";
+import { trackedLinks, trackedLinkUses, trackingDomains } from "@direx/db/schema-tracking";
 import type { VisibleState } from "../../items";
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQLWrapper } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -50,8 +51,9 @@ export const campaignOfPlan = async (tx: CampaignsTx, planId: string): Promise<C
  * emails, step setup or settings. Every such write path starts here. A plan's approval is never undone,
  * so a yes here stays true for the rest of the transaction.
  */
-export async function requireApproved(tx: CampaignsTx, campaignId: string) {
-  const [row] = await tx.select({ campaign: campaigns, approved: marketingPlans.currentVersion }).from(campaigns).innerJoin(marketingPlans, eq(marketingPlans.id, campaigns.planId)).where(eq(campaigns.id, campaignId));
+export async function requireApproved(tx: CampaignsTx, campaignId: string, { lockCampaign = false } = {}) {
+  const query = tx.select({ campaign: campaigns, approved: marketingPlans.currentVersion }).from(campaigns).innerJoin(marketingPlans, eq(marketingPlans.id, campaigns.planId)).where(eq(campaigns.id, campaignId));
+  const [row] = await (lockCampaign ? query.for("no key update", { of: campaigns }) : query);
   if (!row) return { ok: false, reason: "not_found" } as const;
   if (row.approved === null) return { ok: false, reason: "plan_not_approved" } as const;
   return { ok: true, campaign: row.campaign } as const;
@@ -275,6 +277,29 @@ export async function setStepMode(tx: CampaignsTx, campaignId: string, stepKey: 
   await tx.update(campaignSteps).set({ draftingMode: mode, updatedAt: now }).where(and(eq(campaignSteps.campaignId, campaignId), eq(campaignSteps.stepKey, stepKey)));
 }
 
+/** A tracking domain's state in this Workspace, or undefined when it has none by that id. */
+export async function trackingDomainState(tx: CampaignsTx, domainId: string): Promise<string | undefined> {
+  const [row] = await tx.select({ state: trackingDomains.state }).from(trackingDomains).where(eq(trackingDomains.id, domainId));
+  return row?.state;
+}
+
+/** Link tracking on a domain, or off; off turns per-Person off too. Who changed it is kept either way (ADR 0035 rule 016). */
+export async function setTracking(tx: CampaignsTx, campaignId: string, a: { domainId: string; wordingVersion: number } | null, userId: string, now: Date) {
+  const who = { trackingSetBy: userId, trackingSetAt: now, updatedAt: now };
+  await tx
+    .update(campaigns)
+    .set(a ? { ...who, trackingOn: true, trackingDomainId: a.domainId, trackingWordingVersion: a.wordingVersion } : { ...who, trackingOn: false, perPersonOn: false, perPersonSetBy: userId, perPersonSetAt: now })
+    .where(eq(campaigns.id, campaignId));
+}
+
+/** Per-Person counting on (with the wording shown) or off. */
+export async function setPerPerson(tx: CampaignsTx, campaignId: string, wordingVersion: number | null, userId: string, now: Date) {
+  await tx
+    .update(campaigns)
+    .set({ perPersonOn: wordingVersion !== null, perPersonSetBy: userId, perPersonSetAt: now, updatedAt: now, ...(wordingVersion !== null && { perPersonWordingVersion: wordingVersion }) })
+    .where(eq(campaigns.id, campaignId));
+}
+
 export async function setOutsideContent(tx: CampaignsTx, campaignId: string, allowed: boolean, userId: string, now: Date) {
   await tx.update(campaigns).set({ outsideContentAllowed: allowed, outsideContentSetBy: userId, outsideContentSetAt: now, updatedAt: now }).where(eq(campaigns.id, campaignId));
 }
@@ -314,12 +339,36 @@ export function postCounts(tx: CampaignsTx, campaignId: string) {
 
 export async function campaignOfAction(tx: CampaignsTx, actionId: string) {
   const [row] = await tx
-    .select({ pausedAt: campaigns.pausedAt, status: campaignPeople.status, planChanged: planChangeUndecided(campaignActions.campaignId, campaignActions.stepKey) })
+    .select({ campaignId: campaignActions.campaignId, personId: campaignActions.personId, pausedAt: campaigns.pausedAt, status: campaignPeople.status, planChanged: planChangeUndecided(campaignActions.campaignId, campaignActions.stepKey) })
     .from(campaignActions)
     .innerJoin(campaigns, eq(campaigns.id, campaignActions.campaignId))
     .innerJoin(campaignPeople, and(eq(campaignPeople.campaignId, campaignActions.campaignId), eq(campaignPeople.personId, campaignActions.personId)))
     .where(eq(campaignActions.actionId, actionId));
   return row ?? campaignOfPost(tx, actionId);
+}
+
+/** Tracked link uses made for this Action. The caller matches them against the fixed text. */
+export function actionTrackingUses(tx: CampaignsTx, actionId: string) {
+  return tx.select({ linkId: trackedLinkUses.linkId, tokenHash: trackedLinkUses.tokenHash, hostname: trackingDomains.hostname, inputsHash: trackedLinkUses.inputsHash })
+    .from(trackedLinkUses)
+    .innerJoin(trackedLinks, eq(trackedLinks.id, trackedLinkUses.linkId))
+    .innerJoin(trackingDomains, eq(trackingDomains.id, trackedLinks.domainId))
+    .innerJoin(items, eq(items.actionId, trackedLinkUses.actionId))
+    .where(and(eq(trackedLinkUses.actionId, actionId), sql`(
+      ${trackedLinkUses.tokenHash} is not null
+      or ${items.payload} -> 'fixedTokenlessLinks' ->> ${trackedLinkUses.linkId} is null
+      or ${items.payload} -> 'fixedTokenlessLinks' ->> ${trackedLinkUses.linkId} = ${trackedLinkUses.inputsHash}
+    )`));
+}
+
+/** Keep the current inputs for regenerated tokenless URLs, which can repeat across revisions.
+ * The use rows stay immutable; links carried forward without regeneration keep their last inputs.
+ */
+export async function noteFixedTokenlessUses(tx: CampaignsTx, itemId: string, linkIds: string[], inputsHash: string) {
+  const fixed = Object.fromEntries(linkIds.map((id) => [id, inputsHash]));
+  await tx.update(items).set({ payload: sql`jsonb_set(coalesce(${items.payload}, '{}'::jsonb), '{fixedTokenlessLinks}',
+    coalesce(${items.payload} -> 'fixedTokenlessLinks', '{}'::jsonb) || ${JSON.stringify(fixed)}::jsonb)` })
+    .where(eq(items.id, itemId));
 }
 
 /** The step and joining time behind an Action, for standing rules. */

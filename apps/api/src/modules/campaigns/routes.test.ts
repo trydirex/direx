@@ -7,6 +7,7 @@ import { itemsApp } from "../items/fixtures/items";
 import { createOutreach } from "../outreach/index";
 import { createPlans, planKinds, planRoutes } from "../plans/index";
 import { setTimeZone } from "../schedule/index";
+import { createTrackingDomains } from "../tracking/index";
 import { campaignOnPlanApproved, campaignOnPlanCreated, campaignRoutes, createCampaigns } from "./index";
 
 const { routes, call, signIn, createOrg, addMember, items } = await itemsApp({ kinds: { ...factKinds(), ...planKinds({ onPlanApproved: campaignOnPlanApproved({ items: () => items }) }) } });
@@ -459,5 +460,73 @@ test("Write it again restarts a written or failed write-up of an Ended Campaign 
     expect(runs()).toBe(before + 2);
   } finally {
     now.mockImplementation(() => new Date());
+  }
+});
+
+test("link tracking is turned on with a verified domain and the current wording, per-Person only while it is on, and who did each is kept", async () => {
+  const id = await newCampaign();
+  const db = await appClient();
+  await db.query("select set_config('app.workspace_id', $1, false)", [W]);
+  const userOf = async (cookie: string) => (await read<{ user: { id: string } }>("/api/me", cookie)).user.id;
+  const ownerId = await userOf(owner);
+  const txt = new Map<string, string>();
+  const domains = createTrackingDomains({ dns: { records: async (h) => ({ cname: ["t.direx.example"], txt: [txt.get(h) ?? ""] }), handshake: async () => true }, target: () => "t.direx.example" });
+  const domain = async (check: boolean) => {
+    const d = await domains.add(W, ownerId, `links${crypto.randomUUID().slice(0, 8)}.example.com`);
+    if (typeof d === "string") throw new Error(d);
+    txt.set(d.hostname, d.txtValue);
+    if (check) await domains.check(W, d.id);
+    return d.id;
+  };
+  const [verified, pending] = [await domain(true), await domain(false)];
+  const track = (body: unknown, cookie = owner, campaign = id) => send("POST", url(`/campaigns/${campaign}/tracking`), cookie, body);
+  const perPerson = (body: unknown, cookie = owner) => send("POST", url(`/campaigns/${id}/tracking/per-person`), cookie, body);
+  const on = { on: true, domainId: verified, confirmed: true, wordingVersion: 1 };
+  const row = async () =>
+    (await db.query("select tracking_on, tracking_domain_id, tracking_set_by, tracking_wording_version, tracking_set_at is not null as at, per_person_on, per_person_set_by, per_person_wording_version from campaigns where id = $1", [id])).rows[0];
+
+  expect((await track(on, roles.viewer)).status).toBe(403);
+  expect((await track({ ...on, confirmed: false })).status).toBe(400);
+  expect([(await track({ ...on, domainId: pending })).status, await (await track({ ...on, domainId: pending })).json()]).toEqual([409, { error: "domain_not_verified" }]);
+  expect(await (await track({ ...on, wordingVersion: 0 })).json()).toEqual({ error: "wording_changed" });
+  expect((await track(on, owner, crypto.randomUUID())).status).toBe(404);
+  expect(await (await perPerson({ on: true, confirmed: true, wordingVersion: 1 })).json()).toEqual({ error: "tracking_off" });
+  expect(await row()).toMatchObject({ tracking_on: false, per_person_on: false });
+
+  expect((await track(on, roles.contributor)).status).toBe(200);
+  const contributorId = await userOf(roles.contributor);
+  expect(await row()).toMatchObject({ tracking_on: true, tracking_domain_id: verified, tracking_set_by: contributorId, tracking_wording_version: 1, at: true });
+  expect(await (await perPerson({ on: true, confirmed: true, wordingVersion: 2 })).json()).toEqual({ error: "wording_changed" });
+  expect((await perPerson({ on: true, confirmed: true, wordingVersion: 1 })).status).toBe(200);
+  expect(await row()).toMatchObject({ per_person_on: true, per_person_set_by: ownerId, per_person_wording_version: 1 });
+  expect((await perPerson({ on: false })).status).toBe(200);
+  expect(await row()).toMatchObject({ tracking_on: true, per_person_on: false });
+
+  // Off turns per-Person off with it, and records who.
+  expect((await perPerson({ on: true, confirmed: true, wordingVersion: 1 })).status).toBe(200);
+  expect((await track({ on: false })).status).toBe(200);
+  expect(await row()).toMatchObject({ tracking_on: false, per_person_on: false, tracking_set_by: ownerId, per_person_set_by: ownerId });
+
+  // Hold the tracking-off write open until the other request is waiting on the campaign.
+  expect((await track(on)).status).toBe(200);
+  const observer = await appClient();
+  let enabling: Promise<Response> | undefined;
+  try {
+    await db.query("begin");
+    const { rows: [writer] } = await db.query("update campaigns set tracking_on = false where id = $1 returning pg_backend_pid() as pid", [id]);
+    enabling = Promise.resolve(perPerson({ on: true, confirmed: true, wordingVersion: 1 }, roles.contributor));
+    await expect.poll(async () => (await observer.query(
+      "select exists(select from pg_stat_activity where $1 = any(pg_blocking_pids(pid))) as waiting",
+      [writer.pid],
+    )).rows[0].waiting).toBe(true);
+    await db.query("commit");
+    const response = await enabling;
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: "tracking_off" });
+    expect(await row()).toMatchObject({ tracking_on: false, per_person_on: false });
+  } finally {
+    await db.end();
+    await observer.end();
+    await enabling;
   }
 });
